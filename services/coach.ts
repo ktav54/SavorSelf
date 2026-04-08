@@ -20,16 +20,25 @@ async function callEdgeFunction<TRequest, TResponse>(functionName: string, body:
   return payload as TResponse;
 }
 
-export async function sendCoachMessage(message: string, context: Record<string, unknown>) {
+export async function sendCoachMessage(
+  message: string,
+  context: Record<string, unknown>,
+  history?: Array<{
+    role: "user" | "assistant";
+    content: string;
+  }>
+) {
   return callEdgeFunction<
     {
       message,
       context,
+      history,
     },
     { reply: string; summary?: string }
   >("ai-coach", {
     message,
     context,
+    history,
   });
 }
 
@@ -52,6 +61,8 @@ export async function parseFoodMessage(input: {
     },
     {
       isFoodLogging: boolean;
+      isCalorieEdit?: boolean;
+      editCalories?: number | null;
       needsClarification: boolean;
       question?: string;
       mealType?: "breakfast" | "lunch" | "dinner" | "snack";

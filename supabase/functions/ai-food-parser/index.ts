@@ -13,6 +13,8 @@ interface ParsedFoodCandidate {
 
 interface ParseResponse {
   isFoodLogging: boolean;
+  isCalorieEdit?: boolean;
+  editCalories?: number | null;
   needsClarification: boolean;
   question?: string;
   mealType?: MealType;
@@ -52,7 +54,7 @@ const OPEN_FOOD_FACTS_SEARCH_URL = "https://world.openfoodfacts.org/cgi/search.p
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
 const SYSTEM_PROMPT =
-  'You help users log food conversationally. Extract foods, portions, quantity, unit, and meal type from the user message and prior conversation context. Never estimate or invent calories, protein, carbs, fat, fiber, or sugar. Those values will be looked up later from real food databases, so focus only on identifying foods and the most plausible portion details. Make reasonable assumptions for common foods and default compositions: burgers, sandwiches, tacos, burritos, pizza, pasta, salads, coffee drinks, eggs, toast, rice bowls, and similar everyday meals should be inferred without asking about obvious ingredients unless the user says they were unusual. Ask at most one clarifying question per food item, and only when the portion is truly too vague to log responsibly. Do not repeat questions the user already answered in the conversation history. You must return unit values using only one of these exact strings: g, oz, ml, fl_oz, cup, serving, piece, tbsp, tsp. If the user says item, treat that as piece. You must respond with valid JSON only. No markdown, no explanation, just raw JSON. Return exactly this schema: {"isFoodLogging": true|false, "needsClarification": true|false, "question": "string when clarification is needed", "mealType": "breakfast|lunch|dinner|snack when known", "items": [{"name":"string","portion":"string","quantity":number,"unit":"g|oz|ml|fl_oz|cup|serving|piece|tbsp|tsp","needsClarification":boolean,"clarificationReason":"string or null"}]}.';
+  'You help users log food conversationally. Your job is to extract foods and portions from natural language and return structured JSON. Be aggressive about making reasonable assumptions - do not ask for clarification unless a portion is truly impossible to estimate. Default assumptions to use without asking: chicken nuggets = 6 pieces medium size, burger = 1 medium patty with bun, slice of pizza = 1 slice, eggs = large size, coffee = 8oz, sandwich = 1 standard, fries = medium serving, wings = 6 pieces, rice = 1 cup cooked, pasta = 1 cup cooked. Only ask ONE clarifying question total per message, and only when you genuinely cannot make any reasonable estimate. Never ask about ingredients of standard items (burger, sandwich, taco, nuggets, pizza). If the user says something like "change the calories to X" or "make it Y calories" or "update the calories", treat this as a CALORIE EDIT request: set isFoodLogging to false, set isCalorieEdit to true, set editCalories to the number they specified. Do not repeat questions already answered in conversation history. You must return unit values using only: g, oz, ml, fl_oz, cup, serving, piece, tbsp, tsp. Respond with valid JSON only. No markdown. Schema: {"isFoodLogging": true|false, "isCalorieEdit": boolean, "editCalories": number|null, "needsClarification": true|false, "question": "string or null", "mealType": "breakfast|lunch|dinner|snack or null", "items": [{"name":"string","portion":"string","quantity":number,"unit":"string","needsClarification":boolean,"clarificationReason":"string or null"}]}';
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -371,8 +373,17 @@ Deno.serve(async (request: Request) => {
       itemCount: parsed.items?.length ?? 0,
     });
 
+    if (parsed.isCalorieEdit) {
+      return jsonResponse({
+        isFoodLogging: false,
+        isCalorieEdit: true,
+        editCalories: parsed.editCalories ?? null,
+        needsClarification: false,
+      });
+    }
+
     if (!parsed.isFoodLogging) {
-      return jsonResponse({ isFoodLogging: false, needsClarification: false });
+      return jsonResponse({ isFoodLogging: false, isCalorieEdit: false, editCalories: null, needsClarification: false });
     }
 
     if (parsed.needsClarification || parsed.items.some((item) => item.needsClarification)) {
@@ -380,6 +391,8 @@ Deno.serve(async (request: Request) => {
 
       return jsonResponse({
         isFoodLogging: true,
+        isCalorieEdit: false,
+        editCalories: null,
         needsClarification: true,
         question:
           parsed.question ??
@@ -501,6 +514,8 @@ Deno.serve(async (request: Request) => {
 
     return jsonResponse({
       isFoodLogging: true,
+      isCalorieEdit: false,
+      editCalories: null,
       needsClarification: false,
       mealType: resolveMealType(parsed.mealType ?? "snack"),
       items: enrichedItems,

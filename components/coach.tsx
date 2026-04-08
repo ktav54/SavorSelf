@@ -240,6 +240,18 @@ export function CoachChat() {
       if (shouldUseFoodParser(message, recentSuccessfulFoodLogs)) {
         const foodResult = await parseFoodMessage({ message, pendingProposal, history });
 
+        if ((foodResult as any).isCalorieEdit && (foodResult as any).editCalories != null && pendingProposal) {
+          const newCalories = Number((foodResult as any).editCalories);
+          const perItem = Math.round(newCalories / pendingProposal.items.length);
+          const updatedProposal = {
+            ...pendingProposal,
+            items: pendingProposal.items.map((item) => ({ ...item, calories: perItem })),
+          };
+          setPendingProposal(updatedProposal);
+          appendAssistant(`Updated to ${newCalories} cal total. Anything else to adjust before I log it?`, "food_summary", updatedProposal);
+          return;
+        }
+
         if (foodResult.isFoodLogging) {
           if (foodResult.needsClarification) {
             appendAssistant(
@@ -267,7 +279,7 @@ export function CoachChat() {
         }
       }
 
-      const result = await sendCoachMessage(message, coachContext);
+      const result = await sendCoachMessage(message, coachContext, history);
       appendAssistant(result.reply?.trim() || "Something went wrong, try again.", "text");
       if (recentSuccessfulFoodLogs > 0) {
         setRecentSuccessfulFoodLogs((current) => Math.max(current - 1, 0));

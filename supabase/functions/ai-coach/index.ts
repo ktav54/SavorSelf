@@ -1,5 +1,6 @@
 interface CoachPayload {
   message: string;
+  history?: Array<{ role: "user" | "assistant"; content: string }>;
   context: {
     moodLogs: unknown[];
     foodSummary: unknown;
@@ -88,6 +89,7 @@ Deno.serve(async (request) => {
           role: "system",
           content: `Context: ${JSON.stringify(payload.context)}`,
         },
+        ...(payload.history ?? []).map((m) => ({ role: m.role, content: m.content })),
         { role: "user", content: payload.message },
       ],
     }),
