@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "SavorSelf",
+    "slug": "savorself",
+    "scheme": "savorself",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#FAF7F2"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.savorself.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#FAF7F2"
+      },
+      "package": "com.savorself.app"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "expo-notifications"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
