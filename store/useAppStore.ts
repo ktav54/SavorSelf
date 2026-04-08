@@ -872,9 +872,7 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => ({ conversation: [...state.conversation, message] })),
   deleteCoachMessage: (timestamp, index) =>
     set((state) => ({
-      conversation: state.conversation.filter(
-        (message, messageIndex) => !(message.timestamp === timestamp && messageIndex === index)
-      ),
+      conversation: state.conversation.filter((_, i) => i !== index),
     })),
   clearConversation: () =>
     set((state) => ({
