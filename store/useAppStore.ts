@@ -90,6 +90,7 @@ interface AppState {
   addQuickLog: (log: QuickLog) => void;
   addJournalEntry: (entry: JournalEntry) => void;
   addCoachMessage: (message: AiConversationMessage) => void;
+  deleteCoachMessage: (timestamp: string, index: number) => void;
   clearConversation: () => void;
 }
 
@@ -869,6 +870,12 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => ({ journalEntries: [entry, ...state.journalEntries] })),
   addCoachMessage: (message) =>
     set((state) => ({ conversation: [...state.conversation, message] })),
+  deleteCoachMessage: (timestamp, index) =>
+    set((state) => ({
+      conversation: state.conversation.filter(
+        (message, messageIndex) => !(message.timestamp === timestamp && messageIndex === index)
+      ),
+    })),
   clearConversation: () =>
     set((state) => ({
       conversation: [],

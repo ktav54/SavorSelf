@@ -1,5 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  Animated,
+  Clipboard,
+  PanResponder,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { colors, radii, spacing } from "@/constants/theme";
 import { Card, Field, PrimaryButton, SectionTitle } from "@/components/ui";
 import { formatFoodName } from "@/lib/utils";
@@ -71,12 +81,16 @@ export function CoachChat() {
   const insights = useAppStore((state) => state.insights);
   const loadFoodMoodInsights = useAppStore((state) => state.loadFoodMoodInsights);
   const addCoachMessage = useAppStore((state) => state.addCoachMessage);
+  const deleteCoachMessage = useAppStore((state) => state.deleteCoachMessage);
   const saveMultipleFoodLogs = useAppStore((state) => state.saveMultipleFoodLogs);
   const [draft, setDraft] = useState("");
   const [pendingProposal, setPendingProposal] = useState<CoachFoodProposal | null>(null);
   const [sending, setSending] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [recentSuccessfulFoodLogs, setRecentSuccessfulFoodLogs] = useState(0);
+  const [copiedMessageKey, setCopiedMessageKey] = useState<string | null>(null);
+  const [editingItemKey, setEditingItemKey] = useState<string | null>(null);
+  const [calorieDraft, setCalorieDraft] = useState("");
 
   useEffect(() => {
     setDraft("");
@@ -132,6 +146,42 @@ export function CoachChat() {
       kind,
       foodProposal,
     });
+  };
+
+  const copyAssistantMessage = async (messageKey: string, content: string) => {
+    Clipboard.setString(content);
+    setCopiedMessageKey(messageKey);
+    setTimeout(() => {
+      setCopiedMessageKey((current) => (current === messageKey ? null : current));
+    }, 1500);
+  };
+
+  const openCalorieEditor = (messageKey: string, itemIndex: number, calories: number) => {
+    setEditingItemKey(`${messageKey}-${itemIndex}`);
+    setCalorieDraft(String(Math.round(calories)));
+  };
+
+  const saveEditedCalories = (itemIndex: number) => {
+    const nextCalories = Math.max(0, Math.round(Number(calorieDraft) || 0));
+    setPendingProposal((current) => {
+      if (!current) {
+        return current;
+      }
+
+      return {
+        ...current,
+        items: current.items.map((item, currentIndex) =>
+          currentIndex === itemIndex
+            ? {
+                ...item,
+                calories: nextCalories,
+              }
+            : item
+        ),
+      };
+    });
+    setEditingItemKey(null);
+    setCalorieDraft("");
   };
 
   const submit = async () => {
@@ -308,57 +358,114 @@ export function CoachChat() {
           </Pressable>
         </Card>
       ) : null}
-      {conversation.map((message, index) => (
-        <View key={`${message.timestamp}-${index}`} style={styles.messageWrap}>
-          <View
-            style={[styles.bubble, message.role === "user" ? styles.userBubble : styles.assistantBubble]}
-          >
-            <Text style={styles.bubbleText}>{message.content}</Text>
+      {conversation.map((message, index) => {
+        const messageKey = `${message.timestamp}-${index}`;
+        const isAssistant = message.role === "assistant";
+        const isPendingProposalMessage =
+          Boolean(pendingProposal) && message.foodProposal?.sourceMessage === pendingProposal?.sourceMessage;
+
+        return (
+          <View key={messageKey} style={styles.messageWrap}>
+            <SwipeableMessageRow
+              onDelete={() => deleteCoachMessage(message.timestamp, index)}
+              deletingLabel="Delete"
+            >
+              <Pressable
+                delayLongPress={250}
+                onLongPress={
+                  isAssistant
+                    ? () => void copyAssistantMessage(messageKey, message.content)
+                    : undefined
+                }
+                style={[
+                  styles.bubble,
+                  message.role === "user" ? styles.userBubble : styles.assistantBubble,
+                ]}
+              >
+                <Text style={styles.bubbleText}>{message.content}</Text>
+              </Pressable>
+            </SwipeableMessageRow>
+            {copiedMessageKey === messageKey ? (
+              <AnimatedCopiedLabel key={messageKey} />
+            ) : null}
+            {message.role === "assistant" && message.foodProposal ? (
+              <Card>
+                <Text style={styles.summaryLabel}>{message.foodProposal.mealType}</Text>
+                {message.foodProposal.items.map((item, itemIndex) => {
+                  const editKey = `${messageKey}-${itemIndex}`;
+                  const editableItem =
+                    isPendingProposalMessage && pendingProposal ? pendingProposal.items[itemIndex] ?? item : item;
+
+                  return (
+                    <View key={`${message.timestamp}-${item.name}-${itemIndex}`}>
+                      <Pressable
+                        style={styles.summaryRow}
+                        onPress={() =>
+                          isPendingProposalMessage
+                            ? openCalorieEditor(messageKey, itemIndex, editableItem.calories)
+                            : undefined
+                        }
+                      >
+                        <View style={styles.summaryCopy}>
+                          <Text style={styles.summaryName}>{formatFoodName(editableItem.name)}</Text>
+                          {editableItem.foodSource === "ai_estimate" ? (
+                            <Text style={styles.estimateTag}>AI estimate</Text>
+                          ) : null}
+                          <Text style={styles.summaryMeta}>{editableItem.portion}</Text>
+                        </View>
+                        <View style={styles.summaryCopy}>
+                          <Text style={styles.summaryMacro}>{Math.round(editableItem.calories)} cal</Text>
+                          <Text style={styles.summaryMeta}>
+                            {Math.round(editableItem.protein)}p | {Math.round(editableItem.carbs)}c | {Math.round(editableItem.fat)}f
+                          </Text>
+                        </View>
+                      </Pressable>
+                      {isPendingProposalMessage && editingItemKey === editKey ? (
+                        <View style={styles.inlineEditRow}>
+                          <TextInput
+                            style={styles.inlineInput}
+                            value={calorieDraft}
+                            onChangeText={setCalorieDraft}
+                            keyboardType="numeric"
+                            placeholder="Calories"
+                            placeholderTextColor={colors.textSecondary}
+                          />
+                          <Pressable
+                            style={styles.inlineDoneButton}
+                            onPress={() => saveEditedCalories(itemIndex)}
+                          >
+                            <Text style={styles.inlineDoneText}>Done</Text>
+                          </Pressable>
+                        </View>
+                      ) : null}
+                    </View>
+                  );
+                })}
+                {isPendingProposalMessage ? (
+                  <View style={styles.actionRow}>
+                    <PrimaryButton
+                      label={confirming ? "Saving..." : "Confirm and log"}
+                      onPress={() => void confirmProposal()}
+                    />
+                    <PrimaryButton
+                      label="Adjust"
+                      secondary
+                      onPress={() => {
+                        addCoachMessage({
+                          role: "assistant",
+                          content: "Tell me what to adjust and I'll revise the estimate.",
+                          timestamp: new Date().toISOString(),
+                          kind: "clarification",
+                        });
+                      }}
+                    />
+                  </View>
+                ) : null}
+              </Card>
+            ) : null}
           </View>
-          {message.role === "assistant" && message.foodProposal ? (
-            <Card>
-              <Text style={styles.summaryLabel}>{message.foodProposal.mealType}</Text>
-              {message.foodProposal.items.map((item) => (
-                <View key={`${message.timestamp}-${item.name}`} style={styles.summaryRow}>
-                  <View style={styles.summaryCopy}>
-                    <Text style={styles.summaryName}>{formatFoodName(item.name)}</Text>
-                    {item.foodSource === "ai_estimate" ? (
-                      <Text style={styles.estimateTag}>AI estimate</Text>
-                    ) : null}
-                    <Text style={styles.summaryMeta}>{item.portion}</Text>
-                  </View>
-                  <View style={styles.summaryCopy}>
-                    <Text style={styles.summaryMacro}>{Math.round(item.calories)} cal</Text>
-                    <Text style={styles.summaryMeta}>
-                      {Math.round(item.protein)}p | {Math.round(item.carbs)}c | {Math.round(item.fat)}f
-                    </Text>
-                  </View>
-                </View>
-              ))}
-              {pendingProposal && message.foodProposal.sourceMessage === pendingProposal.sourceMessage ? (
-                <View style={styles.actionRow}>
-                  <PrimaryButton
-                    label={confirming ? "Saving..." : "Confirm and log"}
-                    onPress={() => void confirmProposal()}
-                  />
-                  <PrimaryButton
-                    label="Adjust"
-                    secondary
-                    onPress={() => {
-                      addCoachMessage({
-                        role: "assistant",
-                        content: "Tell me what to adjust and I'll revise the estimate.",
-                        timestamp: new Date().toISOString(),
-                        kind: "clarification",
-                      });
-                    }}
-                  />
-                </View>
-              ) : null}
-            </Card>
-          ) : null}
-        </View>
-      ))}
+        );
+      })}
       <Card>
         <Field
           label="Message"
@@ -395,12 +502,124 @@ export function CoachChat() {
   );
 }
 
+function SwipeableMessageRow({
+  children,
+  onDelete,
+  deletingLabel,
+}: {
+  children: ReactNode;
+  onDelete: () => void;
+  deletingLabel: string;
+}) {
+  const translateX = useRef(new Animated.Value(0)).current;
+  const opened = useRef(false);
+
+  const snapTo = (value: number) => {
+    Animated.spring(translateX, {
+      toValue: value,
+      useNativeDriver: true,
+      bounciness: 0,
+    }).start();
+    opened.current = value !== 0;
+  };
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gestureState) =>
+        Math.abs(gestureState.dx) > 12 && Math.abs(gestureState.dy) < 12,
+      onPanResponderMove: (_, gestureState) => {
+        const next = Math.max(-88, Math.min(0, gestureState.dx + (opened.current ? -88 : 0)));
+        translateX.setValue(next);
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dx < -40 || (opened.current && gestureState.dx < 20)) {
+          snapTo(-88);
+        } else {
+          snapTo(0);
+        }
+      },
+      onPanResponderTerminate: () => {
+        snapTo(opened.current ? -88 : 0);
+      },
+    })
+  ).current;
+
+  return (
+    <View style={styles.swipeContainer}>
+      <Pressable style={styles.messageDeleteAction} onPress={onDelete}>
+        <Text style={styles.messageDeleteText}>{deletingLabel}</Text>
+      </Pressable>
+      <Animated.View
+        style={[
+          styles.swipeableMessage,
+          {
+            transform: [{ translateX }],
+          },
+        ]}
+        {...panResponder.panHandlers}
+      >
+        {children}
+      </Animated.View>
+    </View>
+  );
+}
+
+function AnimatedCopiedLabel() {
+  const opacity = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    opacity.setValue(1);
+    const animation = Animated.sequence([
+      Animated.delay(900),
+      Animated.timing(opacity, {
+        toValue: 0,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+    ]);
+
+    animation.start();
+
+    return () => {
+      animation.stop();
+    };
+  }, [opacity]);
+
+  return (
+    <Animated.Text style={[styles.copiedLabel, { opacity }]}>Copied!</Animated.Text>
+  );
+}
+
 const styles = StyleSheet.create({
   stack: {
     gap: spacing.md,
   },
   messageWrap: {
     gap: spacing.sm,
+  },
+  swipeContainer: {
+    position: "relative",
+    overflow: "hidden",
+    borderRadius: radii.lg,
+  },
+  swipeableMessage: {
+    backgroundColor: "transparent",
+  },
+  messageDeleteAction: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    right: 0,
+    width: 88,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#D96B5F",
+    borderRadius: radii.lg,
+  },
+  messageDeleteText: {
+    color: colors.white,
+    fontSize: 14,
+    fontWeight: "700",
   },
   bubble: {
     padding: spacing.md,
@@ -421,6 +640,12 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontSize: 16,
     lineHeight: 25,
+  },
+  copiedLabel: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    marginTop: -4,
+    marginLeft: spacing.sm,
   },
   promptRow: {
     gap: spacing.sm,
@@ -469,6 +694,37 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: spacing.sm,
     paddingVertical: 6,
+  },
+  inlineEditRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  inlineInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: colors.textPrimary,
+    backgroundColor: colors.white,
+  },
+  inlineDoneButton: {
+    backgroundColor: "#F6DFC9",
+    borderWidth: 1,
+    borderColor: colors.accentPrimary,
+    borderRadius: radii.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  inlineDoneText: {
+    color: colors.accentPrimary,
+    fontSize: 13,
+    fontWeight: "700",
   },
   summaryCopy: {
     gap: 4,
