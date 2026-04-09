@@ -1,138 +1,27 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Clipboard,
-  Modal,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
+// components/coach.tsx
+import { useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { colors, radii, spacing } from "@/constants/theme";
 import { Card, Field, PrimaryButton, SectionTitle } from "@/components/ui";
 import { formatFoodName } from "@/lib/utils";
-import { parseFoodMessage, sendCoachMessage } from "@/services/coach";
+import { sendMessage } from "@/services/coach";
 import { useAppStore } from "@/store/useAppStore";
-import type { CoachFoodItem, CoachFoodProposal, AiConversationMessage } from "@/types/models";
-
-// ─── Routing helpers ─────────────────────────────────────────────────────────
-
-const FOOD_TRIGGER_PATTERN = /\b(i had|i ate|i drank|log|add)\b/i;
-const QUESTION_START_PATTERN = /^(what|why|how|where|when)\b/i;
-const FEELING_PATTERN = /\b(i feel|feeling|i'm feeling|felt|greasy|crappy|bloated|tired|sick|nauseous|full|stuffed|hungry|anxious|stressed|good|great|bad|awful|terrible|amazing)\b/i;
-
-function shouldUseFoodParser(message: string, recentSuccessfulFoodLogs: number) {
-  const trimmed = message.trim();
-  if (FEELING_PATTERN.test(trimmed)) return false;
-  const wordCount = trimmed.split(/\s+/).filter(Boolean).length;
-  const hasFoodTrigger = FOOD_TRIGGER_PATTERN.test(trimmed);
-  const startsWithQuestionWord = QUESTION_START_PATTERN.test(trimmed.toLowerCase());
-
-  if (startsWithQuestionWord) return false;
-  if (wordCount < 6 && !hasFoodTrigger) return false;
-  if (recentSuccessfulFoodLogs > 0) return hasFoodTrigger;
-
-  return true;
-}
-
-// ─── Follow-up after successful log ──────────────────────────────────────────
+import type { CoachFoodItem, CoachFoodProposal } from "@/types/models";
 
 function buildLoggedFollowUp(mealType: string, items: CoachFoodItem[]) {
   const names = items.map((item) => formatFoodName(item.name).toLowerCase());
 
   if (names.some((name) => /salmon|sardine|mackerel|walnut|flax/.test(name))) {
-    return `Logged to your ${mealType}. By the way, foods like that are rich in omega-3s, which can support mood by helping calm neuroinflammation. Your Food-Mood patterns will start picking that up over time.`;
+    return `Logged to your ${mealType}. Foods like that are rich in omega-3s, which support mood by calming neuroinflammation. Your Food-Mood patterns will start picking that up over time.`;
   }
   if (names.some((name) => /yogurt|kefir|kimchi|sauerkraut|kombucha/.test(name))) {
-    return `Logged to your ${mealType}. Fermented foods like that can be especially interesting for Food-Mood because they support gut diversity, which can influence mood and energy over time.`;
+    return `Logged to your ${mealType}. Fermented foods support gut diversity, which can influence mood and energy over time.`;
   }
   if (names.some((name) => /oat|bean|lentil|apple|berry|broccoli/.test(name))) {
-    return `Logged to your ${mealType}. That one brings in fiber, which matters more than it gets credit for. Your Food-Mood data may start to reflect that in steadier energy and mood patterns.`;
+    return `Logged to your ${mealType}. That one brings in fiber, which matters more than it gets credit for. Steadier energy and mood patterns often follow.`;
   }
-  return `Logged to your ${mealType}. I will keep that in mind as your Food-Mood picture develops over the next few days.`;
+  return `Logged to your ${mealType}. I'll keep that in mind as your Food-Mood picture develops.`;
 }
-
-// ─── Message action menu ──────────────────────────────────────────────────────
-
-interface MessageMenuProps {
-  visible: boolean;
-  role: "user" | "assistant";
-  onCopy: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-  onRegenerate: () => void;
-  onClose: () => void;
-}
-
-function MessageMenu({ visible, role, onCopy, onEdit, onDelete, onRegenerate, onClose }: MessageMenuProps) {
-  return (
-    <Modal transparent animationType="fade" visible={visible} onRequestClose={onClose}>
-      <Pressable style={menuStyles.backdrop} onPress={onClose}>
-        <View style={menuStyles.sheet}>
-          {role === "assistant" ? (
-            <>
-              <TouchableOpacity style={menuStyles.item} onPress={onCopy}>
-                <Text style={menuStyles.itemText}>Copy</Text>
-              </TouchableOpacity>
-              <View style={menuStyles.divider} />
-              <TouchableOpacity style={menuStyles.item} onPress={onRegenerate}>
-                <Text style={menuStyles.itemText}>Regenerate response</Text>
-              </TouchableOpacity>
-            </>
-          ) : (
-            <>
-              <TouchableOpacity style={menuStyles.item} onPress={onEdit}>
-                <Text style={menuStyles.itemText}>Edit & resend</Text>
-              </TouchableOpacity>
-              <View style={menuStyles.divider} />
-              <TouchableOpacity style={menuStyles.item} onPress={onDelete}>
-                <Text style={[menuStyles.itemText, menuStyles.destructive]}>Delete</Text>
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
-      </Pressable>
-    </Modal>
-  );
-}
-
-const menuStyles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: "rgba(44, 26, 14, 0.3)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: spacing.lg,
-  },
-  sheet: {
-    backgroundColor: colors.white,
-    borderRadius: radii.lg,
-    width: "72%",
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  item: {
-    paddingVertical: 16,
-    paddingHorizontal: spacing.md,
-    alignItems: "center",
-  },
-  itemText: {
-    fontSize: 16,
-    color: colors.textPrimary,
-  },
-  destructive: {
-    color: "#C0392B",
-  },
-  divider: {
-    height: 1,
-    backgroundColor: colors.border,
-  },
-});
-
-// ─── Banner ───────────────────────────────────────────────────────────────────
 
 export function CoachBanner() {
   return (
@@ -145,8 +34,6 @@ export function CoachBanner() {
     </Card>
   );
 }
-
-// ─── Main chat ────────────────────────────────────────────────────────────────
 
 export function CoachChat() {
   const conversation = useAppStore((state) => state.conversation);
@@ -164,20 +51,10 @@ export function CoachChat() {
   const [pendingProposal, setPendingProposal] = useState<CoachFoodProposal | null>(null);
   const [sending, setSending] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [recentSuccessfulFoodLogs, setRecentSuccessfulFoodLogs] = useState(0);
-  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
-  const [adjustMode, setAdjustMode] = useState(false);
-
-  // Message action menu state
-  const [menuVisible, setMenuVisible] = useState(false);
-  const [menuTargetIndex, setMenuTargetIndex] = useState<number | null>(null);
-  const menuTargetMessage = menuTargetIndex !== null ? conversation[menuTargetIndex] : null;
 
   useEffect(() => {
     setDraft("");
     setPendingProposal(null);
-    setRecentSuccessfulFoodLogs(0);
-    setAdjustMode(false);
   }, [conversationResetCount]);
 
   const hasStartedConversation = useMemo(
@@ -203,17 +80,8 @@ export function CoachChat() {
       quickLogs: quickLogs.slice(-7),
       journalEntries: journalEntries.slice(-3).map((entry) => entry.body),
       insights: insights.slice(0, 3),
-      pendingFoodProposal: pendingProposal
-        ? {
-            mealType: pendingProposal.mealType,
-            items: pendingProposal.items.map((item) => ({
-              name: formatFoodName(item.name),
-              portion: item.portion,
-            })),
-          }
-        : null,
     }),
-    [foodLogs, insights, journalEntries, moodLogs, pendingProposal, quickLogs]
+    [foodLogs, insights, journalEntries, moodLogs, quickLogs]
   );
 
   const appendAssistant = (
@@ -230,92 +98,97 @@ export function CoachChat() {
     });
   };
 
-  function extractMacroOverride(message: string, proposal: CoachFoodProposal | null): CoachFoodProposal | null {
-    if (!proposal) return null;
-    const calMatch = message.match(/(\d+)\s*(cal|calories|kcal)/i);
-    const proteinMatch = message.match(/(\d+)\s*g?\s*protein/i);
-    const carbsMatch = message.match(/(\d+)\s*g?\s*(carb|carbs|carbohydrate)/i);
-    const fatMatch = message.match(/(\d+)\s*g?\s*fat/i);
+  const submit = async () => {
+    if (!draft.trim() || sending) return;
 
-    if (!calMatch && !proteinMatch && !carbsMatch && !fatMatch) return null;
+    const message = draft.trim();
 
-    const updatedItems = proposal.items.map((item, i) => {
-      const isOnly = proposal.items.length === 1;
-      const isLast = i === proposal.items.length - 1;
-      if (!isOnly && !isLast) return item;
-      return {
-        ...item,
-        calories: calMatch ? Number(calMatch[1]) : item.calories,
-        protein: proteinMatch ? Number(proteinMatch[1]) : item.protein,
-        carbs: carbsMatch ? Number(carbsMatch[1]) : item.carbs,
-        fat: fatMatch ? Number(fatMatch[1]) : item.fat,
-      };
+    // Build clean history (exclude long food proposal blobs)
+    const history = conversation
+      .filter((m) => m.content.length < 400)
+      .slice(-10)
+      .map((m) => ({ role: m.role, content: m.content }));
+
+    addCoachMessage({
+      role: "user",
+      content: message,
+      timestamp: new Date().toISOString(),
     });
 
-    return { ...proposal, items: updatedItems };
-  }
-
-  // ── Core send ──────────────────────────────────────────────────────────────
-
-  const sendMessage = async (message: string, historyOverride?: AiConversationMessage[]) => {
-    const baseHistory = historyOverride ?? conversation;
-    const history = [
-      ...baseHistory.map((entry) => ({ role: entry.role, content: entry.content })),
-      { role: "user" as const, content: message },
-    ];
-
+    setDraft("");
     setSending(true);
+
     try {
-      if (shouldUseFoodParser(message, recentSuccessfulFoodLogs)) {
-        const foodResult = await parseFoodMessage({ message, pendingProposal, history });
+      const result = await sendMessage({
+        message,
+        history,
+        context: coachContext,
+        pendingProposal,
+      });
 
-        if ((foodResult as any).isCalorieEdit && (foodResult as any).editCalories != null && pendingProposal) {
-          const newCalories = Number((foodResult as any).editCalories);
-          const perItem = Math.round(newCalories / pendingProposal.items.length);
-          const updatedProposal = {
-            ...pendingProposal,
-            items: pendingProposal.items.map((item) => ({ ...item, calories: perItem })),
-          };
-          setPendingProposal(updatedProposal);
-          appendAssistant(`Updated to ${newCalories} cal total. Anything else to adjust before I log it?`, "food_summary", updatedProposal);
-          return;
-        }
-
-        if (foodResult.isFoodLogging) {
-          if (foodResult.needsClarification) {
-            appendAssistant(
-              foodResult.question ?? "Could you tell me a little more about the portion so I can log it accurately?",
-              "clarification"
-            );
-            return;
-          }
-          if (foodResult.items?.length) {
+      switch (result.intent) {
+        case "food_log": {
+          if (result.items?.length) {
             const proposal: CoachFoodProposal = {
               isFoodLogging: true,
               needsClarification: false,
-              mealType: foodResult.mealType ?? pendingProposal?.mealType ?? "snack",
-              items: foodResult.items,
+              mealType: result.mealType ?? "snack",
+              items: result.items,
               sourceMessage: message,
             };
             setPendingProposal(proposal);
             appendAssistant(
-              "Here is my best estimate. Take a quick look and confirm or tell me what you want to adjust.",
+              result.reply || "Here's my estimate. Take a look and confirm or tell me what to adjust.",
               "food_summary",
               proposal
             );
-            return;
+          } else {
+            appendAssistant(result.reply || "Got it — what did you eat?", "text");
           }
+          break;
         }
-      }
 
-      const result = await sendCoachMessage(message, coachContext, history);
-      appendAssistant(result.reply?.trim() || "Something went wrong, try again.", "text");
-      if (recentSuccessfulFoodLogs > 0) {
-        setRecentSuccessfulFoodLogs((current) => Math.max(current - 1, 0));
+        case "macro_edit": {
+          if (result.macroEdit && pendingProposal) {
+            const { itemIndex, calories, protein, carbs, fat, name } = result.macroEdit;
+            const updatedItems = pendingProposal.items.map((item, i) => {
+              if (i !== itemIndex) return item;
+              return {
+                ...item,
+                ...(name != null ? { name } : {}),
+                ...(calories != null ? { calories } : {}),
+                ...(protein != null ? { protein } : {}),
+                ...(carbs != null ? { carbs } : {}),
+                ...(fat != null ? { fat } : {}),
+              };
+            });
+            const updatedProposal = { ...pendingProposal, items: updatedItems };
+            setPendingProposal(updatedProposal);
+            appendAssistant(
+              result.reply || "Updated. Take a look and confirm when you're ready.",
+              "food_summary",
+              updatedProposal
+            );
+          } else {
+            appendAssistant(result.reply || "Got it.", "text");
+          }
+          break;
+        }
+
+        case "clarification": {
+          appendAssistant(result.reply, "clarification");
+          break;
+        }
+
+        case "chat":
+        default: {
+          appendAssistant(result.reply || "I'm here with you.", "text");
+          break;
+        }
       }
     } catch (error) {
       appendAssistant(
-        error instanceof Error ? error.message : "I hit a snag while trying to respond. Please try again.",
+        error instanceof Error ? error.message : "I hit a snag. Please try again.",
         "status"
       );
     } finally {
@@ -323,38 +196,12 @@ export function CoachChat() {
     }
   };
 
-  const submit = async () => {
-    if (!draft.trim()) return;
-    const message = draft.trim();
-
-    if (pendingProposal && adjustMode) {
-      const overridden = extractMacroOverride(message, pendingProposal);
-      if (overridden) {
-        setPendingProposal(overridden);
-        setAdjustMode(false);
-        appendAssistant(
-          "Updated. Take a look and confirm when you're ready.",
-          "food_summary",
-          overridden
-        );
-        addCoachMessage({ role: "user", content: message, timestamp: new Date().toISOString() });
-        setDraft("");
-        return;
-      }
-    }
-
-    addCoachMessage({ role: "user", content: message, timestamp: new Date().toISOString() });
-    setDraft("");
-    await sendMessage(message);
-  };
-
-  // ── Confirm food proposal ──────────────────────────────────────────────────
-
   const confirmProposal = async () => {
     if (!pendingProposal) return;
 
     setConfirming(true);
     const proposalToSave = pendingProposal;
+
     const result = await saveMultipleFoodLogs(
       proposalToSave.items.map((item) => ({
         foodName: item.name,
@@ -371,6 +218,7 @@ export function CoachChat() {
         sugarG: item.sugar,
       }))
     );
+
     setConfirming(false);
 
     if (result.error) {
@@ -381,83 +229,7 @@ export function CoachChat() {
     appendAssistant(`Logged to your ${proposalToSave.mealType}.`, "status");
     appendAssistant(buildLoggedFollowUp(proposalToSave.mealType, proposalToSave.items), "text");
     setPendingProposal(null);
-    setAdjustMode(false);
-    setRecentSuccessfulFoodLogs(2);
   };
-
-  // ── Message actions ────────────────────────────────────────────────────────
-
-  const handleLongPress = (index: number) => {
-    setMenuTargetIndex(index);
-    setMenuVisible(true);
-  };
-
-  const closeMenu = () => {
-    setMenuVisible(false);
-    setMenuTargetIndex(null);
-  };
-
-  // Copy assistant message text
-  const handleCopy = () => {
-    if (menuTargetMessage) {
-      Clipboard.setString(menuTargetMessage.content);
-      setCopiedIndex(menuTargetIndex);
-      setTimeout(() => setCopiedIndex(null), 1500);
-    }
-    closeMenu();
-  };
-
-  // Regenerate: remove the assistant message and resend the last user message before it
-  const handleRegenerate = async () => {
-    if (menuTargetIndex === null) return;
-    closeMenu();
-
-    // Find the user message that prompted this response
-    let userMessageIndex = menuTargetIndex - 1;
-    while (userMessageIndex >= 0 && conversation[userMessageIndex].role !== "user") {
-      userMessageIndex--;
-    }
-    if (userMessageIndex < 0) return;
-
-    const userMessage = conversation[userMessageIndex].content;
-    // Build history up to (but not including) that user message
-    const historyBefore = conversation.slice(0, userMessageIndex) as AiConversationMessage[];
-
-    // Remove the assistant message (and everything after it) from store
-    // We do this by clearing from menuTargetIndex onward via deleteCoachMessage
-    // Delete from end back to userMessageIndex (inclusive of assistant, keep user)
-    for (let i = conversation.length - 1; i >= menuTargetIndex; i--) {
-      useAppStore.getState().deleteCoachMessage(conversation[i].timestamp, i);
-    }
-
-    // Now resend
-    await sendMessage(userMessage, historyBefore);
-  };
-
-  // Edit user message: repopulate draft, remove message and everything after
-  const handleEdit = () => {
-    if (menuTargetIndex === null || !menuTargetMessage) return;
-    closeMenu();
-
-    setDraft(menuTargetMessage.content);
-
-    // Remove this message and everything after it
-    for (let i = conversation.length - 1; i >= menuTargetIndex; i--) {
-      useAppStore.getState().deleteCoachMessage(conversation[i].timestamp, i);
-    }
-  };
-
-  // Delete user message and everything after it
-  const handleDelete = () => {
-    if (menuTargetIndex === null) return;
-    closeMenu();
-
-    for (let i = conversation.length - 1; i >= menuTargetIndex; i--) {
-      useAppStore.getState().deleteCoachMessage(conversation[i].timestamp, i);
-    }
-  };
-
-  // ── Quick start options ────────────────────────────────────────────────────
 
   const openInsights = async () => {
     await loadFoodMoodInsights();
@@ -491,70 +263,36 @@ export function CoachChat() {
     });
   };
 
-  // ── Render ─────────────────────────────────────────────────────────────────
-
   return (
     <View style={styles.stack}>
-      {/* Action menu */}
-      <MessageMenu
-        visible={menuVisible}
-        role={menuTargetMessage?.role ?? "assistant"}
-        onCopy={handleCopy}
-        onEdit={handleEdit}
-        onDelete={handleDelete}
-        onRegenerate={() => void handleRegenerate()}
-        onClose={closeMenu}
-      />
-
-      {/* Start options */}
       {!hasStartedConversation ? (
         <Card>
           <SectionTitle
             eyebrow="Start Here"
             title="What would feel most supportive right now?"
-            subtitle="These are just gentle starting points. We can move anywhere in the conversation from there."
+            subtitle="These are just gentle starting points. We can move anywhere from there."
           />
           <Pressable style={styles.optionCard} onPress={() => void openInsights()}>
             <Text style={styles.optionTitle}>Analyze my Food-Mood patterns</Text>
-            <Text style={styles.optionBody}>
-              Bring your recent logs into focus and show what's actually starting to connect.
-            </Text>
+            <Text style={styles.optionBody}>Bring your recent logs into focus and show what's actually starting to connect.</Text>
           </Pressable>
           <Pressable style={styles.optionCard} onPress={openFoodLogging}>
             <Text style={styles.optionTitle}>Log my food</Text>
-            <Text style={styles.optionBody}>
-              Describe what you ate naturally, and I'll help turn it into a real food log.
-            </Text>
+            <Text style={styles.optionBody}>Describe what you ate naturally, and I'll help turn it into a real food log.</Text>
           </Pressable>
           <Pressable style={styles.optionCard} onPress={openGeneralChat}>
             <Text style={styles.optionTitle}>Just talk</Text>
-            <Text style={styles.optionBody}>
-              No agenda needed. We can talk through energy, mood, guilt, stress, or whatever is sitting with you.
-            </Text>
+            <Text style={styles.optionBody}>No agenda needed. We can talk through energy, mood, guilt, stress, or whatever is sitting with you.</Text>
           </Pressable>
         </Card>
       ) : null}
 
-      {/* Conversation */}
       {conversation.map((message, index) => (
         <View key={`${message.timestamp}-${index}`} style={styles.messageWrap}>
-          <Pressable
-            onLongPress={() => handleLongPress(index)}
-            delayLongPress={350}
-            style={[
-              styles.bubble,
-              message.role === "user" ? styles.userBubble : styles.assistantBubble,
-            ]}
-          >
+          <View style={[styles.bubble, message.role === "user" ? styles.userBubble : styles.assistantBubble]}>
             <Text style={styles.bubbleText}>{message.content}</Text>
-          </Pressable>
+          </View>
 
-          {/* Copied confirmation */}
-          {copiedIndex === index ? (
-            <Text style={styles.copiedLabel}>Copied!</Text>
-          ) : null}
-
-          {/* Food proposal card */}
           {message.role === "assistant" && message.foodProposal ? (
             <Card>
               <Text style={styles.summaryLabel}>{message.foodProposal.mealType}</Text>
@@ -575,25 +313,20 @@ export function CoachChat() {
                   </View>
                 </View>
               ))}
-              {pendingProposal &&
-              message.foodProposal.sourceMessage === pendingProposal.sourceMessage ? (
+              {pendingProposal && message.foodProposal.sourceMessage === pendingProposal.sourceMessage ? (
                 <View style={styles.actionRow}>
                   <PrimaryButton
                     label={confirming ? "Saving..." : "Confirm and log"}
                     onPress={() => void confirmProposal()}
                   />
                   <PrimaryButton
-                    label={adjustMode ? "Adjusting..." : "Adjust"}
+                    label="Adjust"
                     secondary
                     onPress={() => {
-                      if (adjustMode) return;
-                      setAdjustMode(true);
-                      addCoachMessage({
-                        role: "assistant",
-                        content: "Tell me what to adjust — you can say things like 'the protein bar is 230 cal 20g protein' and I'll update it.",
-                        timestamp: new Date().toISOString(),
-                        kind: "clarification",
-                      });
+                      appendAssistant(
+                        "Tell me what to change — calories, protein, carbs, fat, or the name. I'll update it right away.",
+                        "clarification"
+                      );
                     }}
                   />
                 </View>
@@ -603,7 +336,6 @@ export function CoachChat() {
         </View>
       ))}
 
-      {/* Input */}
       <Card>
         <Field
           label="Message"
@@ -612,25 +344,27 @@ export function CoachChat() {
           placeholder="I had two scrambled eggs with toast and a coffee..."
           multiline
         />
-        <PrimaryButton label={sending ? "Thinking..." : "Send"} onPress={() => void submit()} />
+        <PrimaryButton
+          label={sending ? "Thinking..." : "Send"}
+          onPress={() => void submit()}
+        />
         {sending ? (
           <View style={styles.loadingRow}>
             <ActivityIndicator color={colors.accentPrimary} />
             <Text style={styles.loadingText}>
               {pendingProposal
-                ? "Holding your food log in place while I respond..."
-                : "Listening and pulling your context together..."}
+                ? "Updating your food log..."
+                : "Listening and thinking..."}
             </Text>
           </View>
         ) : null}
       </Card>
 
-      {/* Suggested prompts */}
       <View style={styles.promptRow}>
         <Text style={styles.promptTitle}>Suggested prompts</Text>
         {[
           "I had two scrambled eggs with toast and a coffee",
-          "Actually how has my mood been this week?",
+          "How has my mood been this week?",
           "Lunch was a turkey sandwich, chips, and an apple",
         ].map((prompt) => (
           <Pressable key={prompt} onPress={() => setDraft(prompt)}>
@@ -643,41 +377,18 @@ export function CoachChat() {
 }
 
 const styles = StyleSheet.create({
-  stack: {
-    gap: spacing.md,
-  },
-  messageWrap: {
-    gap: 4,
-  },
-  bubble: {
-    padding: spacing.md,
-    borderRadius: radii.lg,
-    maxWidth: "88%",
-  },
-  userBubble: {
-    alignSelf: "flex-end",
-    backgroundColor: colors.accentPrimary,
-  },
+  stack: { gap: spacing.md },
+  messageWrap: { gap: spacing.sm },
+  bubble: { padding: spacing.md, borderRadius: radii.lg, maxWidth: "88%" },
+  userBubble: { alignSelf: "flex-end", backgroundColor: colors.accentPrimary },
   assistantBubble: {
     alignSelf: "flex-start",
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
   },
-  bubbleText: {
-    color: colors.textPrimary,
-    fontSize: 16,
-    lineHeight: 25,
-  },
-  copiedLabel: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    alignSelf: "flex-start",
-    marginLeft: 4,
-  },
-  promptRow: {
-    gap: spacing.sm,
-  },
+  bubbleText: { color: colors.textPrimary, fontSize: 16, lineHeight: 25 },
+  promptRow: { gap: spacing.sm },
   promptTitle: {
     color: colors.textSecondary,
     fontSize: 12,
@@ -701,16 +412,8 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: 6,
   },
-  optionTitle: {
-    color: colors.textPrimary,
-    fontSize: 17,
-    fontWeight: "600",
-  },
-  optionBody: {
-    color: colors.textSecondary,
-    fontSize: 15,
-    lineHeight: 24,
-  },
+  optionTitle: { color: colors.textPrimary, fontSize: 17, fontWeight: "600" },
+  optionBody: { color: colors.textSecondary, fontSize: 15, lineHeight: 24 },
   summaryLabel: {
     color: colors.textSecondary,
     fontSize: 12,
@@ -723,40 +426,22 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingVertical: 6,
   },
-  summaryCopy: {
-    gap: 4,
-  },
+  summaryCopy: { gap: 4 },
   summaryName: {
     color: colors.textPrimary,
     fontSize: 15,
     fontWeight: "600",
     maxWidth: 180,
   },
-  summaryMeta: {
-    color: colors.textSecondary,
-    fontSize: 13,
-  },
-  estimateTag: {
-    color: colors.textSecondary,
-    fontSize: 12,
-  },
+  summaryMeta: { color: colors.textSecondary, fontSize: 13 },
+  estimateTag: { color: colors.textSecondary, fontSize: 12 },
   summaryMacro: {
     color: colors.textPrimary,
     fontSize: 15,
     fontWeight: "600",
     textAlign: "right",
   },
-  actionRow: {
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-  },
-  loadingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-  },
-  loadingText: {
-    color: colors.textSecondary,
-    fontSize: 14,
-  },
+  actionRow: { gap: spacing.sm, marginTop: spacing.sm },
+  loadingRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  loadingText: { color: colors.textSecondary, fontSize: 14 },
 });
