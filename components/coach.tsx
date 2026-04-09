@@ -21,9 +21,11 @@ import type { CoachFoodItem, CoachFoodProposal, AiConversationMessage } from "@/
 
 const FOOD_TRIGGER_PATTERN = /\b(i had|i ate|i drank|log|add)\b/i;
 const QUESTION_START_PATTERN = /^(what|why|how|where|when)\b/i;
+const FEELING_PATTERN = /\b(i feel|feeling|i'm feeling|felt|greasy|crappy|bloated|tired|sick|nauseous|full|stuffed|hungry|anxious|stressed|good|great|bad|awful|terrible|amazing)\b/i;
 
 function shouldUseFoodParser(message: string, recentSuccessfulFoodLogs: number) {
   const trimmed = message.trim();
+  if (FEELING_PATTERN.test(trimmed)) return false;
   const wordCount = trimmed.split(/\s+/).filter(Boolean).length;
   const hasFoodTrigger = FOOD_TRIGGER_PATTERN.test(trimmed);
   const startsWithQuestionWord = QUESTION_START_PATTERN.test(trimmed.toLowerCase());
@@ -164,6 +166,7 @@ export function CoachChat() {
   const [confirming, setConfirming] = useState(false);
   const [recentSuccessfulFoodLogs, setRecentSuccessfulFoodLogs] = useState(0);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [adjustMode, setAdjustMode] = useState(false);
 
   // Message action menu state
   const [menuVisible, setMenuVisible] = useState(false);
@@ -174,6 +177,7 @@ export function CoachChat() {
     setDraft("");
     setPendingProposal(null);
     setRecentSuccessfulFoodLogs(0);
+    setAdjustMode(false);
   }, [conversationResetCount]);
 
   const hasStartedConversation = useMemo(
@@ -225,6 +229,31 @@ export function CoachChat() {
       foodProposal,
     });
   };
+
+  function extractMacroOverride(message: string, proposal: CoachFoodProposal | null): CoachFoodProposal | null {
+    if (!proposal) return null;
+    const calMatch = message.match(/(\d+)\s*(cal|calories|kcal)/i);
+    const proteinMatch = message.match(/(\d+)\s*g?\s*protein/i);
+    const carbsMatch = message.match(/(\d+)\s*g?\s*(carb|carbs|carbohydrate)/i);
+    const fatMatch = message.match(/(\d+)\s*g?\s*fat/i);
+
+    if (!calMatch && !proteinMatch && !carbsMatch && !fatMatch) return null;
+
+    const updatedItems = proposal.items.map((item, i) => {
+      const isOnly = proposal.items.length === 1;
+      const isLast = i === proposal.items.length - 1;
+      if (!isOnly && !isLast) return item;
+      return {
+        ...item,
+        calories: calMatch ? Number(calMatch[1]) : item.calories,
+        protein: proteinMatch ? Number(proteinMatch[1]) : item.protein,
+        carbs: carbsMatch ? Number(carbsMatch[1]) : item.carbs,
+        fat: fatMatch ? Number(fatMatch[1]) : item.fat,
+      };
+    });
+
+    return { ...proposal, items: updatedItems };
+  }
 
   // ── Core send ──────────────────────────────────────────────────────────────
 
@@ -297,6 +326,23 @@ export function CoachChat() {
   const submit = async () => {
     if (!draft.trim()) return;
     const message = draft.trim();
+
+    if (pendingProposal && adjustMode) {
+      const overridden = extractMacroOverride(message, pendingProposal);
+      if (overridden) {
+        setPendingProposal(overridden);
+        setAdjustMode(false);
+        appendAssistant(
+          "Updated. Take a look and confirm when you're ready.",
+          "food_summary",
+          overridden
+        );
+        addCoachMessage({ role: "user", content: message, timestamp: new Date().toISOString() });
+        setDraft("");
+        return;
+      }
+    }
+
     addCoachMessage({ role: "user", content: message, timestamp: new Date().toISOString() });
     setDraft("");
     await sendMessage(message);
@@ -335,6 +381,7 @@ export function CoachChat() {
     appendAssistant(`Logged to your ${proposalToSave.mealType}.`, "status");
     appendAssistant(buildLoggedFollowUp(proposalToSave.mealType, proposalToSave.items), "text");
     setPendingProposal(null);
+    setAdjustMode(false);
     setRecentSuccessfulFoodLogs(2);
   };
 
@@ -536,12 +583,14 @@ export function CoachChat() {
                     onPress={() => void confirmProposal()}
                   />
                   <PrimaryButton
-                    label="Adjust"
+                    label={adjustMode ? "Adjusting..." : "Adjust"}
                     secondary
                     onPress={() => {
+                      if (adjustMode) return;
+                      setAdjustMode(true);
                       addCoachMessage({
                         role: "assistant",
-                        content: "Tell me what to adjust and I'll revise the estimate.",
+                        content: "Tell me what to adjust — you can say things like 'the protein bar is 230 cal 20g protein' and I'll update it.",
                         timestamp: new Date().toISOString(),
                         kind: "clarification",
                       });

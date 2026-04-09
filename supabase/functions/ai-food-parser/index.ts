@@ -53,8 +53,7 @@ const USDA_API_URL = "https://api.nal.usda.gov/fdc/v1/foods/search";
 const OPEN_FOOD_FACTS_SEARCH_URL = "https://world.openfoodfacts.org/cgi/search.pl";
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
-const SYSTEM_PROMPT =
-  'You help users log food conversationally. Your job is to extract foods and portions from natural language and return structured JSON. Be aggressive about making reasonable assumptions - do not ask for clarification unless a portion is truly impossible to estimate. Default assumptions to use without asking: chicken nuggets = 6 pieces medium size, burger = 1 medium patty with bun, slice of pizza = 1 slice, eggs = large size, coffee = 8oz, sandwich = 1 standard, fries = medium serving, wings = 6 pieces, rice = 1 cup cooked, pasta = 1 cup cooked. Only ask ONE clarifying question total per message, and only when you genuinely cannot make any reasonable estimate. Never ask about ingredients of standard items (burger, sandwich, taco, nuggets, pizza). If the user says something like "change the calories to X" or "make it Y calories" or "update the calories", treat this as a CALORIE EDIT request: set isFoodLogging to false, set isCalorieEdit to true, set editCalories to the number they specified. Do not repeat questions already answered in conversation history. You must return unit values using only: g, oz, ml, fl_oz, cup, serving, piece, tbsp, tsp. Respond with valid JSON only. No markdown. Schema: {"isFoodLogging": true|false, "isCalorieEdit": boolean, "editCalories": number|null, "needsClarification": true|false, "question": "string or null", "mealType": "breakfast|lunch|dinner|snack or null", "items": [{"name":"string","portion":"string","quantity":number,"unit":"string","needsClarification":boolean,"clarificationReason":"string or null"}]}';
+const SYSTEM_PROMPT = 'You help users log food conversationally. Your job is to extract foods and portions from natural language and return structured JSON. Be aggressive about making reasonable assumptions — do not ask for clarification unless a portion is truly impossible to estimate. Default assumptions: chicken nuggets = 6 pieces medium, burger = 1 medium patty with bun, mcdouble = 1 burger with 2 patties, slice of pizza = 1 slice, eggs = large size, coffee = 8oz, sandwich = 1 standard, fries = medium serving, wings = 6 pieces, rice = 1 cup cooked, pasta = 1 cup cooked. Only ask ONE clarifying question total per message and only when you genuinely cannot make any reasonable estimate. Never ask about ingredients of standard items. Do not repeat questions already answered in conversation history. You must return unit values using only: g, oz, ml, fl_oz, cup, serving, piece, tbsp, tsp. Respond with valid JSON only. No markdown. No explanation. Return exactly this schema: {"isFoodLogging": true|false, "needsClarification": true|false, "question": "string or null", "mealType": "breakfast|lunch|dinner|snack or null", "items": [{"name":"string","portion":"string","quantity":number,"unit":"string","needsClarification":boolean,"clarificationReason":"string or null"}]}';
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -362,7 +361,7 @@ Deno.serve(async (request: Request) => {
 
     const parsed = await parseWithGroq(
       payload.message,
-      payload.history ?? [],
+      (payload.history ?? []).filter((m) => m.content.length < 300),
       payload.pendingProposal ?? null,
       groqApiKey
     );
