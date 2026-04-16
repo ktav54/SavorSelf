@@ -227,7 +227,7 @@ export function MacroSummaryBar() {
   );
 }
 
-export function FoodLogSection({ mealType, logs }: { mealType: FoodLog["mealType"]; logs: FoodLog[] }) {
+export function FoodLogSection({ mealType, logs, onAddFood }: { mealType: FoodLog["mealType"]; logs: FoodLog[]; onAddFood?: () => void }) {
   const deleteFoodLog = useAppStore((state) => state.deleteFoodLog);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const mealCalories = logs.reduce((sum, item) => sum + item.calories, 0);
@@ -256,7 +256,7 @@ export function FoodLogSection({ mealType, logs }: { mealType: FoodLog["mealType
       ) : (
         <Text style={styles.emptyText}>Nothing logged here yet. Add what felt meaningful, not everything at once.</Text>
       )}
-      <Pressable style={styles.addMealButton}>
+      <Pressable style={styles.addMealButton} onPress={onAddFood}>
         <Text style={styles.addMealText}>Add to {mealType}</Text>
       </Pressable>
     </Card>
@@ -268,7 +268,7 @@ export function FoodSearchCard() {
   const foodLoading = useAppStore((state) => state.foodLoading);
   const foodError = useAppStore((state) => state.foodError);
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<FoodSearchResult[]>([]);
+  const [result, setResult] = useState<FoodSearchResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [hasSearched, setHasSearched] = useState(false);
@@ -303,7 +303,7 @@ export function FoodSearchCard() {
 
   const runSearch = async () => {
     if (!query.trim()) {
-      setResults([]);
+      setResult(null);
       setError("");
       setHasSearched(false);
       return;
@@ -315,10 +315,10 @@ export function FoodSearchCard() {
 
     try {
       const nextResults = await searchFoodCatalog(query);
-      setResults(nextResults);
+      setResult(nextResults[0] ?? null);
     } catch (searchError) {
-      setResults([]);
-      setError(searchError instanceof Error ? searchError.message : "Unable to search foods right now.");
+      setResult(null);
+      setError(searchError instanceof Error ? searchError.message : "Unable to look up nutrition right now.");
     } finally {
       setLoading(false);
     }
@@ -369,12 +369,12 @@ export function FoodSearchCard() {
   return (
     <Card>
       <SectionTitle
-        eyebrow="Food Search"
-        title="Search food databases"
-        subtitle="Search USDA and Open Food Facts together, with whole foods favored from USDA and packaged foods from Open Food Facts."
+        eyebrow="Add Food"
+        title="What did you eat?"
+        subtitle="Type any food and we'll look up the nutrition for you."
       />
       <Field
-        label="Search foods"
+        label="Food name"
         value={query}
         onChangeText={setQuery}
         placeholder="Try salmon, oats, yogurt, kimchi..."
@@ -383,31 +383,27 @@ export function FoodSearchCard() {
       {loading ? (
         <View style={styles.loadingRow}>
           <ActivityIndicator color={colors.accentPrimary} />
-          <Text style={styles.loadingText}>Searching USDA and Open Food Facts...</Text>
+          <Text style={styles.loadingText}>Looking up nutrition...</Text>
         </View>
       ) : null}
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
-      {results.length ? (
+      {result ? (
         <View style={styles.searchResults}>
-          {results.map((item) => (
-            <Pressable
-              key={`${item.source}-${item.id}`}
-              style={styles.searchResultCard}
-              onPress={() => setSelectedFood(item)}
-            >
-              <Text style={styles.foodName}>{formatFoodName(item.description)}</Text>
-              {item.subtitle ? <Text style={styles.searchSource}>{item.subtitle}</Text> : null}
-              <Text style={styles.foodMeta}>
-                {Math.round(item.caloriesPer100g)} cal | {Math.round(item.proteinPer100g)}g protein | {Math.round(item.carbsPer100g)}g carbs | {Math.round(item.fatPer100g)}g fat
-              </Text>
-              <Text style={styles.tapHint}>Tap to add this food</Text>
-            </Pressable>
-          ))}
+          <Pressable
+            style={styles.searchResultCard}
+            onPress={() => setSelectedFood(result)}
+          >
+            <Text style={styles.foodName}>{formatFoodName(result.description)}</Text>
+            <Text style={styles.foodMeta}>
+              {Math.round(result.caloriesPer100g)} cal | {Math.round(result.proteinPer100g)}g protein | {Math.round(result.carbsPer100g)}g carbs | {Math.round(result.fatPer100g)}g fat
+            </Text>
+            <Text style={styles.tapHint}>Tap to add this food</Text>
+          </Pressable>
         </View>
       ) : null}
-      {hasSearched && !loading && !error && results.length === 0 ? (
+      {hasSearched && !loading && !error && !result ? (
         <Text style={styles.emptyText}>
-          No foods matched that search. Try a broader term like "salmon" or "oatmeal".
+          We couldn't find nutrition for that just yet. Try a simpler food name.
         </Text>
       ) : null}
       <Modal visible={Boolean(selectedFood)} animationType="slide" transparent onRequestClose={closeModal}>
@@ -469,7 +465,6 @@ export function FoodSearchCard() {
     </Card>
   );
 }
-
 function SwipeableFoodRow({
   item,
   deleting,
@@ -865,3 +860,4 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 });
+

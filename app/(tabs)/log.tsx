@@ -27,10 +27,10 @@ export default function LogScreen() {
       <MoodCheckInStrip />
       <MacroSummaryBar />
       <FoodSearchCard />
-      <FoodLogSection mealType="breakfast" logs={foodLogs.filter((item) => item.mealType === "breakfast")} />
-      <FoodLogSection mealType="lunch" logs={foodLogs.filter((item) => item.mealType === "lunch")} />
-      <FoodLogSection mealType="dinner" logs={foodLogs.filter((item) => item.mealType === "dinner")} />
-      <FoodLogSection mealType="snack" logs={foodLogs.filter((item) => item.mealType === "snack")} />
+      <FoodLogSection mealType="breakfast" logs={foodLogs.filter((item) => item.mealType === "breakfast")} onAddFood={() => {}} />
+      <FoodLogSection mealType="lunch" logs={foodLogs.filter((item) => item.mealType === "lunch")} onAddFood={() => {}} />
+      <FoodLogSection mealType="dinner" logs={foodLogs.filter((item) => item.mealType === "dinner")} onAddFood={() => {}} />
+      <FoodLogSection mealType="snack" logs={foodLogs.filter((item) => item.mealType === "snack")} onAddFood={() => {}} />
       <QuickLogStrip />
       <GraceModeCard />
     </Screen>
