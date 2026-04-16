@@ -1,6 +1,6 @@
 // components/coach.tsx
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { colors, radii, spacing } from "@/constants/theme";
 import { Card, Field, PrimaryButton, SectionTitle } from "@/components/ui";
 import { formatFoodName } from "@/lib/utils";
@@ -51,6 +51,13 @@ export function CoachChat() {
   const [pendingProposal, setPendingProposal] = useState<CoachFoodProposal | null>(null);
   const [sending, setSending] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [adjustModalVisible, setAdjustModalVisible] = useState(false);
+  const [adjustingItem, setAdjustingItem] = useState<number | null>(null);
+  const [editCalories, setEditCalories] = useState("");
+  const [editProtein, setEditProtein] = useState("");
+  const [editCarbs, setEditCarbs] = useState("");
+  const [editFat, setEditFat] = useState("");
+  const [editName, setEditName] = useState("");
 
   useEffect(() => {
     setDraft("");
@@ -230,6 +237,37 @@ export function CoachChat() {
     });
   };
 
+  const openAdjustModal = (itemIndex: number) => {
+    if (!pendingProposal) return;
+    const item = pendingProposal.items[itemIndex];
+    setAdjustingItem(itemIndex);
+    setEditName(item.name);
+    setEditCalories(String(Math.round(item.calories)));
+    setEditProtein(String(Math.round(item.protein)));
+    setEditCarbs(String(Math.round(item.carbs)));
+    setEditFat(String(Math.round(item.fat)));
+    setAdjustModalVisible(true);
+  };
+
+  const applyAdjustment = () => {
+    if (!pendingProposal || adjustingItem === null) return;
+    const updatedItems = pendingProposal.items.map((item, i) => {
+      if (i !== adjustingItem) return item;
+      return {
+        ...item,
+        name: editName.trim() || item.name,
+        calories: Number(editCalories) || item.calories,
+        protein: Number(editProtein) || item.protein,
+        carbs: Number(editCarbs) || item.carbs,
+        fat: Number(editFat) || item.fat,
+      };
+    });
+    const updatedProposal = { ...pendingProposal, items: updatedItems };
+    setPendingProposal(updatedProposal);
+    setAdjustModalVisible(false);
+    setAdjustingItem(null);
+  };
+
   return (
     <View style={styles.stack}>
       {!hasStartedConversation ? (
@@ -254,6 +292,83 @@ export function CoachChat() {
         </Card>
       ) : null}
 
+      <Modal
+        transparent
+        animationType="fade"
+        visible={adjustModalVisible}
+        onRequestClose={() => setAdjustModalVisible(false)}
+      >
+        <Pressable
+          style={{ flex: 1, backgroundColor: "rgba(44,26,14,0.4)", justifyContent: "center", alignItems: "center", padding: 24 }}
+          onPress={() => setAdjustModalVisible(false)}
+        >
+          <Pressable
+            style={{ backgroundColor: "#FAF7F2", borderRadius: 20, padding: 24, width: "100%", gap: 16, borderWidth: 1, borderColor: "rgba(44,26,14,0.1)" }}
+            onPress={() => {}}
+          >
+            <Text style={{ fontSize: 18, fontWeight: "700", color: "#2C1A0E" }}>Edit item</Text>
+            <Text style={{ fontSize: 12, color: "#7A6155", textTransform: "uppercase", letterSpacing: 0.5 }}>Name</Text>
+            <TextInput
+              value={editName}
+              onChangeText={setEditName}
+              style={{ borderWidth: 1, borderColor: "rgba(44,26,14,0.1)", borderRadius: 14, padding: 12, fontSize: 16, color: "#2C1A0E", backgroundColor: "#FFFFFF" }}
+            />
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 12, color: "#7A6155", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Calories</Text>
+                <TextInput
+                  value={editCalories}
+                  onChangeText={setEditCalories}
+                  keyboardType="numeric"
+                  style={{ borderWidth: 1, borderColor: "rgba(44,26,14,0.1)", borderRadius: 14, padding: 12, fontSize: 16, color: "#2C1A0E", backgroundColor: "#FFFFFF" }}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 12, color: "#7A6155", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Protein (g)</Text>
+                <TextInput
+                  value={editProtein}
+                  onChangeText={setEditProtein}
+                  keyboardType="numeric"
+                  style={{ borderWidth: 1, borderColor: "rgba(44,26,14,0.1)", borderRadius: 14, padding: 12, fontSize: 16, color: "#2C1A0E", backgroundColor: "#FFFFFF" }}
+                />
+              </View>
+            </View>
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 12, color: "#7A6155", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Carbs (g)</Text>
+                <TextInput
+                  value={editCarbs}
+                  onChangeText={setEditCarbs}
+                  keyboardType="numeric"
+                  style={{ borderWidth: 1, borderColor: "rgba(44,26,14,0.1)", borderRadius: 14, padding: 12, fontSize: 16, color: "#2C1A0E", backgroundColor: "#FFFFFF" }}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 12, color: "#7A6155", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Fat (g)</Text>
+                <TextInput
+                  value={editFat}
+                  onChangeText={setEditFat}
+                  keyboardType="numeric"
+                  style={{ borderWidth: 1, borderColor: "rgba(44,26,14,0.1)", borderRadius: 14, padding: 12, fontSize: 16, color: "#2C1A0E", backgroundColor: "#FFFFFF" }}
+                />
+              </View>
+            </View>
+            <Pressable
+              onPress={applyAdjustment}
+              style={{ backgroundColor: "#C4622D", borderRadius: 14, padding: 14, alignItems: "center" }}
+            >
+              <Text style={{ color: "#FFFFFF", fontSize: 16, fontWeight: "600" }}>Save changes</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setAdjustModalVisible(false)}
+              style={{ alignItems: "center", padding: 8 }}
+            >
+              <Text style={{ color: "#7A6155", fontSize: 15 }}>Cancel</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       {conversation.map((message, index) => (
         <View key={`${message.timestamp}-${index}`} style={styles.messageWrap}>
           <View style={[styles.bubble, message.role === "user" ? styles.userBubble : styles.assistantBubble]}>
@@ -263,10 +378,17 @@ export function CoachChat() {
           {message.role === "assistant" && message.foodProposal ? (
             <Card>
               <Text style={styles.summaryLabel}>{message.foodProposal.mealType}</Text>
-              {message.foodProposal.items.map((item) => (
+              {message.foodProposal.items.map((item, itemIndex) => (
                 <View key={`${message.timestamp}-${item.name}`} style={styles.summaryRow}>
                   <View style={styles.summaryCopy}>
-                    <Text style={styles.summaryName}>{formatFoodName(item.name)}</Text>
+                    <View style={styles.summaryTitleRow}>
+                      <Text style={styles.summaryName}>{formatFoodName(item.name)}</Text>
+                      {message.foodProposal.items.length > 1 ? (
+                        <Pressable onPress={() => openAdjustModal(itemIndex)}>
+                          <Text style={styles.editLink}>Edit</Text>
+                        </Pressable>
+                      ) : null}
+                    </View>
                     {item.foodSource === "ai_estimate" ? (
                       <Text style={styles.estimateTag}>AI estimate</Text>
                     ) : null}
@@ -289,12 +411,7 @@ export function CoachChat() {
                   <PrimaryButton
                     label="Adjust"
                     secondary
-                    onPress={() => {
-                      appendAssistant(
-                        "Tell me what to change - calories, protein, carbs, fat, or the name. I'll update it right away.",
-                        "clarification"
-                      );
-                    }}
+                    onPress={() => openAdjustModal(0)}
                   />
                 </View>
               ) : null}
@@ -394,11 +511,21 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   summaryCopy: { gap: 4 },
+  summaryTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
   summaryName: {
     color: colors.textPrimary,
     fontSize: 15,
     fontWeight: "600",
     maxWidth: 180,
+  },
+  editLink: {
+    color: colors.accentPrimary,
+    fontSize: 13,
+    fontWeight: "600",
   },
   summaryMeta: { color: colors.textSecondary, fontSize: 13 },
   estimateTag: { color: colors.textSecondary, fontSize: 12 },
