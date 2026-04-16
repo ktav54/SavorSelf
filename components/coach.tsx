@@ -100,32 +100,16 @@ export function CoachChat() {
 
   const submit = async () => {
     if (!draft.trim() || sending) return;
-
     const message = draft.trim();
-
-    // Build clean history (exclude long food proposal blobs)
     const history = conversation
       .filter((m) => m.content.length < 400)
       .slice(-10)
       .map((m) => ({ role: m.role, content: m.content }));
-
-    addCoachMessage({
-      role: "user",
-      content: message,
-      timestamp: new Date().toISOString(),
-    });
-
+    addCoachMessage({ role: "user", content: message, timestamp: new Date().toISOString() });
     setDraft("");
     setSending(true);
-
     try {
-      const result = await sendMessage({
-        message,
-        history,
-        context: coachContext,
-        pendingProposal,
-      });
-
+      const result = await sendMessage({ message, history, context: coachContext, pendingProposal });
       switch (result.intent) {
         case "food_log": {
           if (result.items?.length) {
@@ -137,60 +121,43 @@ export function CoachChat() {
               sourceMessage: message,
             };
             setPendingProposal(proposal);
-            appendAssistant(
-              result.reply || "Here's my estimate. Take a look and confirm or tell me what to adjust.",
-              "food_summary",
-              proposal
-            );
-          } else {
-            appendAssistant(result.reply || "Got it — what did you eat?", "text");
-          }
-          break;
-        }
-
-        case "macro_edit": {
-          if (result.macroEdit && pendingProposal) {
-            const { itemIndex, calories, protein, carbs, fat, name } = result.macroEdit;
-            const updatedItems = pendingProposal.items.map((item, i) => {
-              if (i !== itemIndex) return item;
-              return {
-                ...item,
-                ...(name != null ? { name } : {}),
-                ...(calories != null ? { calories } : {}),
-                ...(protein != null ? { protein } : {}),
-                ...(carbs != null ? { carbs } : {}),
-                ...(fat != null ? { fat } : {}),
-              };
-            });
-            const updatedProposal = { ...pendingProposal, items: updatedItems };
-            setPendingProposal(updatedProposal);
-            appendAssistant(
-              result.reply || "Updated. Take a look and confirm when you're ready.",
-              "food_summary",
-              updatedProposal
-            );
+            appendAssistant(result.reply || "Here's my estimate. Confirm or tell me what to adjust.", "food_summary", proposal);
           } else {
             appendAssistant(result.reply || "Got it.", "text");
           }
           break;
         }
-
-        case "clarification": {
+        case "macro_edit": {
+          const edits = (result as any).macroEdits ?? ((result as any).macroEdit ? [(result as any).macroEdit] : null);
+          if (edits?.length && pendingProposal) {
+            const updatedItems = pendingProposal.items.map((item, i) => {
+              const edit = edits.find((e: any) => e.itemIndex === i);
+              if (!edit) return item;
+              return {
+                ...item,
+                ...(edit.name != null ? { name: edit.name } : {}),
+                ...(edit.calories != null ? { calories: edit.calories } : {}),
+                ...(edit.protein != null ? { protein: edit.protein } : {}),
+                ...(edit.carbs != null ? { carbs: edit.carbs } : {}),
+                ...(edit.fat != null ? { fat: edit.fat } : {}),
+              };
+            });
+            const updatedProposal = { ...pendingProposal, items: updatedItems };
+            setPendingProposal(updatedProposal);
+            appendAssistant(result.reply || "Updated.", "food_summary", updatedProposal);
+          } else {
+            appendAssistant(result.reply || "Got it.", "text");
+          }
+          break;
+        }
+        case "clarification":
           appendAssistant(result.reply, "clarification");
           break;
-        }
-
-        case "chat":
-        default: {
+        default:
           appendAssistant(result.reply || "I'm here with you.", "text");
-          break;
-        }
       }
     } catch (error) {
-      appendAssistant(
-        error instanceof Error ? error.message : "I hit a snag. Please try again.",
-        "status"
-      );
+      appendAssistant(error instanceof Error ? error.message : "I hit a snag. Please try again.", "status");
     } finally {
       setSending(false);
     }
@@ -238,7 +205,7 @@ export function CoachChat() {
       role: "assistant",
       content:
         latestInsights.length > 0
-          ? `Here's what stands out right now:\n\n${latestInsights.map((i) => `• ${i.insightBody}`).join("\n")}`
+          ? `Here's what stands out right now:\n\n${latestInsights.map((i) => `� ${i.insightBody}`).join("\n")}`
           : "I'm starting to look for your Food-Mood patterns. A few more check-ins will help me say something personal and true.",
       timestamp: new Date().toISOString(),
       kind: "text",
@@ -324,7 +291,7 @@ export function CoachChat() {
                     secondary
                     onPress={() => {
                       appendAssistant(
-                        "Tell me what to change — calories, protein, carbs, fat, or the name. I'll update it right away.",
+                        "Tell me what to change - calories, protein, carbs, fat, or the name. I'll update it right away.",
                         "clarification"
                       );
                     }}
