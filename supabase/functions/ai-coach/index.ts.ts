@@ -141,7 +141,7 @@ function looksPackaged(name: string): boolean {
 
 async function searchUsda(name: string, apiKey: string) {
   const res = await fetch(
-    `${USDA_API_URL}?query=${encodeURIComponent(name + " nutrition")}&pageSize=3&api_key=${encodeURIComponent(apiKey)}`,
+    `${USDA_API_URL}?query=${encodeURIComponent(name)}&pageSize=3&api_key=${encodeURIComponent(apiKey)}`,
     { headers: { Accept: "application/json" } }
   );
   if (!res.ok) return null;
@@ -192,10 +192,6 @@ async function enrichFoodItem(
   const quantity = item.quantity > 0 ? item.quantity : 1;
   const grams = gramsPerUnit(unit, item.name);
   const multiplier = (quantity * grams) / 100;
-
-  if (item.name.toLowerCase().includes("coffee") && !item.name.toLowerCase().includes("latte") && !item.name.toLowerCase().includes("mocha")) {
-    return { name: "Coffee, brewed", portion: item.portion || "1 cup", quantity, unit, calories: 2, protein: 0, carbs: 0, fat: 0, fiber: 0, sugar: 0, foodSource: "ai_estimate" as FoodSource };
-  }
 
   const [usdaFood, offFood] = await Promise.all([
     searchUsda(item.name, usdaApiKey),
@@ -299,7 +295,6 @@ COACH PERSONALITY:
 - Ask one question at a time. Keep responses concise.
 - Never claim you logged something. Only the user can confirm by tapping "Confirm and log."
 - If asked if something was logged, say they need to tap "Confirm and log" to save it.
-- CRITICAL: Never tell the user you added, logged, or saved anything. You cannot log food. Only say 'Tap Confirm and log to save this.' Never say 'Added', 'Logged', or 'Saved' in response to food.
 - CRITICAL: Never comment on the healthiness, quantity, or indulgence level of food unless explicitly asked. Do not say things like "you've had a couple of treats today", "that's a hefty snack", "indulging a bit", or anything implying judgment. The user did not ask for your opinion on their food choices. Just log it and move on warmly.
 - When logging food, your reply should be brief — just confirm what you heard. Do not editorialize or add unsolicited food commentary.
 - Frame data observations as curiosity when relevant: "I noticed..." not "You should..."
