@@ -306,7 +306,7 @@ export function CoachChat() {
             style={{ backgroundColor: "#FAF7F2", borderRadius: 20, padding: 24, width: "100%", gap: 16, borderWidth: 1, borderColor: "rgba(44,26,14,0.1)" }}
             onPress={() => {}}
           >
-            <Text style={{ fontSize: 18, fontWeight: "700", color: "#2C1A0E" }}>Edit item</Text>
+            <Text style={{ fontSize: 18, fontWeight: "700", color: "#2C1A0E" }}>Food Macros</Text>
             <Text style={{ fontSize: 12, color: "#7A6155", textTransform: "uppercase", letterSpacing: 0.5 }}>Name</Text>
             <TextInput
               value={editName}
@@ -378,7 +378,7 @@ export function CoachChat() {
           {message.role === "assistant" && message.foodProposal ? (
             <Card>
               <Text style={styles.summaryLabel}>{message.foodProposal.mealType}</Text>
-              {message.foodProposal.items.map((item, itemIndex) => (
+              {(pendingProposal && message.foodProposal.sourceMessage === pendingProposal.sourceMessage ? pendingProposal.items : message.foodProposal.items).map((item, itemIndex) => (
                 <View key={`${message.timestamp}-${item.name}`} style={styles.summaryRow}>
                   <View style={styles.summaryCopy}>
                     <View style={styles.summaryTitleRow}>
@@ -428,6 +428,11 @@ export function CoachChat() {
           placeholder="I had two scrambled eggs with toast and a coffee..."
           multiline
         />
+        {draft.length > 400 ? (
+          <Text style={{ color: colors.accentPrimary, fontSize: 12, marginTop: 4 }}>
+            Message is getting long - consider sending in shorter messages for best results.
+          </Text>
+        ) : null}
         <PrimaryButton
           label={sending ? "Thinking..." : "Send"}
           onPress={() => void submit()}
@@ -539,3 +544,5 @@ const styles = StyleSheet.create({
   loadingRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   loadingText: { color: colors.textSecondary, fontSize: 14 },
 });
+
+
