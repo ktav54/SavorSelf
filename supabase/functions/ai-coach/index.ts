@@ -174,7 +174,7 @@ async function estimateWithGroq(name: string, portion: string, apiKey: string) {
       temperature: 0.1,
       messages: [
         { role: "system", content: "Return valid JSON only. No markdown. No explanation." },
-        { role: "user", content: `Accurate nutritional info for ${name} (${portion}). Return exactly: {"calories":number,"protein_g":number,"carbs_g":number,"fat_g":number}` },
+        { role: "user", content: `Give accurate nutrition for ${name} (${portion}) as typically prepared and consumed. Black coffee = ~2 cal. Scrambled eggs = ~70 cal each. Be precise. Return only: {"calories":number,"protein_g":number,"carbs_g":number,"fat_g":number}` },
       ],
     }),
   });
@@ -190,75 +190,20 @@ async function enrichFoodItem(
 ): Promise<FoodItem> {
   const unit = normalizeUnit(item.unit);
   const quantity = item.quantity > 0 ? item.quantity : 1;
-  const grams = gramsPerUnit(unit, item.name);
-  const multiplier = (quantity * grams) / 100;
-
-  const [usdaFood, offFood] = await Promise.all([
-    searchUsda(item.name, usdaApiKey),
-    looksPackaged(item.name) ? searchOFF(item.name).catch(() => null) : Promise.resolve(null),
-  ]);
-
-  if (!usdaFood && !offFood) {
-    const est = await estimateWithGroq(item.name, item.portion || `${quantity} ${unit}`, groqApiKey);
-    return {
-      name: item.name,
-      portion: item.portion || `${quantity} ${unit}`,
-      quantity,
-      unit,
-      calories: roundNutrition(est.calories),
-      protein: roundNutrition(est.protein_g),
-      carbs: roundNutrition(est.carbs_g),
-      fat: roundNutrition(est.fat_g),
-      fiber: 0,
-      sugar: 0,
-      foodSource: "ai_estimate",
-    };
-  }
-
-  const useOFF = looksPackaged(item.name) && offFood && offValue(offFood, "energy-kcal_100g") > 0;
-  const source: FoodSource = useOFF ? "open_food_facts" : usdaFood ? "usda" : "open_food_facts";
-  const food = source === "usda" ? usdaFood : offFood;
-
-  const cal = source === "usda" ? nutrientValue(food, ["Energy"], ["1008"]) : offValue(food, "energy-kcal_100g");
-  const pro = source === "usda" ? nutrientValue(food, ["Protein"], ["1003"]) : offValue(food, "proteins_100g");
-  const carb = source === "usda" ? nutrientValue(food, ["Carbohydrate, by difference"], ["1005"]) : offValue(food, "carbohydrates_100g");
-  const fat = source === "usda" ? nutrientValue(food, ["Total lipid (fat)"], ["1004"]) : offValue(food, "fat_100g");
-  const fiber = source === "usda" ? nutrientValue(food, ["Fiber, total dietary"], ["1079"]) : offValue(food, "fiber_100g");
-  const sugar = source === "usda" ? nutrientValue(food, ["Sugars, total including NLEA"], ["2000"]) : offValue(food, "sugars_100g");
-  const description = source === "usda" ? (food?.description ?? item.name) : (food?.product_name ?? item.name);
-  const externalFoodId = source === "usda" ? String(food?.fdcId ?? "") : String(food?.code ?? "");
-
-  // If nutrition data looks wrong (0 calories from DB), fall back to AI estimate
-  if (cal === 0) {
-    const est = await estimateWithGroq(item.name, item.portion || `${quantity} ${unit}`, groqApiKey);
-    return {
-      name: item.name,
-      portion: item.portion || `${quantity} ${unit}`,
-      quantity,
-      unit,
-      calories: roundNutrition(est.calories),
-      protein: roundNutrition(est.protein_g),
-      carbs: roundNutrition(est.carbs_g),
-      fat: roundNutrition(est.fat_g),
-      fiber: 0,
-      sugar: 0,
-      foodSource: "ai_estimate",
-    };
-  }
+  const est = await estimateWithGroq(item.name, item.portion || `${quantity} ${unit}`, groqApiKey);
 
   return {
-    name: description,
+    name: item.name,
     portion: item.portion || `${quantity} ${unit}`,
     quantity,
     unit,
-    calories: roundNutrition(cal * multiplier),
-    protein: roundNutrition(pro * multiplier),
-    carbs: roundNutrition(carb * multiplier),
-    fat: roundNutrition(fat * multiplier),
-    fiber: roundNutrition(fiber * multiplier),
-    sugar: roundNutrition(sugar * multiplier),
-    foodSource: source,
-    externalFoodId,
+    calories: roundNutrition(est.calories),
+    protein: roundNutrition(est.protein_g),
+    carbs: roundNutrition(est.carbs_g),
+    fat: roundNutrition(est.fat_g),
+    fiber: 0,
+    sugar: 0,
+    foodSource: "ai_estimate",
   };
 }
 
