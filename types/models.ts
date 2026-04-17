@@ -42,6 +42,8 @@ export interface UserProfile {
   onboardingComplete: boolean;
   dailyCalorieGoal?: number;
   dailyProteinGoal?: number;
+  dailyCarbsGoal?: number;
+  dailyFatGoal?: number;
   dailyWaterGoal?: number;
   timezone: string;
 }

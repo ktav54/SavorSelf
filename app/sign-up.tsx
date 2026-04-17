@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Text } from "react-native";
 import { Card, Field, PrimaryButton, Screen, SectionTitle } from "@/components/ui";
 import { useAppStore } from "@/store/useAppStore";
@@ -8,9 +8,36 @@ export default function SignUpScreen() {
   const signUp = useAppStore((state) => state.signUp);
   const authLoading = useAppStore((state) => state.authLoading);
   const authError = useAppStore((state) => state.authError);
+  const sessionReady = useAppStore((state) => state.sessionReady);
+  const isAuthenticated = useAppStore((state) => state.isAuthenticated);
+  const profile = useAppStore((state) => state.profile);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
+  useEffect(() => {
+    if (!sessionReady || !isAuthenticated) {
+      return;
+    }
+
+    router.replace(profile?.onboardingComplete ? "/(tabs)/log" : "/onboarding");
+  }, [isAuthenticated, profile?.onboardingComplete, sessionReady]);
+
+  if (!sessionReady) {
+    return (
+      <Screen>
+        <SectionTitle title="Loading SavorSelf..." subtitle="Restoring your session." />
+      </Screen>
+    );
+  }
+
+  if (isAuthenticated) {
+    return (
+      <Screen>
+        <SectionTitle title="Welcome back..." subtitle="Taking you into your journal." />
+      </Screen>
+    );
+  }
 
   return (
     <Screen scroll>

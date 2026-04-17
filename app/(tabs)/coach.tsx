@@ -1,7 +1,8 @@
 import { useLayoutEffect } from "react";
-import { Pressable, Text } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { Pressable } from "react-native";
 import { useNavigation } from "expo-router";
-import { CoachBanner, CoachChat } from "@/components/coach";
+import { CoachChat } from "@/components/coach";
 import { Screen } from "@/components/ui";
 import { colors } from "@/constants/theme";
 import { useAppStore } from "@/store/useAppStore";
@@ -13,8 +14,16 @@ export default function CoachScreen() {
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <Pressable onPress={clearConversation}>
-          <Text style={{ color: colors.accentPrimary, fontSize: 16 }}>New conversation</Text>
+        <Pressable
+          onPress={clearConversation}
+          style={({ pressed }) => ({
+            marginRight: 14,
+            marginTop: -2,
+            paddingHorizontal: 2,
+            opacity: pressed ? 0.72 : 1,
+          })}
+        >
+          <Ionicons name="document-text" size={28} color={colors.accentPrimary} />
         </Pressable>
       ),
     });
@@ -22,7 +31,6 @@ export default function CoachScreen() {
 
   return (
     <Screen scroll>
-      <CoachBanner />
       <CoachChat />
     </Screen>
   );

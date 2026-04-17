@@ -1,8 +1,10 @@
-import { PropsWithChildren } from "react";
+import { PropsWithChildren, RefObject } from "react";
 import {
   Pressable,
   SafeAreaView,
   ScrollView,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
   StyleSheet,
   Text,
   TextInput,
@@ -13,9 +15,17 @@ import { colors, radii, spacing } from "@/constants/theme";
 export function Screen({
   children,
   scroll = false,
-}: PropsWithChildren<{ scroll?: boolean }>) {
+  scrollRef,
+  onScroll,
+}: PropsWithChildren<{
+  scroll?: boolean;
+  scrollRef?: RefObject<ScrollView | null>;
+  onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
+}>) {
   const content = scroll ? (
-    <ScrollView contentContainerStyle={styles.scrollContent}>{children}</ScrollView>
+    <ScrollView ref={scrollRef} contentContainerStyle={styles.scrollContent} onScroll={onScroll} scrollEventThrottle={16}>
+      {children}
+    </ScrollView>
   ) : (
     <View style={styles.content}>{children}</View>
   );

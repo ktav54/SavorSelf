@@ -54,6 +54,7 @@ interface RequestPayload {
   message: string;
   history: Array<{ role: "user" | "assistant"; content: string }>;
   context: Record<string, unknown>;
+  mode?: string;
   pendingProposal?: {
     mealType: MealType;
     items: Array<{
@@ -275,13 +276,35 @@ Deno.serve(async (request: Request) => {
 
     const payload = (await request.json()) as RequestPayload;
     const groqApiKey = Deno.env.get("GROQ_API_KEY");
-    const usdaApiKey = Deno.env.get("USDA_API_KEY") ?? Deno.env.get("EXPO_PUBLIC_USDA_API_KEY");
+    const usdaApiKey = Deno.env.get("USDA_API_KEY") ?? Deno.env.get("EXPO_PUBLIC_USDA_API_KEY") ?? "";
 
     if (!groqApiKey) {
       return jsonResponse({ intent: "chat", reply: "GROQ_API_KEY is not configured." });
     }
-    if (!usdaApiKey) {
-      return jsonResponse({ intent: "chat", reply: "USDA_API_KEY is not configured." });
+
+    if (payload.mode === "nutrition_lookup") {
+      const lookupQuery = payload.message.replace(/^nutrition facts for:\s*/i, "").trim();
+      if (!lookupQuery) {
+        return jsonResponse({ intent: "chat", reply: "Tell me which food you want to look up." }, 400);
+      }
+
+      const estimatedItem = await enrichFoodItem(
+        {
+          name: lookupQuery,
+          portion: "1 serving",
+          quantity: 1,
+          unit: "serving",
+        },
+        usdaApiKey,
+        groqApiKey
+      );
+
+      return jsonResponse({
+        intent: "food_log",
+        reply: `Here's a quick nutrition estimate for ${lookupQuery}.`,
+        mealType: "snack",
+        items: [estimatedItem],
+      });
     }
 
     const systemMessages: Array<{ role: string; content: string }> = [

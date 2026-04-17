@@ -11,9 +11,14 @@ create table if not exists public.users (
   onboarding_complete boolean not null default false,
   daily_calorie_goal numeric,
   daily_protein_goal numeric,
+  daily_carbs_goal numeric,
+  daily_fat_goal numeric,
   daily_water_goal numeric,
   timezone text
 );
+
+alter table public.users add column if not exists daily_carbs_goal numeric;
+alter table public.users add column if not exists daily_fat_goal numeric;
 
 create table if not exists public.mood_logs (
   id uuid primary key default gen_random_uuid(),

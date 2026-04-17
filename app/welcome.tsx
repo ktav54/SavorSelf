@@ -1,9 +1,43 @@
 import { Link, router } from "expo-router";
+import { useEffect } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { colors, spacing } from "@/constants/theme";
 import { Card, PrimaryButton, Screen, SectionTitle } from "@/components/ui";
+import { useAppStore } from "@/store/useAppStore";
 
 export default function WelcomeScreen() {
+  const sessionReady = useAppStore((state) => state.sessionReady);
+  const isAuthenticated = useAppStore((state) => state.isAuthenticated);
+  const profile = useAppStore((state) => state.profile);
+
+  useEffect(() => {
+    if (!sessionReady || !isAuthenticated) {
+      return;
+    }
+
+    router.replace(profile?.onboardingComplete ? "/(tabs)/log" : "/onboarding");
+  }, [isAuthenticated, profile?.onboardingComplete, sessionReady]);
+
+  if (!sessionReady) {
+    return (
+      <Screen>
+        <View style={styles.loadingWrap}>
+          <Text style={styles.loadingText}>Loading SavorSelf...</Text>
+        </View>
+      </Screen>
+    );
+  }
+
+  if (isAuthenticated) {
+    return (
+      <Screen>
+        <View style={styles.loadingWrap}>
+          <Text style={styles.loadingText}>Welcome back...</Text>
+        </View>
+      </Screen>
+    );
+  }
+
   return (
     <Screen>
       <View style={styles.hero}>
@@ -39,5 +73,14 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 12,
     fontSize: 16,
+  },
+  loadingWrap: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  loadingText: {
+    color: colors.textPrimary,
+    fontSize: 18,
   },
 });

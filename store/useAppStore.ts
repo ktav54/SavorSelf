@@ -49,6 +49,7 @@ interface AppState {
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
   signUp: (payload: { email: string; password: string; name?: string }) => Promise<{ error?: string }>;
   completeOnboarding: (details: Partial<UserProfile>) => Promise<{ error?: string }>;
+  updateProfile: (updates: Partial<Pick<UserProfile, "preferredUnits" | "dailyCalorieGoal" | "dailyProteinGoal" | "dailyCarbsGoal" | "dailyFatGoal" | "dailyWaterGoal">>) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
   loadTodayMoodLog: () => Promise<void>;
   loadTodayFoodLogs: () => Promise<void>;
@@ -85,6 +86,15 @@ interface AppState {
     sugarG?: number;
   }>) => Promise<{ error?: string }>;
   deleteFoodLog: (foodLogId: string) => Promise<{ error?: string }>;
+  updateFoodLog: (foodLogId: string, updates: {
+    quantity: number;
+    calories: number;
+    proteinG: number;
+    carbsG: number;
+    fatG: number;
+    fiberG?: number;
+    sugarG?: number;
+  }) => Promise<{ error?: string }>;
   addMoodLog: (log: MoodLog) => void;
   addFoodLog: (log: FoodLog) => void;
   addQuickLog: (log: QuickLog) => void;
@@ -105,6 +115,8 @@ function mapProfile(row: any): UserProfile {
     onboardingComplete: Boolean(row.onboarding_complete),
     dailyCalorieGoal: row.daily_calorie_goal ?? undefined,
     dailyProteinGoal: row.daily_protein_goal ?? undefined,
+    dailyCarbsGoal: row.daily_carbs_goal ?? undefined,
+    dailyFatGoal: row.daily_fat_goal ?? undefined,
     dailyWaterGoal: row.daily_water_goal ?? undefined,
     timezone: row.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
   };
@@ -199,6 +211,58 @@ async function ensureProfileForSession(session: Session) {
 
 function roundNutrition(value: number) {
   return Math.round(Number(value ?? 0));
+}
+
+function getMissingUsersColumns(message?: string | null) {
+  const missing: Array<"daily_carbs_goal" | "daily_fat_goal"> = [];
+
+  if (!message) {
+    return missing;
+  }
+
+  if (message.includes("daily_carbs_goal")) {
+    missing.push("daily_carbs_goal");
+  }
+
+  if (message.includes("daily_fat_goal")) {
+    missing.push("daily_fat_goal");
+  }
+
+  return missing;
+}
+
+async function updateUsersRowWithFallback(userId: string, payload: Record<string, unknown>) {
+  const attempt = async (nextPayload: Record<string, unknown>) =>
+    supabase
+      .from("users")
+      .update(nextPayload)
+      .eq("id", userId)
+      .select("*")
+      .single();
+
+  const firstAttempt = await attempt(payload);
+  const missingColumns = getMissingUsersColumns(firstAttempt.error?.message);
+
+  if (!firstAttempt.error || missingColumns.length === 0) {
+    return {
+      data: firstAttempt.data,
+      error: firstAttempt.error,
+      missingColumns,
+    };
+  }
+
+  const fallbackPayload = { ...payload };
+  missingColumns.forEach((column) => {
+    delete fallbackPayload[column];
+  });
+
+  const fallbackAttempt = await attempt(fallbackPayload);
+
+  return {
+    data: fallbackAttempt.data,
+    error: fallbackAttempt.error,
+    missingColumns,
+  };
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -371,19 +435,18 @@ export const useAppStore = create<AppState>((set) => ({
       profile: nextProfile,
     });
 
-    const { data, error } = await supabase
-      .from("users")
-      .update({
-        name: nextProfile.name,
-        preferred_units: nextProfile.preferredUnits,
-        onboarding_complete: true,
-        daily_calorie_goal: nextProfile.dailyCalorieGoal ?? null,
-        daily_protein_goal: nextProfile.dailyProteinGoal ?? null,
-        daily_water_goal: nextProfile.dailyWaterGoal ?? null,
-      })
-      .eq("id", profile.id)
-      .select("*")
-      .single();
+    const payload = {
+      name: nextProfile.name,
+      preferred_units: nextProfile.preferredUnits,
+      onboarding_complete: true,
+      daily_calorie_goal: nextProfile.dailyCalorieGoal ?? null,
+      daily_protein_goal: nextProfile.dailyProteinGoal ?? null,
+      daily_carbs_goal: nextProfile.dailyCarbsGoal ?? null,
+      daily_fat_goal: nextProfile.dailyFatGoal ?? null,
+      daily_water_goal: nextProfile.dailyWaterGoal ?? null,
+    };
+
+    const { data, error, missingColumns } = await updateUsersRowWithFallback(profile.id, payload);
 
     if (error) {
       set({
@@ -395,6 +458,62 @@ export const useAppStore = create<AppState>((set) => ({
     set({
       profile: mapProfile(data),
     });
+
+    if (missingColumns.length > 0) {
+      return {
+        error: "Your profile saved, but carbs and fat goals need a quick Supabase table update before they can be stored.",
+      };
+    }
+
+    return {};
+  },
+  updateProfile: async (updates) => {
+    const profile = useAppStore.getState().profile;
+    if (!profile) {
+      return { error: "You need to be signed in first." };
+    }
+
+    const payload: Record<string, unknown> = {};
+
+    if ("preferredUnits" in updates) {
+      payload.preferred_units = updates.preferredUnits;
+    }
+
+    if ("dailyCalorieGoal" in updates) {
+      payload.daily_calorie_goal = updates.dailyCalorieGoal ?? null;
+    }
+
+    if ("dailyProteinGoal" in updates) {
+      payload.daily_protein_goal = updates.dailyProteinGoal ?? null;
+    }
+
+    if ("dailyCarbsGoal" in updates) {
+      payload.daily_carbs_goal = updates.dailyCarbsGoal ?? null;
+    }
+
+    if ("dailyFatGoal" in updates) {
+      payload.daily_fat_goal = updates.dailyFatGoal ?? null;
+    }
+
+    if ("dailyWaterGoal" in updates) {
+      payload.daily_water_goal = updates.dailyWaterGoal ?? null;
+    }
+
+    const { data, error, missingColumns } = await updateUsersRowWithFallback(profile.id, payload);
+
+    if (error) {
+      return { error: error.message };
+    }
+
+    set({
+      profile: mapProfile(data),
+    });
+
+    if (missingColumns.length > 0) {
+      return {
+        error: "Calories, protein, and water can save, but carbs and fat goals need a quick Supabase table update first.",
+      };
+    }
 
     return {};
   },
@@ -858,6 +977,44 @@ export const useAppStore = create<AppState>((set) => ({
 
     set((state) => ({
       foodLogs: state.foodLogs.filter((item) => item.id !== foodLogId),
+      foodError: null,
+    }));
+
+    return {};
+  },
+  updateFoodLog: async (foodLogId, updates) => {
+    set({
+      foodError: null,
+    });
+
+    const payload = {
+      quantity: updates.quantity,
+      calories: roundNutrition(updates.calories),
+      protein_g: roundNutrition(updates.proteinG),
+      carbs_g: roundNutrition(updates.carbsG),
+      fat_g: roundNutrition(updates.fatG),
+      fiber_g: roundNutrition(updates.fiberG ?? 0),
+      sugar_g: roundNutrition(updates.sugarG ?? 0),
+    };
+
+    const { data, error } = await supabase
+      .from("food_logs")
+      .update(payload)
+      .eq("id", foodLogId)
+      .select("*")
+      .single();
+
+    if (error) {
+      set({
+        foodError: error.message,
+      });
+      return { error: error.message };
+    }
+
+    const updatedFood = mapFoodLog(data);
+
+    set((state) => ({
+      foodLogs: state.foodLogs.map((item) => (item.id === foodLogId ? updatedFood : item)),
       foodError: null,
     }));
 

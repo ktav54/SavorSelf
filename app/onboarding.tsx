@@ -18,6 +18,7 @@ const goals = [
 export default function OnboardingScreen() {
   const completeOnboarding = useAppStore((state) => state.completeOnboarding);
   const profile = useAppStore((state) => state.profile);
+  const sessionReady = useAppStore((state) => state.sessionReady);
   const [step, setStep] = useState(0);
   const [selectedGoals, setSelectedGoals] = useState<string[]>([]);
   const [name, setName] = useState("");
@@ -64,6 +65,34 @@ export default function OnboardingScreen() {
       isMounted = false;
     };
   }, [profile?.onboardingComplete]);
+
+  if (!sessionReady) {
+    return (
+      <Screen>
+        <Card>
+          <SectionTitle
+            eyebrow="Loading"
+            title="Loading SavorSelf..."
+            subtitle="Restoring your account and onboarding state."
+          />
+        </Card>
+      </Screen>
+    );
+  }
+
+  if (profile?.onboardingComplete) {
+    return (
+      <Screen>
+        <Card>
+          <SectionTitle
+            eyebrow="Welcome back"
+            title="Opening your log..."
+            subtitle="Your account and onboarding are already in place."
+          />
+        </Card>
+      </Screen>
+    );
+  }
 
   return (
     <Screen scroll>
