@@ -2,9 +2,11 @@ import { useCallback } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import {
   DailyReadCard,
+  FoodMoodGate,
   GutMoodScoreCard,
   HorizontalInsightScroll,
   InsightFeed,
+  StreakHeroCard,
   WeeklySnapshot,
 } from "@/components/food-mood";
 import { Screen } from "@/components/ui";
@@ -21,7 +23,9 @@ export default function FoodMoodScreen() {
 
   return (
     <Screen scroll>
+      <FoodMoodGate />
       <GutMoodScoreCard />
+      <StreakHeroCard />
       <DailyReadCard />
       <HorizontalInsightScroll />
       <WeeklySnapshot />

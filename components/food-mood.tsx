@@ -164,6 +164,27 @@ function getInsightMetricValue(
   return point.fiber;
 }
 
+function getPairedDays(
+  moodLogs: ReturnType<typeof useAppStore.getState>["moodLogs"],
+  foodLogs: ReturnType<typeof useAppStore.getState>["foodLogs"]
+) {
+  const moodDays = new Set(moodLogs.map((log) => toDateKey(log.loggedAt)));
+  const foodDays = new Set(foodLogs.map((log) => toDateKey(log.loggedAt)));
+  return Array.from(moodDays).filter((day) => foodDays.has(day)).length;
+}
+
+function getNextMilestone(streak: number) {
+  const milestones = [3, 7, 14, 30];
+  return milestones.find((milestone) => milestone > streak) ?? 30;
+}
+
+function getMilestoneReward(milestone: number) {
+  if (milestone <= 3) return "🔓 First pattern unlocks";
+  if (milestone <= 7) return "🧠 Full Food-Mood picture";
+  if (milestone <= 14) return "📈 Trend analysis ready";
+  return "⭐ Deep gut-brain insights";
+}
+
 export function GutMoodScoreCard() {
   const moodLogs = useAppStore((state) => state.moodLogs);
   const foodLogs = useAppStore((state) => state.foodLogs);
@@ -179,6 +200,87 @@ export function GutMoodScoreCard() {
         <View style={styles.progressRail}>
           <View style={[styles.progressFill, { width: `${score}%`, backgroundColor: tone.color }]} />
         </View>
+      </View>
+    </Card>
+  );
+}
+
+export function FoodMoodGate() {
+  const moodLogs = useAppStore((state) => state.moodLogs);
+  const foodLogs = useAppStore((state) => state.foodLogs);
+  const pairedDays = useMemo(() => getPairedDays(moodLogs, foodLogs), [foodLogs, moodLogs]);
+  const hasMood = moodLogs.length > 0;
+  const hasFood = foodLogs.length > 0;
+
+  if (pairedDays >= 3) {
+    return null;
+  }
+
+  return (
+    <Card>
+      <SectionTitle
+        eyebrow="GETTING STARTED"
+        title="Food-Mood needs a few days to find your patterns"
+        subtitle="Most people see their first real insight after just 3 consistent days."
+      />
+      <View style={styles.gateProgressWrap}>
+        <Text style={styles.gateProgressLabel}>{pairedDays} of 3 days complete</Text>
+        <View style={styles.gateRail}>
+          <View
+            style={[styles.gateFill, { width: `${Math.min((pairedDays / 3) * 100, 100)}%` }]}
+          />
+        </View>
+      </View>
+      <View style={styles.checklist}>
+        <View style={styles.checklistRow}>
+          <Text style={styles.checklistText}>Log your mood</Text>
+          <Text style={styles.checklistMark}>{hasMood ? "✓" : "○"}</Text>
+        </View>
+        <View style={styles.checklistRow}>
+          <Text style={styles.checklistText}>Log at least one meal</Text>
+          <Text style={styles.checklistMark}>{hasFood ? "✓" : "○"}</Text>
+        </View>
+        <View style={styles.checklistRow}>
+          <Text style={styles.checklistText}>Do it again tomorrow</Text>
+          <Text style={styles.checklistArrow}>→</Text>
+        </View>
+      </View>
+    </Card>
+  );
+}
+
+export function StreakHeroCard() {
+  const moodLogs = useAppStore((state) => state.moodLogs);
+  const streak = useMemo(() => getCurrentMoodStreak(moodLogs), [moodLogs]);
+
+  if (streak === 0) {
+    return (
+      <Card>
+        <SectionTitle
+          title="Start your streak today"
+          subtitle="Log your mood and one meal daily. Food-Mood gets smarter every single day you show up."
+        />
+      </Card>
+    );
+  }
+
+  const nextMilestone = getNextMilestone(streak);
+  const progress = Math.min((streak / nextMilestone) * 100, 100);
+
+  return (
+    <Card>
+      <View style={styles.streakHero}>
+        <Text style={styles.streakNumber}>{streak}</Text>
+        <Text style={styles.streakLabel}>day streak</Text>
+        <View style={styles.gateProgressWrap}>
+          <Text style={styles.gateProgressLabel}>
+            {streak} / {nextMilestone} days
+          </Text>
+          <View style={styles.gateRail}>
+            <View style={[styles.gateFill, { width: `${progress}%` }]} />
+          </View>
+        </View>
+        <Text style={styles.milestoneReward}>{getMilestoneReward(nextMilestone)}</Text>
       </View>
     </Card>
   );
@@ -253,13 +355,9 @@ export function DailyReadCard() {
 export function HorizontalInsightScroll() {
   const moodLogs = useAppStore((state) => state.moodLogs);
   const foodLogsData = useAppStore((state) => state.foodLogs);
-  const trendData = useAppStore((state) => state.foodMoodTrend);
   const moodMap = useMemo(() => buildMoodByDate(moodLogs), [moodLogs]);
   const calendarDates = useMemo(() => getLastNDates(28), []);
   const betterDayFoods = useMemo(() => getTopFoodsByMood(moodLogs, foodLogsData, 4), [foodLogsData, moodLogs]);
-  const streakValue = useMemo(() => getCurrentMoodStreak(moodLogs), [moodLogs]);
-  const trendDirectionValue = useMemo(() => getThreeDayTrend(moodLogs), [moodLogs]);
-  const recentTrendPoints = trendData.slice(-7);
 
   return (
     <View style={styles.sectionWrap}>
@@ -275,11 +373,11 @@ export function HorizontalInsightScroll() {
             ))}
           </View>
           <View style={styles.heatmapGrid}>
-            {calendarDates.map((date) => {
+            {calendarDates.map((date, index) => {
               const key = toDateKey(date);
               const moodScore = moodMap.get(key);
               return (
-                <View key={key} style={styles.heatmapCellWrap}>
+                <View key={`heat-${index}`} style={styles.heatmapCellWrap}>
                   <View
                     style={[
                       styles.heatmapCell,
@@ -300,8 +398,8 @@ export function HorizontalInsightScroll() {
         <View style={styles.scrollCard}>
           <Text style={styles.scrollCardTitle}>On your better days</Text>
           {betterDayFoods.length >= 2 ? (
-            betterDayFoods.map((item) => (
-              <View key={item.foodName} style={styles.foodRow}>
+            betterDayFoods.map((item, index) => (
+              <View key={`food-${index}`} style={styles.foodRow}>
                 <Text style={styles.foodName}>{item.foodName}</Text>
                 <View style={styles.foodBarTrack}>
                   <View
@@ -314,35 +412,6 @@ export function HorizontalInsightScroll() {
           ) : (
             <Text style={styles.emptyText}>Keep logging to unlock this pattern.</Text>
           )}
-        </View>
-
-        <View style={styles.scrollCard}>
-          <Text style={styles.scrollCardTitle}>Consistency</Text>
-          <View style={styles.consistencyRow}>
-            <Text style={styles.consistencyValue}>{streakValue}</Text>
-            <Text style={styles.consistencyLabel}>day streak{streakValue >= 3 ? "  🔥" : ""}</Text>
-          </View>
-          <View style={styles.consistencyRow}>
-            <Text style={styles.consistencyValue}>
-              {trendDirectionValue === "up" ? "↑" : trendDirectionValue === "down" ? "↓" : "→"}
-            </Text>
-            <Text style={styles.consistencyLabel}>3-day trend</Text>
-          </View>
-          <View style={styles.sparklineWrap}>
-            {recentTrendPoints.map((point, index) => (
-              <View
-                key={point.date}
-                style={[
-                  styles.sparklineDot,
-                  {
-                    left: `${recentTrendPoints.length > 1 ? (index / (recentTrendPoints.length - 1)) * 100 : 0}%`,
-                    bottom: point.moodScore ? (point.moodScore / 5) * 50 : 0,
-                    backgroundColor: point.moodScore ? colors.accentPrimary : colors.border,
-                  },
-                ]}
-              />
-            ))}
-          </View>
         </View>
       </ScrollView>
     </View>
@@ -457,15 +526,15 @@ export function MoodHeatmap() {
         subtitle="A simple month view of how your check-ins have felt day to day."
       />
       <View style={styles.heatmapWeekdayRow}>
-        {firstWeek.map((cell) => (
-          <Text key={`weekday-${cell.key}`} style={styles.heatmapWeekday}>
+        {firstWeek.map((cell, index) => (
+          <Text key={`weekday-${index}`} style={styles.heatmapWeekday}>
             {cell.weekdayLabel}
           </Text>
         ))}
       </View>
       <View style={styles.heatmapGrid}>
-        {cells.map((cell) => (
-          <View key={cell.key} style={styles.heatmapCellWrap}>
+        {cells.map((cell, index) => (
+          <View key={`cell-${index}`} style={styles.heatmapCellWrap}>
             <View
               style={[
                 styles.heatmapCell,
@@ -534,8 +603,8 @@ export function TopFoodsByMood() {
       />
       {topFoods.length >= 2 ? (
         <View style={styles.topFoodsList}>
-          {topFoods.map((item) => (
-            <View key={item.foodName} style={styles.topFoodRow}>
+          {topFoods.map((item, index) => (
+            <View key={`row-${index}`} style={styles.topFoodRow}>
               <Text style={styles.topFoodName}>{item.foodName}</Text>
               <View style={styles.topFoodBarTrack}>
                 <View
@@ -648,8 +717,8 @@ export function InsightFeed() {
             {recentTrend.length ? (
               <View style={styles.chart}>
                 <View style={styles.chartBars}>
-                  {recentTrend.map((point) => (
-                    <View key={`${insight.id}-${point.date}`} style={styles.chartColumn}>
+                  {recentTrend.map((point, index) => (
+                    <View key={`chart-col-${index}`} style={styles.chartColumn}>
                       <View
                         style={[
                           styles.metricBar,
@@ -666,7 +735,7 @@ export function InsightFeed() {
                 </View>
                 {recentTrend.map((point, index) => (
                   <View
-                    key={`${insight.id}-${point.date}-dot`}
+                    key={`chart-dot-${index}`}
                     style={[
                       styles.chartDot,
                       {
@@ -733,7 +802,7 @@ export function InsightFeed() {
             {trend.length ? (
               <View style={styles.sparkline}>
                 <View style={styles.sparklineBars}>
-                  {trend.map((point) => {
+                  {trend.map((point, index) => {
                     const nutrientValue =
                       nutrientKey === "fiber"
                         ? point.fiber
@@ -747,7 +816,7 @@ export function InsightFeed() {
                     const nutrientHeight = Math.max(6, (nutrientValue / maxNutrientValue) * 28);
 
                     return (
-                      <View key={`${insight.id}-bar-${point.date}`} style={styles.sparklineColumn}>
+                      <View key={`spark-bar-${index}`} style={styles.sparklineColumn}>
                         <View style={[styles.nutrientBar, { height: nutrientHeight }]} />
                         <Text style={styles.sparklineLabel}>{point.date.slice(5)}</Text>
                       </View>
@@ -760,7 +829,7 @@ export function InsightFeed() {
 
                   return (
                     <View
-                      key={`${insight.id}-dot-${point.date}`}
+                      key={`spark-dot-${index}`}
                       style={[
                         styles.moodDot,
                         {
@@ -810,7 +879,7 @@ export function TrendCard() {
             <View style={[styles.gridLine, { top: 90 }]} />
             <View style={styles.trendRow}>
               {points.map((point, index) => (
-                <View key={point.date} style={styles.trendColumn}>
+                <View key={`trend-${index}`} style={styles.trendColumn}>
                   <View
                     style={[
                       styles.fiberBar,
@@ -928,6 +997,70 @@ const styles = StyleSheet.create({
     paddingVertical: 28,
     alignItems: "center",
     gap: spacing.sm,
+  },
+  gateProgressWrap: {
+    gap: spacing.xs,
+  },
+  gateProgressLabel: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    fontWeight: "600",
+  },
+  gateRail: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.border,
+    overflow: "hidden",
+  },
+  gateFill: {
+    height: "100%",
+    borderRadius: 4,
+    backgroundColor: colors.accentPrimary,
+  },
+  checklist: {
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  checklistRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+  },
+  checklistText: {
+    flex: 1,
+    fontSize: 15,
+    color: colors.textPrimary,
+  },
+  checklistMark: {
+    fontSize: 18,
+    color: colors.accentPrimary,
+    fontWeight: "700",
+  },
+  checklistArrow: {
+    fontSize: 18,
+    color: colors.textSecondary,
+    fontWeight: "700",
+  },
+  streakHero: {
+    gap: spacing.sm,
+  },
+  streakNumber: {
+    fontSize: 64,
+    fontWeight: "800",
+    color: colors.accentPrimary,
+  },
+  streakLabel: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  milestoneReward: {
+    fontSize: 15,
+    lineHeight: 24,
+    color: colors.textPrimary,
+    fontWeight: "600",
   },
   heroScore: {
     fontSize: 72,

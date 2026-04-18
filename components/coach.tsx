@@ -3,6 +3,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { colors, radii, spacing } from "@/constants/theme";
 import { Card, Field, PrimaryButton, SectionTitle } from "@/components/ui";
+import { GutScoreBadge } from "@/components/log";
+import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase";
 import { formatFoodName } from "@/lib/utils";
 import { sendMessage } from "@/services/coach";
 import { useAppStore } from "@/store/useAppStore";
@@ -35,6 +37,67 @@ const quantityFractionOptions = [
   { label: "2/3", value: 2 / 3 },
   { label: "3/4", value: 0.75 },
 ] as const;
+
+function estimateMicronutrients(foodName: string) {
+  const name = foodName.toLowerCase();
+  const patterns = [
+    { score: 18, terms: ["salmon", "sardine", "mackerel", "tuna", "herring", "anchovies", "trout", "halibut", "sea bass", "mahi"] },
+    { score: 16, terms: ["spinach", "kale", "broccoli", "arugula", "collard", "chard", "beet green", "watercress", "bok choy", "mustard green"] },
+    { score: 16, terms: ["yogurt", "kefir", "kimchi", "sauerkraut", "miso", "tempeh", "kombucha", "natto", "lassi"] },
+    { score: 12, terms: ["walnut", "almond", "chia", "flax", "hemp", "pumpkin seed", "sunflower seed", "brazil nut", "pecan", "cashew", "pistachio"] },
+    { score: 12, terms: ["lentil", "chickpea", "black bean", "kidney bean", "edamame", "pea", "fava", "mung bean", "navy bean", "pinto"] },
+    { score: 10, terms: ["oat", "quinoa", "farro", "amaranth", "millet", "buckwheat", "barley", "teff", "bulgur", "sorghum"] },
+    { score: 10, terms: ["blueberry", "strawberry", "raspberry", "blackberry", "pomegranate", "acai", "goji", "cranberry", "cherry", "fig"] },
+    { score: 8, terms: ["egg", "eggs"] },
+    { score: 8, terms: ["avocado", "olive oil", "coconut oil", "ghee"] },
+    { score: 8, terms: ["sweet potato", "butternut squash", "pumpkin", "carrot", "beet", "parsnip"] },
+    { score: 7, terms: ["mushroom", "shiitake", "maitake", "reishi", "oyster mushroom"] },
+    { score: 6, terms: ["chicken", "turkey", "lean beef", "bison", "venison", "lamb"] },
+    { score: 5, terms: ["tofu", "soy milk", "edamame"] },
+    { score: 8, terms: ["apple", "pear", "orange", "banana", "mango", "grape", "watermelon", "peach", "plum"] },
+    { score: 6, terms: ["brown rice", "whole wheat", "whole grain", "rye bread", "sourdough"] },
+    { score: -6, terms: ["white rice", "white bread", "cracker", "bagel", "white pasta", "flour tortilla"] },
+    { score: -12, terms: ["hot dog", "deli meat", "bologna", "salami", "pepperoni", "spam", "bacon bits"] },
+    { score: -18, terms: ["chips", "cookie", "cake", "candy", "soda", "fries", "donut", "pop tart", "cheez-it", "oreo", "cheetos", "doritos", "skittles", "gummy", "twizzler", "snickers", "kit kat", "m&m"] },
+    { score: -12, terms: ["fast food", "mcdonald", "burger king", "wendy", "taco bell", "kfc", "popeyes", "jack in the box"] },
+  ];
+
+  for (const pattern of patterns) {
+    if (pattern.terms.some((term) => name.includes(term))) {
+      return pattern.score;
+    }
+  }
+
+  return 0;
+}
+
+function computeGutScore(food: {
+  foodName?: string;
+  fiberG: number;
+  proteinG: number;
+  fatG: number;
+  carbsG: number;
+  gutHealthTags: string[];
+  foodSource: string;
+}) {
+  let score = 52;
+  score += Math.min(food.fiberG * 2, 14);
+  score += Math.min(food.proteinG * 0.25, 8);
+  if (food.gutHealthTags.includes("fermented") || food.gutHealthTags.includes("probiotic")) {
+    score += 8;
+  }
+  if (food.gutHealthTags.includes("anti_inflammatory")) {
+    score += 6;
+  }
+  if (food.gutHealthTags.includes("high_fiber")) {
+    score += 5;
+  }
+  if (food.gutHealthTags.includes("processed")) {
+    score -= 10;
+  }
+  score += estimateMicronutrients(food.foodName ?? "");
+  return Math.round(Math.min(100, Math.max(0, score)));
+}
 
 function getCoachUnitOptions(preferredUnits?: "imperial" | "metric"): FoodUnit[] {
   if (preferredUnits === "metric") {
@@ -130,6 +193,20 @@ function buildLoggedFollowUp(mealType: string, items: CoachFoodItem[]) {
   return `There is still something good in that ${mealType}. Getting the meal logged at all gives us something real to learn from, and that matters.`;
 }
 
+function buildLocalGutFeedback(item: CoachFoodItem, score: number) {
+  const name = formatFoodName(item.name);
+  if (score >= 75) {
+    return `${name} looks pretty supportive. Foods like that usually bring a steadier mix of nourishment for digestion, energy, and mood.`;
+  }
+  if (score >= 55) {
+    return `${name} lands in a middle zone. There is some support there, especially if it is part of a more balanced meal.`;
+  }
+  if (score >= 40) {
+    return `${name} looks a little more mixed. It can fit just fine, but it may not do as much heavy lifting for steadier mood or gut comfort on its own.`;
+  }
+  return `${name} may feel a little rougher on steady energy or digestion. That is useful to notice without turning it into judgment.`;
+}
+
 export function CoachBanner() {
   return (
     <Card>
@@ -159,6 +236,9 @@ export function CoachChat() {
   const [pendingProposal, setPendingProposal] = useState<CoachFoodProposal | null>(null);
   const [sending, setSending] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [gutFeedbackTitle, setGutFeedbackTitle] = useState("");
+  const [gutFeedback, setGutFeedback] = useState("");
+  const [gutFeedbackLoading, setGutFeedbackLoading] = useState(false);
   const [adjustModalVisible, setAdjustModalVisible] = useState(false);
   const [adjustDraftItems, setAdjustDraftItems] = useState<AdjustDraftItem[]>([]);
   const starterOpacity = useRef(new Animated.Value(1)).current;
@@ -357,6 +437,43 @@ export function CoachChat() {
       timestamp: new Date().toISOString(),
       kind: "text",
     });
+  };
+
+  const openGutFeedback = async (item: CoachFoodItem) => {
+    const score = computeGutScore({
+      foodName: item.name,
+      fiberG: item.fiber ?? 0,
+      proteinG: item.protein,
+      fatG: item.fat,
+      carbsG: item.carbs,
+      gutHealthTags: [],
+      foodSource: item.foodSource,
+    });
+    setGutFeedbackTitle(formatFoodName(item.name));
+    setGutFeedback("");
+    setGutFeedbackLoading(true);
+    try {
+      const response = await fetch(`${supabaseUrl}/functions/v1/ai-coach`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${supabaseAnonKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: `In 2 short warm sentences, explain why ${item.name} might land around ${score}/100 for gut comfort, steadier mood, and balanced energy. Known macros: ${Math.round(item.fiber ?? 0)}g fiber, ${Math.round(item.protein)}g protein, ${Math.round(item.carbs)}g carbs, ${Math.round(item.fat)}g fat. Focus on how it might feel in the body and for mood, not on judging the food.`,
+          mode: "gut_feedback",
+          context: {},
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error();
+      const reply = typeof data?.reply === "string" ? data.reply.trim() : "";
+      setGutFeedback(!reply || /hit a snag|try again/i.test(reply) ? buildLocalGutFeedback(item, score) : reply);
+    } catch {
+      setGutFeedback(buildLocalGutFeedback(item, score));
+    } finally {
+      setGutFeedbackLoading(false);
+    }
   };
 
   const updateDraftItem = (index: number, updates: Partial<AdjustDraftItem>) => {
@@ -647,6 +764,23 @@ export function CoachChat() {
         </View>
       </Modal>
 
+      <Modal transparent animationType="fade" visible={Boolean(gutFeedbackTitle)} onRequestClose={() => setGutFeedbackTitle("")}>
+        <View style={styles.adjustModalBackdrop}>
+          <View style={styles.modalFeedbackCard}>
+            <SectionTitle eyebrow="Gut score" title={gutFeedbackTitle} subtitle="A quick read on why this food landed where it did." />
+            {gutFeedbackLoading ? (
+              <View style={styles.loadingRow}>
+                <ActivityIndicator color={colors.accentPrimary} />
+                <Text style={styles.loadingText}>Thinking about this food...</Text>
+              </View>
+            ) : (
+              <Text style={styles.optionBody}>{gutFeedback}</Text>
+            )}
+            <PrimaryButton label="Close" secondary onPress={() => setGutFeedbackTitle("")} />
+          </View>
+        </View>
+      </Modal>
+
       {conversation.map((message, index) => (
         <View key={`${message.timestamp}-${index}`} style={styles.messageWrap}>
           <View style={[styles.bubble, message.role === "user" ? styles.userBubble : styles.assistantBubble]}>
@@ -656,30 +790,43 @@ export function CoachChat() {
           {message.role === "assistant" && message.foodProposal ? (
             <Card>
               <Text style={styles.summaryLabel}>{message.foodProposal.mealType}</Text>
-              {(pendingProposal && message.foodProposal.sourceMessage === pendingProposal.sourceMessage ? pendingProposal.items : message.foodProposal.items).map((item, itemIndex) => (
-                <View key={`${message.timestamp}-${item.name}`} style={styles.summaryRow}>
-                  <View style={styles.summaryCopy}>
-                    <View style={styles.summaryTitleRow}>
-                      <Text style={styles.summaryName}>{formatFoodName(item.name)}</Text>
-                      {message.foodProposal.items.length > 1 ? (
-                        <Pressable onPress={() => openAdjustModal()}>
-                          <Text style={styles.editLink}>Edit</Text>
-                        </Pressable>
+              {(pendingProposal && message.foodProposal.sourceMessage === pendingProposal.sourceMessage ? pendingProposal.items : message.foodProposal.items).map((item, itemIndex) => {
+                const gutScore = computeGutScore({
+                  foodName: item.name,
+                  fiberG: item.fiber ?? 0,
+                  proteinG: item.protein,
+                  fatG: item.fat,
+                  carbsG: item.carbs,
+                  gutHealthTags: [],
+                  foodSource: item.foodSource,
+                });
+
+                return (
+                  <View key={`${message.timestamp}-${item.name}`} style={styles.summaryRow}>
+                    <View style={styles.summaryCopy}>
+                      <View style={styles.summaryTitleRow}>
+                        <Text style={styles.summaryName}>{formatFoodName(item.name)}</Text>
+                        <GutScoreBadge score={gutScore} onPress={() => void openGutFeedback(item)} />
+                        {message.foodProposal.items.length > 1 ? (
+                          <Pressable onPress={() => openAdjustModal()}>
+                            <Text style={styles.editLink}>Edit</Text>
+                          </Pressable>
+                        ) : null}
+                      </View>
+                      {item.foodSource === "ai_estimate" ? (
+                        <Text style={styles.estimateTag}>AI estimate</Text>
                       ) : null}
+                      <Text style={styles.summaryMeta}>{item.portion}</Text>
                     </View>
-                    {item.foodSource === "ai_estimate" ? (
-                      <Text style={styles.estimateTag}>AI estimate</Text>
-                    ) : null}
-                    <Text style={styles.summaryMeta}>{item.portion}</Text>
+                    <View style={styles.summaryCopy}>
+                      <Text style={styles.summaryMacro}>{Math.round(item.calories)} cal</Text>
+                      <Text style={styles.summaryMeta}>
+                        {Math.round(item.protein)}p | {Math.round(item.carbs)}c | {Math.round(item.fat)}f
+                      </Text>
+                    </View>
                   </View>
-                  <View style={styles.summaryCopy}>
-                    <Text style={styles.summaryMacro}>{Math.round(item.calories)} cal</Text>
-                    <Text style={styles.summaryMeta}>
-                      {Math.round(item.protein)}p | {Math.round(item.carbs)}c | {Math.round(item.fat)}f
-                    </Text>
-                  </View>
-                </View>
-              ))}
+                );
+              })}
               {pendingProposal && message.foodProposal.sourceMessage === pendingProposal.sourceMessage ? (
                 <View style={styles.actionRow}>
                   <PrimaryButton
@@ -839,6 +986,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
+    flexWrap: "wrap",
   },
   summaryName: {
     color: colors.textPrimary,
@@ -875,6 +1023,15 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     padding: spacing.md,
     gap: spacing.sm,
+  },
+  modalFeedbackCard: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.lg,
+    padding: spacing.md,
+    gap: spacing.sm,
+    marginTop: "30%",
   },
   starterLead: {
     color: colors.accentPrimary,

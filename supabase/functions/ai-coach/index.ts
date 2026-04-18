@@ -70,6 +70,11 @@ interface RequestPayload {
   } | null;
 }
 
+interface GroqMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
 }
@@ -80,6 +85,18 @@ function cleanJson(raw: string) {
 
 function roundNutrition(value: number) {
   return Math.round(Number(value ?? 0));
+}
+
+async function callGroq(messages: GroqMessage[], apiKey: string, temperature = 0.3) {
+  return fetch(GROQ_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: "llama-3.3-70b-versatile",
+      temperature,
+      messages,
+    }),
+  });
 }
 
 function resolveMealType(raw: string | undefined): MealType {
@@ -307,16 +324,109 @@ Deno.serve(async (request: Request) => {
       });
     }
 
-    const systemMessages: Array<{ role: string; content: string }> = [
+    if (payload.mode === "gut_feedback") {
+      const groqRes = await callGroq(
+        [
+          {
+            role: "system",
+            content:
+              "You are the SavorSelf Coach. Reply in 2 short warm sentences. Focus on how the food may land for digestion, steadier energy, and mood. Never judge the food.",
+          },
+          { role: "user", content: payload.message },
+        ],
+        groqApiKey,
+        0.4
+      );
+
+      if (!groqRes.ok) {
+        const err = await groqRes.text();
+        console.log("[ai-coach] gut feedback error", err);
+        return jsonResponse({ intent: "chat", reply: "I couldn't read that food right now, but it's okay to try again in a moment." });
+      }
+
+      const groqData = await groqRes.json();
+      const raw = groqData?.choices?.[0]?.message?.content ?? "";
+      return jsonResponse({ intent: "chat", reply: raw || "I couldn't read that food right now, but it's okay to try again in a moment." });
+    }
+
+    if (payload.mode === "simple_chat") {
+      const simpleContext = {
+        recentMood: Array.isArray(payload.context?.moodLogs)
+          ? (payload.context.moodLogs as Array<any>).slice(-3).map((entry) => ({
+              moodScore: entry?.moodScore,
+              energyScore: entry?.energyScore,
+              physicalState: entry?.physicalState?.slice?.(0, 2) ?? [],
+              mentalState: entry?.mentalState?.slice?.(0, 2) ?? [],
+            }))
+          : [],
+        foodSummary: payload.context?.foodSummary ?? null,
+        insights: Array.isArray(payload.context?.insights)
+          ? (payload.context.insights as Array<any>).slice(0, 2).map((entry) => entry?.insightBody ?? entry?.title ?? "")
+          : [],
+      };
+
+      const chatRes = await callGroq(
+        [
+          {
+            role: "system",
+            content:
+              "You are the SavorSelf Coach, a calm warm wellness companion. Respond in plain human language, 2-4 short sentences, supportive and specific, never judgmental. You are chatting normally, not returning JSON.",
+          },
+          {
+            role: "system",
+            content: `Helpful context: ${JSON.stringify(simpleContext)}`,
+          },
+          ...(payload.history ?? []).filter((m) => m.content.length < 220).slice(-4).map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
+          { role: "user", content: payload.message },
+        ],
+        groqApiKey,
+        0.5
+      );
+
+      if (!chatRes.ok) {
+        const err = await chatRes.text();
+        console.log("[ai-coach] simple chat error", err);
+        return jsonResponse({ intent: "chat", reply: "I'm here with you. Try sending that one more time and we'll keep going." });
+      }
+
+      const chatData = await chatRes.json();
+      const reply = chatData?.choices?.[0]?.message?.content ?? "";
+      return jsonResponse({ intent: "chat", reply: reply || "I'm here with you." });
+    }
+
+    const summarizedContext = {
+      moodScores: Array.isArray(payload.context?.moodLogs)
+        ? (payload.context.moodLogs as Array<any>).slice(-5).map((entry) => ({
+            moodScore: entry?.moodScore,
+            energyScore: entry?.energyScore,
+            physicalState: entry?.physicalState?.slice?.(0, 3) ?? [],
+            mentalState: entry?.mentalState?.slice?.(0, 3) ?? [],
+          }))
+        : [],
+      foodSummary: payload.context?.foodSummary ?? null,
+      quickLogs: Array.isArray(payload.context?.quickLogs)
+        ? (payload.context.quickLogs as Array<any>).slice(-3).map((entry) => ({
+            sleepHours: entry?.sleepHours,
+            caffeineMg: entry?.caffeineMg,
+            exerciseMinutes: entry?.exerciseMinutes,
+          }))
+        : [],
+      journalEntries: Array.isArray(payload.context?.journalEntries)
+        ? (payload.context.journalEntries as Array<string>).slice(-2).map((entry) => String(entry).slice(0, 180))
+        : [],
+      insights: Array.isArray(payload.context?.insights)
+        ? (payload.context.insights as Array<any>).slice(0, 2).map((entry) => entry?.insightBody ?? entry?.title ?? "")
+        : [],
+    };
+
+    const systemMessages: GroqMessage[] = [
       { role: "system", content: SYSTEM_PROMPT },
       {
         role: "system",
-        content: `User context: ${JSON.stringify({
-          moodLogs: payload.context?.moodLogs,
-          foodSummary: payload.context?.foodSummary,
-          journalEntries: payload.context?.journalEntries,
-          insights: payload.context?.insights,
-        })}`,
+        content: `User context: ${JSON.stringify(summarizedContext)}`,
       },
     ];
 
@@ -328,10 +438,10 @@ Deno.serve(async (request: Request) => {
     }
 
     const filteredHistory = (payload.history ?? [])
-      .filter((m) => m.content.length < 400)
-      .slice(-10);
+      .filter((m) => m.content.length < 240)
+      .slice(-6);
 
-    const messages = [
+    const messages: GroqMessage[] = [
       ...systemMessages,
       ...filteredHistory.map((m) => ({ role: m.role, content: m.content })),
       { role: "user", content: payload.message },
@@ -339,20 +449,25 @@ Deno.serve(async (request: Request) => {
 
     console.log("[ai-coach] calling Groq, history:", filteredHistory.length);
 
-    const groqRes = await fetch(GROQ_API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${groqApiKey}` },
-      body: JSON.stringify({
-        model: "llama-3.3-70b-versatile",
-        temperature: 0.3,
-        messages,
-      }),
-    });
+    let groqRes = await callGroq(messages, groqApiKey, 0.3);
 
     if (!groqRes.ok) {
       const err = await groqRes.text();
       console.log("[ai-coach] Groq error", err);
-      return jsonResponse({ intent: "chat", reply: "I hit a snag. Please try again." }, 500);
+      groqRes = await callGroq(
+        [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: payload.message },
+        ],
+        groqApiKey,
+        0.3
+      );
+
+      if (!groqRes.ok) {
+        const retryErr = await groqRes.text();
+        console.log("[ai-coach] Groq retry error", retryErr);
+        return jsonResponse({ intent: "chat", reply: "I hit a snag, but I'm still here. Try sending that one more time." });
+      }
     }
 
     const groqData = await groqRes.json();
@@ -408,8 +523,13 @@ Deno.serve(async (request: Request) => {
   } catch (error) {
     console.log("[ai-coach] error", error);
     return jsonResponse(
-      { intent: "chat", reply: error instanceof Error ? error.message : "Something went wrong. Please try again." },
-      500
+      {
+        intent: "chat",
+        reply:
+          error instanceof Error && error.message
+            ? `I hit a snag: ${error.message}`
+            : "Something went wrong on my side. Try again in a moment.",
+      }
     );
   }
 });

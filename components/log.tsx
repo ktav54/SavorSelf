@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { colors, radii, spacing } from "@/constants/theme";
 import { Card, Chip, Field, PrimaryButton, SectionTitle } from "@/components/ui";
+import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase";
 import { formatFoodName } from "@/lib/utils";
 import { searchFoodCatalog, type FoodSearchResult } from "@/services/usda";
 import { useAppStore } from "@/store/useAppStore";
@@ -47,6 +48,176 @@ const mentalOptions: MentalState[] = [
 ];
 
 const mealOptions: MealType[] = ["breakfast", "lunch", "dinner", "snack"];
+
+function estimateMicronutrients(foodName: string) {
+  const name = foodName.toLowerCase();
+  const patterns = [
+    { score: 18, terms: ["salmon", "sardine", "mackerel", "tuna", "herring", "anchovies", "trout", "halibut", "sea bass", "mahi"] },
+    { score: 16, terms: ["spinach", "kale", "broccoli", "arugula", "collard", "chard", "beet green", "watercress", "bok choy", "mustard green"] },
+    { score: 16, terms: ["yogurt", "kefir", "kimchi", "sauerkraut", "miso", "tempeh", "kombucha", "natto", "lassi"] },
+    { score: 12, terms: ["walnut", "almond", "chia", "flax", "hemp", "pumpkin seed", "sunflower seed", "brazil nut", "pecan", "cashew", "pistachio"] },
+    { score: 12, terms: ["lentil", "chickpea", "black bean", "kidney bean", "edamame", "pea", "fava", "mung bean", "navy bean", "pinto"] },
+    { score: 10, terms: ["oat", "quinoa", "farro", "amaranth", "millet", "buckwheat", "barley", "teff", "bulgur", "sorghum"] },
+    { score: 10, terms: ["blueberry", "strawberry", "raspberry", "blackberry", "pomegranate", "acai", "goji", "cranberry", "cherry", "fig"] },
+    { score: 8, terms: ["egg", "eggs"] },
+    { score: 8, terms: ["avocado", "olive oil", "coconut oil", "ghee"] },
+    { score: 8, terms: ["sweet potato", "butternut squash", "pumpkin", "carrot", "beet", "parsnip"] },
+    { score: 7, terms: ["mushroom", "shiitake", "maitake", "reishi", "oyster mushroom"] },
+    { score: 6, terms: ["chicken", "turkey", "lean beef", "bison", "venison", "lamb"] },
+    { score: 4, terms: ["tofu", "soy milk", "edamame"] },
+    { score: 8, terms: ["apple", "pear", "orange", "banana", "mango", "grape", "watermelon", "peach", "plum"] },
+    { score: 6, terms: ["brown rice", "whole wheat", "whole grain", "rye bread", "sourdough"] },
+    { score: -6, terms: ["white rice", "white bread", "cracker", "bagel", "white pasta", "flour tortilla"] },
+    { score: -12, terms: ["hot dog", "deli meat", "bologna", "salami", "pepperoni", "spam", "bacon bits"] },
+    { score: -18, terms: ["chips", "cookie", "cake", "candy", "soda", "fries", "donut", "pop tart", "cheez-it", "oreo", "cheetos", "doritos", "skittles", "gummy", "twizzler", "snickers", "kit kat", "m&m"] },
+    { score: -12, terms: ["fast food", "mcdonald", "burger king", "wendy", "taco bell", "kfc", "popeyes", "jack in the box"] },
+  ];
+
+  for (const pattern of patterns) {
+    if (pattern.terms.some((term) => name.includes(term))) {
+      return pattern.score;
+    }
+  }
+
+  return 0;
+}
+
+function computeGutScore(food: {
+  fiberG: number;
+  proteinG: number;
+  fatG: number;
+  carbsG: number;
+  calories: number;
+  gutHealthTags: string[];
+  foodName: string;
+}) {
+  let score = 52;
+  score += Math.min(food.fiberG * 2, 14);
+  score += Math.min(food.proteinG * 0.25, 8);
+  if (food.gutHealthTags.includes("fermented") || food.gutHealthTags.includes("probiotic")) {
+    score += 8;
+  }
+  if (food.gutHealthTags.includes("anti_inflammatory")) {
+    score += 6;
+  }
+  if (food.gutHealthTags.includes("high_fiber")) {
+    score += 5;
+  }
+  if (food.gutHealthTags.includes("processed")) {
+    score -= 10;
+  }
+  score += estimateMicronutrients(food.foodName);
+  return Math.min(Math.max(Math.round(score), 0), 100);
+}
+
+async function fetchAiGutScore(
+  foodName: string,
+  fiberG: number,
+  proteinG: number,
+  fatG: number,
+  carbsG: number,
+  calories: number
+): Promise<number> {
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/ai-coach`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${supabaseAnonKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        message: `You are a gut-brain axis nutritionist with deep knowledge of psychobiotics, the microbiome-mood connection, and nutritional psychiatry. Score this food from 0-100 for its gut-brain health impact using this rubric:
+
+90-100: Exceptional. High fiber, rich micronutrients, strong probiotic or prebiotic value, anti-inflammatory, supports serotonin/dopamine precursors. Examples: wild salmon, kimchi, kefir, walnuts, lentils, blueberries.
+70-89: Strong. Good fiber or protein, meaningful micronutrients, low processing. Examples: eggs, oats, sweet potato, Greek yogurt, almonds, broccoli, chicken breast.
+50-69: Neutral to moderate. Some nutritional value but limited gut-brain benefit. Examples: white rice, banana, cheddar cheese, whole wheat bread.
+30-49: Low value. Minimal fiber, micronutrients, or gut benefit. May cause blood sugar spikes. Examples: bagel, orange juice, low-fiber crackers.
+10-29: Poor. Ultra-processed, high sugar or refined carbs, inflammatory, disrupts microbiome diversity. Examples: potato chips, cookies, fast food, sugary cereal.
+0-9: Actively harmful. Highest processing, artificial additives, trans fats, extreme sugar. Examples: candy, soda, deep-fried snacks, energy drinks.
+
+Food: "${foodName}"
+Supporting macros per serving: ${calories} kcal, ${fiberG}g fiber, ${proteinG}g protein, ${fatG}g fat, ${carbsG}g carbs.
+
+Reason about: whole food vs processed, likely micronutrient density, microbiome diversity impact, tryptophan/tyrosine content, inflammation potential, blood sugar stability.
+
+Return ONLY a single integer 0-100. No words, no explanation, no punctuation. Just the number.`,
+        context: {},
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    const match = String(data?.reply).match(/\d+/);
+    const score = match ? Math.min(Math.max(parseInt(match[0]), 0), 100) : null;
+    if (score === null) {
+      throw new Error("Invalid score");
+    }
+    return score;
+  } catch {
+    return computeGutScore({
+      fiberG,
+      proteinG,
+      fatG,
+      carbsG,
+      calories,
+      gutHealthTags: [],
+      foodName,
+    });
+  }
+}
+
+function buildLocalGutFeedback(
+  foodName: string,
+  score: number,
+  macros: { fiberG: number; proteinG: number; fatG: number; carbsG: number; calories: number }
+) {
+  const name = formatFoodName(foodName);
+  if (score >= 75) {
+    return `${name} looks pretty supportive today. It has more of the qualities that usually feel steadier for mood and digestion, especially when fiber, protein, or whole-food nutrients are part of the picture.`;
+  }
+  if (score >= 55) {
+    return `${name} lands in a middle zone. There is some support here, but it may feel even steadier when it shows up alongside more fiber or protein.`;
+  }
+  if (score >= 40) {
+    return `${name} looks a little more mixed. It can still fit into the day, but by itself it may feel lighter on gut support or steadier energy.`;
+  }
+  return `${name} may feel a little rougher on steady energy or digestion. That usually happens when a food is lower in fiber or protein, or more processed overall, and it is useful to notice without judging it.`;
+}
+
+export function GutScoreBadge({ score, onPress }: { score: number; onPress?: () => void }) {
+  const backgroundColor =
+    score >= 85
+      ? "#2E7D32"
+      : score >= 70
+        ? "#66BB6A"
+        : score >= 55
+          ? "#FDD835"
+          : score >= 40
+            ? "#FB8C00"
+            : score >= 25
+              ? "#E53935"
+              : "#B71C1C";
+  const textColor = score >= 55 && score <= 69 ? colors.textPrimary : colors.white;
+  const [barWidth, setBarWidth] = useState(0);
+
+  const content = (
+    <View style={styles.gutScoreWrap}>
+      <View style={[styles.gutScoreBadge, { backgroundColor }]}>
+        <Text style={[styles.gutScoreText, { color: textColor }]}>{score}</Text>
+      </View>
+      <View style={styles.gutSpectrumWrap} onLayout={(event) => setBarWidth(event.nativeEvent.layout.width)}>
+        {barWidth > 0 ? (
+          <View style={[styles.gutSpectrumDot, { left: (score / 100) * barWidth - 4 }]} />
+        ) : null}
+        <View style={styles.gutSpectrumBar}>
+          {["#B71C1C", "#E53935", "#FB8C00", "#FDD835", "#66BB6A", "#2E7D32"].map((color, index) => (
+            <View key={`gut-band-${index}`} style={[styles.gutSpectrumSegment, { backgroundColor: color }]} />
+          ))}
+        </View>
+      </View>
+    </View>
+  );
+
+  return onPress ? <Pressable onPress={onPress}>{content}</Pressable> : content;
+}
 
 function getPreferredUnitOptions(preferredUnits?: "imperial" | "metric"): FoodUnit[] {
   if (preferredUnits === "metric") {
@@ -374,8 +545,61 @@ export function MacroSummaryBar() {
     };
   }, [foodLogs]);
 
+  const dailyGutAnalysis = useMemo(() => {
+    if (!foodLogs.length) {
+      return {
+        averageScore: 0,
+        label: "Nothing logged yet",
+        note: "Log a meal and we'll start building a read on how today’s food may be landing for mood, energy, and digestion.",
+      };
+    }
+
+    const scores = foodLogs.map((item) =>
+      computeGutScore({
+        foodName: item.foodName,
+        fiberG: item.fiberG,
+        proteinG: item.proteinG,
+        fatG: item.fatG,
+        carbsG: item.carbsG,
+        calories: item.calories,
+        gutHealthTags: item.gutHealthTags,
+      })
+    );
+    const averageScore = Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length);
+
+    return {
+      averageScore,
+      label:
+        averageScore >= 75
+          ? "Steady support"
+          : averageScore >= 55
+            ? "Mixed but supportive"
+            : averageScore >= 40
+              ? "A little uneven"
+              : "Could feel crashier",
+      note:
+        averageScore >= 75
+          ? "Today’s foods look pretty supportive for steadier energy and a calmer gut."
+          : averageScore >= 55
+            ? "There’s some good support in today’s mix, with room to make the day feel even steadier."
+            : averageScore >= 40
+              ? "Today looks more mixed so far. A little more fiber or protein later could help balance it out."
+              : "Today’s mix may land a little rougher on energy or digestion, which is useful to notice without judging it.",
+    };
+  }, [foodLogs]);
+
   return (
     <>
+      <Card>
+        <View style={styles.dailyGutHeader}>
+          <View>
+            <Text style={styles.dailyGutEyebrow}>Daily Gut Analysis</Text>
+            <Text style={styles.dailyGutTitle}>{dailyGutAnalysis.label}</Text>
+          </View>
+          <GutScoreBadge score={dailyGutAnalysis.averageScore} />
+        </View>
+        <Text style={styles.dailyGutBody}>{dailyGutAnalysis.note}</Text>
+      </Card>
       <View style={styles.macroGrid}>
         <MacroVisualCard
           label="Calories"
@@ -696,7 +920,8 @@ export function FoodSearchCard({
   const foodError = useAppStore((state) => state.foodError);
   const profile = useAppStore((state) => state.profile);
   const [query, setQuery] = useState("");
-  const [result, setResult] = useState<FoodSearchResult | null>(null);
+  const [results, setResults] = useState<FoodSearchResult[]>([]);
+  const [gutScores, setGutScores] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [hasSearched, setHasSearched] = useState(false);
@@ -712,6 +937,9 @@ export function FoodSearchCard({
   const [manualCarbs, setManualCarbs] = useState("");
   const [manualFat, setManualFat] = useState("");
   const [showExtraUnits, setShowExtraUnits] = useState(false);
+  const [gutFeedbackTitle, setGutFeedbackTitle] = useState("");
+  const [gutFeedback, setGutFeedback] = useState("");
+  const [gutFeedbackLoading, setGutFeedbackLoading] = useState(false);
   const unitOptions = useMemo(
     () => getPreferredUnitOptions(profile?.preferredUnits),
     [profile?.preferredUnits]
@@ -752,22 +980,50 @@ export function FoodSearchCard({
 
   const runSearch = async () => {
     if (!query.trim()) {
-      setResult(null);
+      setResults([]);
+      setGutScores({});
       setError("");
       setHasSearched(false);
       return;
     }
-
     setLoading(true);
     setError("");
     setHasSearched(true);
-
     try {
       const nextResults = await searchFoodCatalog(query);
-      setResult(nextResults[0] ?? null);
+      setResults(nextResults);
+      const initialScores: Record<string, number> = {};
+      nextResults.forEach((item) => {
+        const key = `${item.source}-${item.id}`;
+        initialScores[key] = computeGutScore({
+          fiberG: 0,
+          proteinG: item.proteinPer100g,
+          fatG: item.fatPer100g,
+          carbsG: item.carbsPer100g,
+          calories: item.caloriesPer100g,
+          gutHealthTags: [],
+          foodName: item.description,
+        });
+      });
+      setGutScores(initialScores);
+      nextResults.forEach((item) => {
+        const key = `${item.source}-${item.id}`;
+        fetchAiGutScore(
+          item.description,
+          0,
+          item.proteinPer100g,
+          item.fatPer100g,
+          item.carbsPer100g,
+          item.caloriesPer100g
+        )
+          .then((aiScore) => {
+            setGutScores((prev) => ({ ...prev, [key]: aiScore }));
+          })
+          .catch(() => {});
+      });
     } catch (searchError) {
-      setResult(null);
-      setError(searchError instanceof Error ? searchError.message : "Unable to look up nutrition right now.");
+      setResults([]);
+      setError(searchError instanceof Error ? searchError.message : "Unable to search foods right now.");
     } finally {
       setLoading(false);
     }
@@ -780,7 +1036,8 @@ export function FoodSearchCard({
     setUnit("serving");
     setMealType("breakfast");
     setQuery("");
-    setResult(null);
+    setResults([]);
+    setGutScores({});
     setError("");
     setHasSearched(false);
     setSaveError("");
@@ -791,6 +1048,44 @@ export function FoodSearchCard({
     setManualFat("");
     setShowExtraUnits(false);
     onRequestClose?.();
+  };
+
+  const openGutFeedback = async (
+    foodName: string,
+    score: number,
+    macros: { fiberG: number; proteinG: number; fatG: number; carbsG: number; calories: number }
+  ) => {
+    setGutFeedbackTitle(formatFoodName(foodName));
+    setGutFeedback("");
+    setGutFeedbackLoading(true);
+    try {
+      const response = await fetch(`${supabaseUrl}/functions/v1/ai-coach`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${supabaseAnonKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: `In 2 short warm sentences, explain why ${foodName} might land around ${score}/100 for gut comfort, steadier mood, and balanced energy. Known macros: ${Math.round(macros.calories)} cal, ${Math.round(macros.fiberG)}g fiber, ${Math.round(macros.proteinG)}g protein, ${Math.round(macros.fatG)}g fat, ${Math.round(macros.carbsG)}g carbs. Focus on how it might feel in the body and for mood, not on judging the food.`,
+          mode: "gut_feedback",
+          context: {},
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error();
+      }
+      const reply = typeof data?.reply === "string" ? data.reply.trim() : "";
+      setGutFeedback(
+        !reply || /hit a snag|try again/i.test(reply)
+          ? buildLocalGutFeedback(foodName, score, macros)
+          : reply
+      );
+    } catch {
+      setGutFeedback(buildLocalGutFeedback(foodName, score, macros));
+    } finally {
+      setGutFeedbackLoading(false);
+    }
   };
 
   const confirmSave = async () => {
@@ -890,25 +1185,56 @@ export function FoodSearchCard({
         </View>
       ) : null}
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
-      {result ? (
+      {results.length ? (
         <View style={styles.searchResults}>
-          <Pressable
-            style={styles.searchResultCard}
-            onPress={() => setSelectedFood(result)}
-          >
-            <Text style={styles.foodName}>{formatFoodName(result.description)}</Text>
-            <Text style={styles.foodMeta}>
-              {Math.round(result.caloriesPer100g)} cal | {Math.round(result.proteinPer100g)}g protein | {Math.round(result.carbsPer100g)}g carbs | {Math.round(result.fatPer100g)}g fat
-            </Text>
-            <Text style={styles.tapHint}>Tap to add this food</Text>
-          </Pressable>
+          {results.map((item) => {
+            const key = `${item.source}-${item.id}`;
+            const score = gutScores[key] ?? computeGutScore({ fiberG: 0, proteinG: item.proteinPer100g, fatG: item.fatPer100g, carbsG: item.carbsPer100g, calories: item.caloriesPer100g, gutHealthTags: [], foodName: item.description });
+            return (
+              <Pressable key={key} style={styles.searchResultCard} onPress={() => setSelectedFood(item)}>
+                <Text style={styles.foodName}>{formatFoodName(item.description)}</Text>
+                <GutScoreBadge
+                  score={score}
+                  onPress={() =>
+                    void openGutFeedback(item.description, score, {
+                      fiberG: item.fiberPer100g ?? 0,
+                      proteinG: item.proteinPer100g,
+                      fatG: item.fatPer100g,
+                      carbsG: item.carbsPer100g,
+                      calories: item.caloriesPer100g,
+                    })
+                  }
+                />
+                <Text style={styles.foodMeta}>
+                  {Math.round(item.caloriesPer100g)} cal | {Math.round(item.proteinPer100g)}g protein | {Math.round(item.carbsPer100g)}g carbs | {Math.round(item.fatPer100g)}g fat
+                </Text>
+                <Text style={styles.tapHint}>Tap to add this food</Text>
+              </Pressable>
+            );
+          })}
         </View>
       ) : null}
-      {hasSearched && !loading && !error && !result ? (
+      {hasSearched && !loading && !error && !results.length ? (
         <Text style={styles.emptyText}>
           We couldn't find nutrition for that just yet. Try a simpler food name.
         </Text>
       ) : null}
+      <Modal transparent animationType="fade" visible={Boolean(gutFeedbackTitle)} onRequestClose={() => setGutFeedbackTitle("")}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <SectionTitle eyebrow="Gut score" title={gutFeedbackTitle} subtitle="A quick read on how this food may land for mood, energy, and digestion." />
+            {gutFeedbackLoading ? (
+              <View style={styles.loadingRow}>
+                <ActivityIndicator color={colors.accentPrimary} />
+                <Text style={styles.loadingText}>Thinking through it...</Text>
+              </View>
+            ) : (
+              <Text style={styles.emptyText}>{gutFeedback}</Text>
+            )}
+            <PrimaryButton label="Close" secondary onPress={() => setGutFeedbackTitle("")} />
+          </View>
+        </View>
+      </Modal>
       <Modal visible={Boolean(selectedFood)} animationType="slide" transparent onRequestClose={closeModal}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
@@ -1147,10 +1473,22 @@ function SwipeableFoodRow({
   onDelete: () => Promise<void>;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [gutFeedbackVisible, setGutFeedbackVisible] = useState(false);
+  const [gutFeedback, setGutFeedback] = useState("");
+  const [gutFeedbackLoading, setGutFeedbackLoading] = useState(false);
   const scale = useRef(new Animated.Value(1)).current;
   const translateY = useRef(new Animated.Value(0)).current;
   const actionsOpacity = useRef(new Animated.Value(0)).current;
   const actionsHeight = useRef(new Animated.Value(0)).current;
+  const gutScore = computeGutScore({
+    foodName: item.foodName,
+    fiberG: item.fiberG,
+    proteinG: item.proteinG,
+    fatG: item.fatG,
+    carbsG: item.carbsG,
+    calories: item.calories,
+    gutHealthTags: item.gutHealthTags,
+  });
 
   const animateExpanded = (next: boolean) => {
     setExpanded(next);
@@ -1180,6 +1518,54 @@ function SwipeableFoodRow({
     ]).start();
   };
 
+  const openGutFeedback = async () => {
+    setGutFeedbackVisible(true);
+    setGutFeedback("");
+    setGutFeedbackLoading(true);
+    try {
+      const response = await fetch(`${supabaseUrl}/functions/v1/ai-coach`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${supabaseAnonKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: `In 2 short warm sentences, explain why ${item.foodName} might land around ${gutScore}/100 for gut comfort, steadier mood, and balanced energy. Known macros: ${Math.round(item.calories)} cal, ${Math.round(item.fiberG)}g fiber, ${Math.round(item.proteinG)}g protein, ${Math.round(item.fatG)}g fat, ${Math.round(item.carbsG)}g carbs. Focus on how it might feel in the body and for mood, not on judging the food.`,
+          mode: "gut_feedback",
+          context: {},
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error();
+      }
+      const reply = typeof data?.reply === "string" ? data.reply.trim() : "";
+      setGutFeedback(
+        !reply || /hit a snag|try again/i.test(reply)
+          ? buildLocalGutFeedback(item.foodName, gutScore, {
+              fiberG: item.fiberG,
+              proteinG: item.proteinG,
+              fatG: item.fatG,
+              carbsG: item.carbsG,
+              calories: item.calories,
+            })
+          : reply
+      );
+    } catch {
+      setGutFeedback(
+        buildLocalGutFeedback(item.foodName, gutScore, {
+          fiberG: item.fiberG,
+          proteinG: item.proteinG,
+          fatG: item.fatG,
+          carbsG: item.carbsG,
+          calories: item.calories,
+        })
+      );
+    } finally {
+      setGutFeedbackLoading(false);
+    }
+  };
+
   return (
     <View style={styles.longPressContainer}>
       <Animated.View
@@ -1203,13 +1589,32 @@ function SwipeableFoodRow({
         >
           <View style={[styles.foodDot, { backgroundColor: pickFoodColor(item.gutHealthTags[0]) }]} />
           <View style={styles.foodCopy}>
-            <Text style={styles.foodName}>{formatFoodName(item.foodName)}</Text>
+            <View style={styles.foodTitleRow}>
+              <Text style={styles.foodName}>{formatFoodName(item.foodName)}</Text>
+              <GutScoreBadge score={gutScore} onPress={() => void openGutFeedback()} />
+            </View>
             <Text style={styles.foodMeta}>
               {Math.round(item.quantity)} {item.unit} | {Math.round(item.calories)} cal | {Math.round(item.proteinG)}g protein
             </Text>
           </View>
         </Pressable>
       </Animated.View>
+      <Modal transparent animationType="fade" visible={gutFeedbackVisible} onRequestClose={() => setGutFeedbackVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <SectionTitle eyebrow="Gut score" title={formatFoodName(item.foodName)} subtitle="A quick read on how this food may land for mood, energy, and digestion." />
+            {gutFeedbackLoading ? (
+              <View style={styles.loadingRow}>
+                <ActivityIndicator color={colors.accentPrimary} />
+                <Text style={styles.loadingText}>Thinking through it...</Text>
+              </View>
+            ) : (
+              <Text style={styles.emptyText}>{gutFeedback}</Text>
+            )}
+            <PrimaryButton label="Close" secondary onPress={() => setGutFeedbackVisible(false)} />
+          </View>
+        </View>
+      </Modal>
       <Animated.View
         style={[
           styles.rowActionsWrap,
@@ -1410,6 +1815,31 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: spacing.sm,
   },
+  dailyGutHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: spacing.md,
+  },
+  dailyGutEyebrow: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+  },
+  dailyGutTitle: {
+    color: colors.textPrimary,
+    fontSize: 22,
+    fontWeight: "700",
+    marginTop: 4,
+  },
+  dailyGutBody: {
+    color: colors.textSecondary,
+    fontSize: 15,
+    lineHeight: 22,
+    marginTop: spacing.md,
+  },
   macroCard: {
     width: "48%",
     borderRadius: radii.lg,
@@ -1525,10 +1955,52 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 4,
   },
+  foodTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    flexWrap: "wrap",
+  },
   foodName: {
     color: colors.textPrimary,
     fontSize: 16,
     fontWeight: "600",
+  },
+  gutScoreWrap: {
+    alignSelf: "flex-start",
+    gap: 4,
+  },
+  gutScoreBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    alignSelf: "flex-start",
+  },
+  gutScoreText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  gutSpectrumWrap: {
+    width: 72,
+    position: "relative",
+    paddingTop: 2,
+  },
+  gutSpectrumDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.textPrimary,
+    position: "absolute",
+    top: -2,
+  },
+  gutSpectrumBar: {
+    flexDirection: "row",
+    height: 4,
+    borderRadius: 2,
+    overflow: "hidden",
+  },
+  gutSpectrumSegment: {
+    flex: 1,
   },
   foodMeta: {
     color: colors.textSecondary,
@@ -1606,10 +2078,6 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     padding: spacing.md,
     gap: 6,
-  },
-  searchSource: {
-    color: colors.textSecondary,
-    fontSize: 12,
   },
   loadingRow: {
     flexDirection: "row",
