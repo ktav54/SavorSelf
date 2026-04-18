@@ -6,7 +6,7 @@ import { Card, Field, PrimaryButton, SectionTitle } from "@/components/ui";
 import { GutScoreBadge } from "@/components/log";
 import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase";
 import { formatFoodName } from "@/lib/utils";
-import { sendMessage } from "@/services/coach";
+import { parseFoodMessage, sendCoachMessage } from "@/services/coach";
 import { useAppStore } from "@/store/useAppStore";
 import type { CoachFoodItem, CoachFoodProposal, FoodUnit } from "@/types/models";
 
@@ -313,13 +313,13 @@ export function CoachChat() {
     const message = draft.trim();
     const history = conversation
       .filter((m) => m.content.length < 400)
-      .slice(-10)
+      .slice(-6)
       .map((m) => ({ role: m.role, content: m.content }));
     addCoachMessage({ role: "user", content: message, timestamp: new Date().toISOString() });
     setDraft("");
     setSending(true);
     try {
-      const result = await sendMessage({ message, history, context: coachContext, pendingProposal });
+      const result = await parseFoodMessage({ message, pendingProposal, history, context: coachContext });
       switch (result.intent) {
         case "food_log": {
           if (result.items?.length) {
@@ -364,7 +364,10 @@ export function CoachChat() {
           appendAssistant(result.reply, "clarification");
           break;
         default:
-          appendAssistant(result.reply || "I'm here with you.", "text");
+          {
+            const coachResult = await sendCoachMessage(message, coachContext, history);
+            appendAssistant(coachResult.reply || result.reply || "I'm here with you.", "text");
+          }
       }
     } catch (error) {
       appendAssistant(error instanceof Error ? error.message : "I hit a snag. Please try again.", "status");
