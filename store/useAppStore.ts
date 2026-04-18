@@ -1,7 +1,7 @@
 import { endOfDay, startOfDay } from "date-fns";
 import { Session, User } from "@supabase/supabase-js";
 import { create } from "zustand";
-import { analyzeFoodMood } from "@/lib/food-mood";
+import { analyzeFoodMood, generateAiNarrative } from "@/lib/food-mood";
 import { demoConversation, demoInsights, demoJournalEntries, demoQuickLogs } from "@/lib/demo-data";
 import { supabase } from "@/lib/supabase";
 import { formatFoodName } from "@/lib/utils";
@@ -32,6 +32,7 @@ interface AppState {
   insights: FoodMoodInsight[];
   foodMoodSnapshot: FoodMoodSnapshot | null;
   foodMoodTrend: FoodMoodTrendPoint[];
+  aiNarrative: string;
   conversation: AiConversationMessage[];
   conversationResetCount: number;
   authError: string | null;
@@ -277,6 +278,7 @@ export const useAppStore = create<AppState>((set) => ({
   insights: demoInsights,
   foodMoodSnapshot: null,
   foodMoodTrend: [],
+  aiNarrative: "",
   conversation: demoConversation,
   conversationResetCount: 0,
   authError: null,
@@ -316,6 +318,7 @@ export const useAppStore = create<AppState>((set) => ({
         insights: [],
         foodMoodSnapshot: null,
         foodMoodTrend: [],
+        aiNarrative: "",
         conversation: [],
         conversationResetCount: 0,
         authError: null,
@@ -526,6 +529,7 @@ export const useAppStore = create<AppState>((set) => ({
       moodLogs: [],
       foodLogs: [],
       journalEntries: [],
+      aiNarrative: "",
       conversation: [],
       conversationResetCount: 0,
       authError: null,
@@ -678,6 +682,24 @@ export const useAppStore = create<AppState>((set) => ({
       insightsLoading: false,
       insightsError: null,
     });
+
+    try {
+      const aiNarrative = await generateAiNarrative({
+        insights: analysis.insights,
+        snapshot: analysis.snapshot,
+        trend: analysis.trend,
+        moodLogs,
+        foodLogs,
+      });
+
+      set({
+        aiNarrative,
+      });
+    } catch {
+      set({
+        aiNarrative: "",
+      });
+    }
   },
   loadJournalEntries: async () => {
     const profile = useAppStore.getState().profile;

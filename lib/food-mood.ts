@@ -1,4 +1,5 @@
 import { subDays } from "date-fns";
+import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase";
 import type {
   FoodLog,
   FoodMoodInsight,
@@ -265,4 +266,91 @@ export function analyzeFoodMood({
     snapshot,
     trend,
   };
+}
+
+function getTopCorrelatingMetric(insights: FoodMoodInsight[]) {
+  const withCorrelation = insights
+    .filter((insight) => typeof insight.supportingData.correlation === "number")
+    .sort(
+      (left, right) =>
+        Math.abs(Number(right.supportingData.correlation)) -
+        Math.abs(Number(left.supportingData.correlation))
+    );
+
+  if (!withCorrelation.length) {
+    return "still forming";
+  }
+
+  const metric = String(withCorrelation[0].supportingData.metric ?? "still forming");
+  return metric.replace(/_/g, " ");
+}
+
+export async function generateAiNarrative({
+  insights,
+  snapshot,
+  trend,
+  moodLogs,
+  foodLogs,
+}: {
+  insights: FoodMoodInsight[];
+  snapshot: FoodMoodSnapshot | null;
+  trend: FoodMoodTrendPoint[];
+  moodLogs: MoodLog[];
+  foodLogs: FoodLog[];
+}) {
+  const recentMoodAverage =
+    snapshot?.averageMoodThisWeek ??
+    (moodLogs.length
+      ? Math.round(
+          (moodLogs.reduce((sum, log) => sum + log.moodScore, 0) / moodLogs.length) * 10
+        ) / 10
+      : null);
+
+  const recentFoodNames = Array.from(
+    new Set(foodLogs.slice(-8).map((log) => log.foodName))
+  )
+    .slice(0, 5)
+    .join(", ");
+
+  const trendSummary = trend
+    .filter((point) => point.moodScore !== null)
+    .map((point) => `${point.date.slice(5)} mood ${point.moodScore}`)
+    .join("; ");
+
+  const message = [
+    "Write a 2-3 sentence warm, personal Food-Mood narrative based only on these real user patterns.",
+    "Do not give generic advice. Connect food patterns to how the user has been feeling.",
+    `Average mood this week: ${recentMoodAverage ?? "not enough data"}.`,
+    `Top correlating nutrient or pattern: ${getTopCorrelatingMetric(insights)}.`,
+    `Days logged this week: ${snapshot?.daysLoggedThisWeek ?? 0}.`,
+    `Top insight 1: ${insights[0]?.insightBody ?? "still forming"}.`,
+    `Top insight 2: ${insights[1]?.insightBody ?? "still forming"}.`,
+    `Recent foods: ${recentFoodNames || "no recent foods logged"}.`,
+    `7-day mood trend: ${trendSummary || "not enough data yet"}.`,
+  ].join("\n");
+
+  const response = await fetch(`${supabaseUrl}/functions/v1/ai-coach`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? supabaseAnonKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      message,
+      history: [],
+      context: {
+        source: "food_mood_narrative",
+        snapshot,
+        topInsights: insights.slice(0, 2).map((insight) => insight.insightBody),
+      },
+    }),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(payload?.error ?? `AI narrative failed with ${response.status}.`);
+  }
+
+  return typeof payload?.reply === "string" ? payload.reply.trim() : "";
 }
