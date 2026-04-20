@@ -320,6 +320,15 @@ export function CoachChat() {
     setSending(true);
     try {
       const result = await parseFoodMessage({ message, pendingProposal, history, context: coachContext });
+      if (
+        !result?.intent &&
+        (!result?.reply || /hit a snag|try again/i.test(result.reply))
+      ) {
+        const fallback = await sendCoachMessage(message, coachContext, history);
+        appendAssistant(fallback.reply || "I'm here with you.", "text");
+        return;
+      }
+
       switch (result.intent) {
         case "food_log": {
           if (result.items?.length) {
@@ -364,13 +373,21 @@ export function CoachChat() {
           appendAssistant(result.reply, "clarification");
           break;
         default:
-          {
-            const coachResult = await sendCoachMessage(message, coachContext, history);
-            appendAssistant(coachResult.reply || result.reply || "I'm here with you.", "text");
+          if (!result.reply || /hit a snag|try again/i.test(result.reply)) {
+            const fallback = await sendCoachMessage(message, coachContext, history);
+            appendAssistant(fallback.reply || "I'm here with you.", "text");
+          } else {
+            appendAssistant(result.reply || "I'm here with you.", "text");
           }
+          break;
       }
     } catch (error) {
-      appendAssistant(error instanceof Error ? error.message : "I hit a snag. Please try again.", "status");
+      try {
+        const fallback = await sendCoachMessage(message, coachContext, history);
+        appendAssistant(fallback.reply || "I'm here with you.", "text");
+      } catch {
+        appendAssistant("I'm here with you.", "text");
+      }
     } finally {
       setSending(false);
     }
@@ -816,9 +833,6 @@ export function CoachChat() {
                           </Pressable>
                         ) : null}
                       </View>
-                      {item.foodSource === "ai_estimate" ? (
-                        <Text style={styles.estimateTag}>AI estimate</Text>
-                      ) : null}
                       <Text style={styles.summaryMeta}>{item.portion}</Text>
                     </View>
                     <View style={styles.summaryCopy}>

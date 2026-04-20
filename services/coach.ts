@@ -1,6 +1,8 @@
 import type { CoachFoodProposal } from "@/types/models";
 import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase";
 
+type CoachHistoryMessage = { role: "user" | "assistant"; content: string };
+
 async function callEdgeFunction<TRequest, TResponse>(functionName: string, body: TRequest): Promise<TResponse> {
   const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
     method: "POST",
@@ -11,7 +13,7 @@ async function callEdgeFunction<TRequest, TResponse>(functionName: string, body:
     body: JSON.stringify(body),
   });
 
-  const payload = await response.json();
+  const payload = await response.json().catch(() => ({}));
 
   if (!response.ok) {
     throw new Error(payload?.error ?? `Edge Function ${functionName} failed with ${response.status}.`);
@@ -23,16 +25,16 @@ async function callEdgeFunction<TRequest, TResponse>(functionName: string, body:
 export async function sendCoachMessage(
   message: string,
   context: Record<string, unknown>,
-  history: Array<{ role: "user" | "assistant"; content: string }> = []
+  history: CoachHistoryMessage[] = []
 ) {
   return callEdgeFunction<
     {
       message: string;
       context: Record<string, unknown>;
-      history: Array<{ role: "user" | "assistant"; content: string }>;
+      history: CoachHistoryMessage[];
       mode: string;
     },
-    { intent: string; reply: string }
+    { intent?: string; reply?: string }
   >("ai-coach", {
     message,
     context,
@@ -44,19 +46,19 @@ export async function sendCoachMessage(
 export async function parseFoodMessage(input: {
   message: string;
   pendingProposal?: CoachFoodProposal | null;
-  history?: Array<{ role: "user" | "assistant"; content: string }>;
+  history?: CoachHistoryMessage[];
   context?: Record<string, unknown>;
 }) {
   return callEdgeFunction<
     {
       message: string;
       pendingProposal?: CoachFoodProposal | null;
-      history?: Array<{ role: "user" | "assistant"; content: string }>;
+      history?: CoachHistoryMessage[];
       context: Record<string, unknown>;
     },
     {
-      intent: string;
-      reply: string;
+      intent?: string;
+      reply?: string;
       mealType?: "breakfast" | "lunch" | "dinner" | "snack";
       needsClarification?: boolean;
       clarificationQuestion?: string;
@@ -69,6 +71,14 @@ export async function parseFoodMessage(input: {
         fat?: number;
         name?: string;
       }>;
+      macroEdit?: {
+        itemIndex: number;
+        calories?: number;
+        protein?: number;
+        carbs?: number;
+        fat?: number;
+        name?: string;
+      };
     }
   >("ai-coach", {
     message: input.message,

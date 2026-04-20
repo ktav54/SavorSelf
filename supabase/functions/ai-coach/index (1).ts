@@ -324,29 +324,61 @@ Deno.serve(async (request: Request) => {
       });
     }
 
-    if (payload.mode === "gut_feedback") {
-      const groqRes = await callGroq(
+    if (payload.mode === "gut_score") {
+      const foodName = payload.message.replace(/^gut_score:\s*/i, "").trim();
+
+      const gutRes = await callGroq(
         [
           {
             role: "system",
-            content:
-              "You are the SavorSelf Coach. Reply in 2 short warm sentences. Focus on how the food may land for digestion, steadier energy, and mood. Never judge the food.",
+            content: `You are a gut-brain nutrition coach inside SavorSelf. A user tapped on a food to understand how it might affect their mood, energy, and digestion. Speak like a warm, knowledgeable friend - not a doctor, not a generic health app. Be honest and specific but approachable.
+
+Score the food 0-100. Be accurate and varied - do not default to 60 for everything:
+- 80-100: actively supports mood, steady energy, and gut health (salmon, oats, kimchi, walnuts, blueberries, sweet potato)
+- 60-79: solid food with some gut-brain benefit but trade-offs (eggs, chicken, apple, banana, yogurt, brown rice)
+- 40-59: mostly neutral, minimal gut-brain benefit (cheese, white pasta, crackers, white bread)
+- 0-39: likely causes energy crashes, gut discomfort, or mood dips (donuts, soda, chips, candy, fast food)
+
+Tags - 2 to 3 tags, each under 4 words, specific to THIS food:
+- Good examples: "High in omega-3s", "Low fiber", "Stabilizes blood sugar", "Feeds gut bacteria", "Rich in antioxidants", "Natural sugar spike"
+- Never write: "Mixed support", "Moderate benefit", "Balanced food", "Good choice"
+- sentiment: "positive" if it helps, "caution" if it's a downside, "neutral" if neither
+
+Summary: One friendly sentence about this specific food, under 20 words.
+
+Insights - one per category, 1-2 short plain-English sentences. Write for a curious teenager, not a doctor:
+- Energy: How does this food affect energy and for how long? Mention sugar, protein, or fat content if relevant.
+- Mood: Does this food have anything that supports or hurts mood? Mention fiber, omega-3s, or blood sugar swings if relevant.
+- Digestion: Is this food easy to digest? Does it feed good gut bacteria or not?
+
+Every insight must be specific to this exact food. No filler.
+
+Return ONLY valid JSON, no markdown, no explanation:
+{"score":number,"tags":[{"label":"string","sentiment":"positive"|"neutral"|"caution"}],"summary":"string","insights":[{"category":"Energy","body":"string"},{"category":"Mood","body":"string"},{"category":"Digestion","body":"string"}]}`,
           },
-          { role: "user", content: payload.message },
+          { role: "user", content: `Food: ${foodName}` },
         ],
         groqApiKey,
-        0.4
+        0.3
       );
 
-      if (!groqRes.ok) {
-        const err = await groqRes.text();
-        console.log("[ai-coach] gut feedback error", err);
-        return jsonResponse({ intent: "chat", reply: "I couldn't read that food right now, but it's okay to try again in a moment." });
+      if (!gutRes.ok) {
+        const err = await gutRes.text();
+        console.log("[ai-coach] gut_score groq error", err);
+        return jsonResponse({ intent: "gut_score", error: "Could not generate gut score." }, 500);
       }
 
-      const groqData = await groqRes.json();
-      const raw = groqData?.choices?.[0]?.message?.content ?? "";
-      return jsonResponse({ intent: "chat", reply: raw || "I couldn't read that food right now, but it's okay to try again in a moment." });
+      const gutData = await gutRes.json();
+      const raw = gutData?.choices?.[0]?.message?.content ?? "";
+      console.log("[ai-coach] gut_score raw", raw);
+
+      try {
+        const parsed = JSON.parse(cleanJson(raw));
+        return jsonResponse({ intent: "gut_score", foodName, ...parsed });
+      } catch {
+        console.log("[ai-coach] gut_score parse failed", raw);
+        return jsonResponse({ intent: "gut_score", error: "Could not parse gut score." }, 500);
+      }
     }
 
     if (payload.mode === "simple_chat") {
