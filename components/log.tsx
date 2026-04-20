@@ -226,12 +226,10 @@ function buildGutFeedbackLines(
 }
 
 function getGutAccentColor(score: number) {
-  if (score >= 85) return "#2E7D32";
-  if (score >= 70) return "#66BB6A";
-  if (score >= 55) return "#FDD835";
-  if (score >= 40) return "#FB8C00";
-  if (score >= 25) return "#E53935";
-  return "#B71C1C";
+  if (score >= 80) return "#8A9E7B";
+  if (score >= 60) return "#C4622D";
+  if (score >= 40) return "#E8A838";
+  return "#C97B6C";
 }
 
 function buildGutTags(
@@ -376,33 +374,23 @@ function normalizeGutTags(
 }
 
 export function GutScoreBadge({ score, onPress }: { score: number; onPress?: () => void }) {
-  const backgroundColor =
-    score >= 85
-      ? "#2E7D32"
-      : score >= 70
-        ? "#66BB6A"
-        : score >= 55
-          ? "#FDD835"
-          : score >= 40
-            ? "#FB8C00"
-            : score >= 25
-              ? "#E53935"
-              : "#B71C1C";
-  const textColor = score >= 55 && score <= 69 ? colors.textPrimary : colors.white;
+  const accentColor = getGutAccentColor(score);
+  const backgroundColor = `${accentColor}22`;
+  const textColor = accentColor;
   const [barWidth, setBarWidth] = useState(0);
 
   const content = (
     <View style={styles.gutScoreWrap}>
       <View style={styles.gutSpectrumWrap} onLayout={(event) => setBarWidth(event.nativeEvent.layout.width)}>
-        {barWidth > 0 ? (
-          <View style={[styles.gutMarkerWrap, { left: (score / 100) * barWidth - 20 }]}>
-            <View style={[styles.gutScoreBadge, { backgroundColor }]}>
-              <Text style={[styles.gutScoreText, { color: textColor }]}>{score}</Text>
+          {barWidth > 0 ? (
+            <View style={[styles.gutMarkerWrap, { left: (score / 100) * barWidth - 20 }]}>
+              <View style={[styles.gutScoreBadge, { backgroundColor }]}>
+                <Text style={[styles.gutScoreText, { color: textColor }]}>{score}</Text>
+              </View>
+              <View style={[styles.gutMarkerStem, { backgroundColor: accentColor }]} />
+              <View style={[styles.gutMarkerArrow, { borderTopColor: accentColor }]} />
             </View>
-            <View style={styles.gutMarkerStem} />
-            <View style={styles.gutMarkerArrow} />
-          </View>
-        ) : null}
+          ) : null}
         <View style={styles.gutSpectrumBar}>
           {["#B71C1C", "#E53935", "#FB8C00", "#FDD835", "#66BB6A", "#2E7D32"].map((color, index) => (
             <View key={`gut-band-${index}`} style={[styles.gutSpectrumSegment, { backgroundColor: color }]} />
@@ -1140,6 +1128,7 @@ export function FoodSearchCard({
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<FoodSearchResult[]>([]);
   const [gutScores, setGutScores] = useState<Record<string, number>>({});
+  const [gutScoreLoading, setGutScoreLoading] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [hasSearched, setHasSearched] = useState(false);
@@ -1199,6 +1188,7 @@ export function FoodSearchCard({
     if (!query.trim()) {
       setResults([]);
       setGutScores({});
+      setGutScoreLoading({});
       setError("");
       setHasSearched(false);
       return;
@@ -1209,35 +1199,52 @@ export function FoodSearchCard({
     try {
       const nextResults = await searchFoodCatalog(query);
       setResults(nextResults);
-      const initialScores: Record<string, number> = {};
+      const loadingScores: Record<string, boolean> = {};
       nextResults.forEach((item) => {
         const key = `${item.source}-${item.id}`;
-        initialScores[key] = computeGutScore({
-          fiberG: 0,
-          proteinG: item.proteinPer100g,
-          fatG: item.fatPer100g,
-          carbsG: item.carbsPer100g,
-          calories: item.caloriesPer100g,
-          gutHealthTags: [],
-          foodName: item.description,
-        });
+        loadingScores[key] = true;
       });
-      setGutScores(initialScores);
-      nextResults.forEach((item) => {
-        const key = `${item.source}-${item.id}`;
-        fetchAiGutScore(
-          item.description,
-          0,
-          item.proteinPer100g,
-          item.fatPer100g,
-          item.carbsPer100g,
-          item.caloriesPer100g
-        )
-          .then((aiScore) => {
-            setGutScores((prev) => ({ ...prev, [key]: aiScore }));
-          })
-          .catch(() => {});
-      });
+      setGutScores({});
+      setGutScoreLoading(loadingScores);
+      const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+      const fetchScoresSequentially = async () => {
+        for (let i = 0; i < nextResults.slice(0, 3).length; i++) {
+          const item = nextResults[i];
+          const key = `${item.source}-${item.id}`;
+          try {
+            const res = await fetch(
+              "https://rxeyjtykavgadfvsspsy.supabase.co/functions/v1/ai-coach",
+              {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${supabaseAnonKey}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  mode: "gut_score",
+                  message: `gut_score: ${item.description}`,
+                  history: [],
+                  context: {},
+                }),
+              }
+            );
+            const data = await res.json();
+            if (data?.intent === "gut_score" && data?.score != null) {
+              setGutScores((prev) => ({
+                ...prev,
+                [key]: Math.min(Math.max(Number(data.score), 0), 100),
+              }));
+            }
+          } catch {}
+          setGutScoreLoading((prev) => ({ ...prev, [key]: false }));
+          if (i < nextResults.slice(0, 3).length - 1) {
+            await delay(600);
+          }
+        }
+      };
+
+      void fetchScoresSequentially();
     } catch (searchError) {
       setResults([]);
       setError(searchError instanceof Error ? searchError.message : "Unable to search foods right now.");
@@ -1393,6 +1400,15 @@ export function FoodSearchCard({
             ],
           });
           setGutScoreVisible(true);
+          const key = results.find(
+            (r) => r.description.toLowerCase() === foodName.toLowerCase()
+          )
+            ? `${results.find((r) => r.description.toLowerCase() === foodName.toLowerCase())!.source}-${results.find((r) => r.description.toLowerCase() === foodName.toLowerCase())!.id}`
+            : null;
+
+          if (key) {
+            setGutScores((prev) => ({ ...prev, [key]: parsedScore }));
+          }
           return;
         }
 
@@ -1502,32 +1518,46 @@ export function FoodSearchCard({
         </View>
       ) : null}
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
-      {results.length ? (
-        <View style={styles.searchResults}>
-          {results.map((item) => {
-            const key = `${item.source}-${item.id}`;
-            const score = gutScores[key] ?? computeGutScore({ fiberG: 0, proteinG: item.proteinPer100g, fatG: item.fatPer100g, carbsG: item.carbsPer100g, calories: item.caloriesPer100g, gutHealthTags: [], foodName: item.description });
-            return (
-              <Pressable key={key} style={styles.searchResultCard} onPress={() => setSelectedFood(item)}>
-                <Text style={styles.foodName}>{formatFoodName(item.description)}</Text>
-                <GutScoreBadge
-                  score={score}
-                  onPress={() =>
-                    void fetchGutScore(item.description)
-                  }
-                />
-                <Text style={styles.foodMeta}>
-                  {Math.round(item.caloriesPer100g)} cal | {Math.round(item.proteinPer100g)}g protein | {Math.round(item.carbsPer100g)}g carbs | {Math.round(item.fatPer100g)}g fat
-                </Text>
-                <Text style={styles.tapHint}>Tap to add this food</Text>
-                <Pressable style={styles.gutScoreLink} onPress={() => void fetchGutScore(item.description)}>
-                  <Text style={styles.gutScoreLinkText}>Gut score</Text>
+        {results.length ? (
+          <View style={styles.searchResults}>
+            {results.map((item) => {
+              const key = `${item.source}-${item.id}`;
+              const score = gutScores[key];
+              return (
+                <Pressable key={key} style={styles.searchResultCard} onPress={() => setSelectedFood(item)}>
+                  <View style={styles.searchCardTopRow}>
+                    <Text style={styles.foodName}>{formatFoodName(item.description)}</Text>
+                    {gutScoreLoading[key] || score == null ? (
+                      <View style={[styles.gutScoreCardBadge, styles.gutScoreLoadingRow]}>
+                        <ActivityIndicator size="small" color={colors.accentPrimary} />
+                      </View>
+                    ) : (
+                      <Pressable style={styles.gutScoreCardBadge} onPress={() => void fetchGutScore(item.description)}>
+                        <Text style={styles.gutScoreCardBadgeScore}>{score}</Text>
+                        <Text style={styles.gutScoreCardBadgeLabel}>gut</Text>
+                      </Pressable>
+                    )}
+                  </View>
+
+                  {score != null ? <GutScoreBadge score={score} onPress={() => void fetchGutScore(item.description)} /> : null}
+
+                  <Text style={styles.foodMeta}>
+                    {Math.round(item.caloriesPer100g)} cal | {Math.round(item.proteinPer100g)}g protein | {Math.round(item.carbsPer100g)}g carbs | {Math.round(item.fatPer100g)}g fat
+                  </Text>
+
+                  <View style={styles.searchCardBottomRow}>
+                    <Pressable style={styles.gutScoreLink} onPress={() => void fetchGutScore(item.description)}>
+                      <Text style={styles.gutScoreLinkText}>Gut score</Text>
+                    </Pressable>
+                    <Pressable style={styles.addFoodInlineBtn} onPress={() => setSelectedFood(item)}>
+                      <Text style={styles.addFoodInlineBtnText}>Add food</Text>
+                    </Pressable>
+                  </View>
                 </Pressable>
-              </Pressable>
-            );
-          })}
-        </View>
-      ) : null}
+              );
+            })}
+          </View>
+        ) : null}
       {hasSearched && !loading && !error && !results.length ? (
         <Text style={styles.emptyText}>
           We couldn't find nutrition for that just yet. Try a simpler food name.
@@ -2280,6 +2310,31 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     alignSelf: "flex-start",
   },
+  gutScoreLoadingRow: {
+    alignSelf: "flex-start",
+    minHeight: 36,
+    justifyContent: "center",
+  },
+  gutScoreCardBadge: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    minWidth: 44,
+  },
+  gutScoreCardBadgeScore: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  gutScoreCardBadgeLabel: {
+    color: colors.textSecondary,
+    fontSize: 10,
+    letterSpacing: 0.4,
+  },
   gutScoreText: {
     fontSize: 12,
     fontWeight: "700",
@@ -2548,6 +2603,29 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     padding: spacing.md,
     gap: 6,
+  },
+  searchCardTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: spacing.sm,
+  },
+  searchCardBottomRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: spacing.xs,
+  },
+  addFoodInlineBtn: {
+    backgroundColor: colors.accentPrimary,
+    borderRadius: radii.md,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  addFoodInlineBtnText: {
+    color: colors.white,
+    fontSize: 13,
+    fontWeight: "700",
   },
   loadingRow: {
     flexDirection: "row",
