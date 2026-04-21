@@ -55,10 +55,6 @@ export default function TabsLayout() {
         options={{ title: "Food-Mood", tabBarIcon: ({ color }) => <Text style={{ color }}>*</Text> }}
       />
       <Tabs.Screen name="coach" options={{ title: "Coach", tabBarIcon: ({ color }) => <Text style={{ color }}>*</Text> }} />
-      <Tabs.Screen
-        name="journal"
-        options={{ title: "Journal", tabBarIcon: ({ color }) => <Text style={{ color }}>*</Text> }}
-      />
     </Tabs>
   );
 }

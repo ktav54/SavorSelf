@@ -4,22 +4,35 @@ import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase";
 type CoachHistoryMessage = { role: "user" | "assistant"; content: string };
 
 async function callEdgeFunction<TRequest, TResponse>(functionName: string, body: TRequest): Promise<TResponse> {
-  const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? supabaseAnonKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
+  const attempt = async () => {
+    const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? supabaseAnonKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
 
-  const payload = await response.json().catch(() => ({}));
+    const payload = await response.json().catch(() => ({}));
 
-  if (!response.ok) {
-    throw new Error(payload?.error ?? `Edge Function ${functionName} failed with ${response.status}.`);
+    if (!response.ok) {
+      throw new Error(payload?.error ?? `Edge Function ${functionName} failed with ${response.status}.`);
+    }
+
+    return payload as TResponse;
+  };
+
+  try {
+    return await attempt();
+  } catch (firstError) {
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    try {
+      return await attempt();
+    } catch {
+      throw firstError;
+    }
   }
-
-  return payload as TResponse;
 }
 
 export async function sendCoachMessage(

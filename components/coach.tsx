@@ -1,6 +1,7 @@
 ﻿// components/coach.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { GutScoreModal, type GutScoreData } from "@/components/GutScoreModal";
 import { colors, radii, spacing } from "@/constants/theme";
 import { Card, Field, PrimaryButton, SectionTitle } from "@/components/ui";
 import { GutScoreBadge } from "@/components/log";
@@ -27,6 +28,24 @@ type AdjustDraftItem = {
   originalCarbs: number;
   originalFat: number;
 };
+
+function extractReply(content: string): string {
+  const trimmed = content.trim();
+  if (trimmed.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (typeof parsed?.reply === "string" && parsed.reply.trim()) {
+        return parsed.reply.trim();
+      }
+    } catch {}
+    const match = trimmed.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    if (match?.[1]) {
+      return match[1].replace(/\\n/g, "\n").replace(/\\"/g, '"');
+    }
+    return "";
+  }
+  return content;
+}
 
 const quantityWholeOptions = Array.from({ length: 13 }, (_, index) => String(index));
 const quantityFractionOptions = [
@@ -207,6 +226,44 @@ function buildLocalGutFeedback(item: CoachFoodItem, score: number) {
   return `${name} may feel a little rougher on steady energy or digestion. That is useful to notice without turning it into judgment.`;
 }
 
+function buildGutScoreData(item: CoachFoodItem, score: number, summary: string): GutScoreData {
+  const tags: GutScoreData["tags"] = [];
+
+  if ((item.fiber ?? 0) >= 5) {
+    tags.push({ label: "High fiber", tone: "green" });
+  }
+  if (item.protein >= 15) {
+    tags.push({ label: "Protein support", tone: "green" });
+  }
+  if (item.carbs >= 35 || item.fat >= 18) {
+    tags.push({ label: "Heavier load", tone: "amber" });
+  }
+  if (tags.length === 0) {
+    tags.push({ label: score >= 55 ? "Mixed support" : "Gentle caution", tone: score >= 55 ? "green" : "amber" });
+  }
+
+  return {
+    foodName: formatFoodName(item.name),
+    score,
+    summary,
+    tags,
+    insights: [
+      {
+        category: "Digestion",
+        body: `${Math.round(item.fiber ?? 0)}g fiber can shape how steady or comfortable this food feels in your gut.`,
+      },
+      {
+        category: "Mood",
+        body: `${Math.round(item.protein)}g protein, ${Math.round(item.carbs)}g carbs, and ${Math.round(item.fat)}g fat can influence how even your energy and mood feel afterward.`,
+      },
+      {
+        category: "Energy",
+        body: "This score is a gentle estimate, not a judgment. It helps highlight what may feel steadier versus heavier in your body.",
+      },
+    ],
+  };
+}
+
 export function CoachBanner() {
   return (
     <Card>
@@ -236,9 +293,8 @@ export function CoachChat() {
   const [pendingProposal, setPendingProposal] = useState<CoachFoodProposal | null>(null);
   const [sending, setSending] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [gutFeedbackTitle, setGutFeedbackTitle] = useState("");
-  const [gutFeedback, setGutFeedback] = useState("");
-  const [gutFeedbackLoading, setGutFeedbackLoading] = useState(false);
+  const [gutScoreData, setGutScoreData] = useState<GutScoreData | null>(null);
+  const [proposalGutScores, setProposalGutScores] = useState<Record<string, number>>({});
   const [adjustModalVisible, setAdjustModalVisible] = useState(false);
   const [adjustDraftItems, setAdjustDraftItems] = useState<AdjustDraftItem[]>([]);
   const starterOpacity = useRef(new Animated.Value(1)).current;
@@ -460,7 +516,7 @@ export function CoachChat() {
   };
 
   const openGutFeedback = async (item: CoachFoodItem) => {
-    const score = computeGutScore({
+    const fallbackScore = computeGutScore({
       foodName: item.name,
       fiberG: item.fiber ?? 0,
       proteinG: item.protein,
@@ -469,9 +525,19 @@ export function CoachChat() {
       gutHealthTags: [],
       foodSource: item.foodSource,
     });
-    setGutFeedbackTitle(formatFoodName(item.name));
-    setGutFeedback("");
-    setGutFeedbackLoading(true);
+
+    setGutScoreData({
+      foodName: formatFoodName(item.name),
+      score: fallbackScore,
+      tags: [],
+      summary: "Loading...",
+      insights: [
+        { category: "Energy", body: "" },
+        { category: "Mood", body: "" },
+        { category: "Digestion", body: "" },
+      ],
+    });
+
     try {
       const response = await fetch(`${supabaseUrl}/functions/v1/ai-coach`, {
         method: "POST",
@@ -480,20 +546,34 @@ export function CoachChat() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          message: `In 2 short warm sentences, explain why ${item.name} might land around ${score}/100 for gut comfort, steadier mood, and balanced energy. Known macros: ${Math.round(item.fiber ?? 0)}g fiber, ${Math.round(item.protein)}g protein, ${Math.round(item.carbs)}g carbs, ${Math.round(item.fat)}g fat. Focus on how it might feel in the body and for mood, not on judging the food.`,
-          mode: "gut_feedback",
+          mode: "gut_score",
+          message: `gut_score: ${item.name}`,
+          history: [],
           context: {},
         }),
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error();
-      const reply = typeof data?.reply === "string" ? data.reply.trim() : "";
-      setGutFeedback(!reply || /hit a snag|try again/i.test(reply) ? buildLocalGutFeedback(item, score) : reply);
-    } catch {
-      setGutFeedback(buildLocalGutFeedback(item, score));
-    } finally {
-      setGutFeedbackLoading(false);
-    }
+      if (data?.intent === "gut_score" && data?.score != null) {
+        const parsedScore = Math.min(Math.max(Number(data.score), 0), 100);
+        const insightsArray: { category: string; body: string }[] = Array.isArray(data.insights) ? data.insights : [];
+        const findInsight = (cat: string) => insightsArray.find((i) => i.category?.toLowerCase() === cat.toLowerCase())?.body ?? "";
+        setGutScoreData({
+          foodName: formatFoodName(data.foodName ?? item.name),
+          score: parsedScore,
+          tags: Array.isArray(data.tags) ? data.tags.map((t: any) => ({
+            label: t.label ?? "",
+            tone: t.sentiment === "positive" ? "green" : "amber",
+          })) : [],
+          summary: typeof data.summary === "string" ? data.summary : "",
+          insights: [
+            { category: "Energy", body: findInsight("energy") },
+            { category: "Mood", body: findInsight("mood") },
+            { category: "Digestion", body: findInsight("digestion") },
+          ],
+        });
+        setProposalGutScores((prev) => ({ ...prev, [item.name.toLowerCase()]: parsedScore }));
+      }
+    } catch {}
   };
 
   const updateDraftItem = (index: number, updates: Partial<AdjustDraftItem>) => {
@@ -784,34 +864,19 @@ export function CoachChat() {
         </View>
       </Modal>
 
-      <Modal transparent animationType="fade" visible={Boolean(gutFeedbackTitle)} onRequestClose={() => setGutFeedbackTitle("")}>
-        <View style={styles.adjustModalBackdrop}>
-          <View style={styles.modalFeedbackCard}>
-            <SectionTitle eyebrow="Gut score" title={gutFeedbackTitle} subtitle="A quick read on why this food landed where it did." />
-            {gutFeedbackLoading ? (
-              <View style={styles.loadingRow}>
-                <ActivityIndicator color={colors.accentPrimary} />
-                <Text style={styles.loadingText}>Thinking about this food...</Text>
-              </View>
-            ) : (
-              <Text style={styles.optionBody}>{gutFeedback}</Text>
-            )}
-            <PrimaryButton label="Close" secondary onPress={() => setGutFeedbackTitle("")} />
-          </View>
-        </View>
-      </Modal>
+      <GutScoreModal visible={Boolean(gutScoreData)} data={gutScoreData} onClose={() => setGutScoreData(null)} />
 
       {conversation.map((message, index) => (
         <View key={`${message.timestamp}-${index}`} style={styles.messageWrap}>
           <View style={[styles.bubble, message.role === "user" ? styles.userBubble : styles.assistantBubble]}>
-            <Text style={styles.bubbleText}>{message.content}</Text>
+            <Text style={styles.bubbleText}>{extractReply(message.content)}</Text>
           </View>
 
           {message.role === "assistant" && message.foodProposal ? (
             <Card>
               <Text style={styles.summaryLabel}>{message.foodProposal.mealType}</Text>
               {(pendingProposal && message.foodProposal.sourceMessage === pendingProposal.sourceMessage ? pendingProposal.items : message.foodProposal.items).map((item, itemIndex) => {
-                const gutScore = computeGutScore({
+                const gutScore = proposalGutScores[item.name.toLowerCase()] ?? computeGutScore({
                   foodName: item.name,
                   fiberG: item.fiber ?? 0,
                   proteinG: item.protein,
@@ -833,6 +898,9 @@ export function CoachChat() {
                           </Pressable>
                         ) : null}
                       </View>
+                      {item.foodSource === "ai_estimate" ? (
+                        <Text style={styles.estimateTag}>AI estimate</Text>
+                      ) : null}
                       <Text style={styles.summaryMeta}>{item.portion}</Text>
                     </View>
                     <View style={styles.summaryCopy}>
@@ -995,10 +1063,11 @@ const styles = StyleSheet.create({
   summaryRow: {
     flexDirection: "row",
     justifyContent: "space-between",
+    flexWrap: "wrap",
     gap: spacing.sm,
     paddingVertical: 6,
   },
-  summaryCopy: { gap: 4 },
+  summaryCopy: { gap: 4, flexShrink: 1 },
   summaryTitleRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1017,7 +1086,10 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   summaryMeta: { color: colors.textSecondary, fontSize: 13 },
-  estimateTag: { color: colors.textSecondary, fontSize: 12 },
+  estimateTag: {
+    color: colors.textSecondary,
+    fontSize: 11,
+  },
   summaryMacro: {
     color: colors.textPrimary,
     fontSize: 15,

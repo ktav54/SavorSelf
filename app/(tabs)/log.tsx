@@ -1,7 +1,7 @@
 import { useFocusEffect } from "@react-navigation/native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Animated, Easing, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { Screen, SectionTitle } from "@/components/ui";
+import { Screen } from "@/components/ui";
 import { FoodLogSection, FoodSearchCard, FoodSearchLauncher, GraceModeCard, HydrationSummaryCard, MacroSummaryBar, MoodCheckInStrip, QuickLogStrip } from "@/components/log";
 import { colors, radii, spacing } from "@/constants/theme";
 import { useAppStore } from "@/store/useAppStore";
@@ -196,11 +196,14 @@ export default function LogScreen() {
   return (
     <>
       <Screen scroll>
-        <SectionTitle
-          eyebrow={new Date().toDateString()}
-          title={`Hi${profile?.name ? `, ${profile.name}` : ""}`}
-          subtitle="Food, water, and small patterns live here. Your mood check-in happens first, then the rest can stay gentle."
-        />
+        <View style={styles.logHeader}>
+          <Text style={styles.logHeaderDate}>{new Date().toDateString()}</Text>
+          <Text style={styles.logHeaderTitle}>{`Hi${profile?.name ? `, ${profile.name}` : ""}`}</Text>
+          <Text style={styles.logHeaderSubtitle}>
+            Food, water, and small patterns live here. Your mood check-in happens first, then the rest can stay gentle.
+          </Text>
+        </View>
+        <MoodCheckInStrip />
         <MacroSummaryBar />
         <FoodSearchLauncher onPress={openGeneralFoodSearch} />
         <FoodSearchCard
@@ -305,6 +308,30 @@ export default function LogScreen() {
 }
 
 const styles = StyleSheet.create({
+  logHeader: {
+    gap: 8,
+    paddingTop: 2,
+    paddingBottom: 4,
+  },
+  logHeaderDate: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    letterSpacing: 0.9,
+    textTransform: "uppercase",
+    fontWeight: "600",
+  },
+  logHeaderTitle: {
+    color: colors.textPrimary,
+    fontSize: 34,
+    lineHeight: 40,
+    fontWeight: "800",
+  },
+  logHeaderSubtitle: {
+    color: colors.textSecondary,
+    fontSize: 15,
+    lineHeight: 24,
+    maxWidth: "94%",
+  },
   entryScreen: {
     flex: 1,
     backgroundColor: colors.accentPrimary,

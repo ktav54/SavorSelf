@@ -9,6 +9,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { colors, radii, spacing } from "@/constants/theme";
 import { GutScoreModal, type GutScoreData } from "@/components/GutScoreModal";
 import { Card, Chip, Field, PrimaryButton, SectionTitle } from "@/components/ui";
@@ -586,26 +587,49 @@ export function MoodCheckInStrip() {
   };
 
   return (
-    <Card>
-      <SectionTitle
-        eyebrow="Mood First"
-        title="How are you feeling right now?"
-        subtitle="A quick check-in gives Food-Mood the context it needs."
-      />
+    <View style={[styles.gracefulCard, todaysMood && !isEditing && styles.moodCardComplete]}>
+      <View style={styles.moodHeader}>
+        <View style={styles.moodHeaderCopy}>
+          <Text style={styles.moodEyebrow}>Mood First</Text>
+          <Text style={styles.moodTitle}>How are you feeling right now?</Text>
+          <Text style={styles.moodSubtitle}>A quick check-in gives Food-Mood the context it needs.</Text>
+        </View>
+        <View
+          style={[
+            styles.moodStatusBadge,
+            todaysMood
+              ? { backgroundColor: `${colors.accentTertiary}20` }
+              : styles.moodStatusBadgePending,
+          ]}
+        >
+          {todaysMood ? (
+            <>
+              <Text style={[styles.moodStatusScore, { color: "#9A6A1A" }]}>{todaysMood.moodScore}</Text>
+              <Text style={[styles.moodStatusDenominator, { color: "#B0832E" }]}>/5</Text>
+            </>
+          ) : (
+            <Text style={styles.moodStatusPendingText}>Pending</Text>
+          )}
+        </View>
+      </View>
       {todaysMood && !isEditing ? (
         <View style={styles.savedMoodWrap}>
-          <View style={[styles.savedMoodBadge, { backgroundColor: `${colors.mood[todaysMood.moodScore]}20` }]}>
-            <Text style={[styles.savedMoodScore, { color: colors.mood[todaysMood.moodScore] }]}>
-              {todaysMood.moodScore} / 5
-            </Text>
-            <Text style={styles.savedMoodText}>Today's check-in is saved.</Text>
+          <View style={[styles.savedMoodBadge, { backgroundColor: `${colors.accentTertiary}14` }]}>
+            <View style={[styles.savedMoodBadgeCircle, { backgroundColor: `${colors.mood[todaysMood.moodScore]}20` }]}>
+              <Text style={[styles.savedMoodScore, { color: colors.mood[todaysMood.moodScore] }]}>{todaysMood.moodScore}</Text>
+            </View>
+            <Text style={styles.savedMoodOutOf}>/5</Text>
+            <View style={styles.savedMoodCopy}>
+              <Text style={styles.savedMoodText}>Today's check-in is saved.</Text>
+              <Text style={styles.savedMoodSubtext}>You gave the day a little context already.</Text>
+            </View>
           </View>
           <PrimaryButton label="Update today's check-in" secondary onPress={() => setIsEditing(true)} />
         </View>
       ) : null}
       {(!todaysMood || isEditing) ? (
         <View style={styles.stack}>
-          <View style={styles.rowWrap}>
+          <View style={styles.moodButtonGrid}>
             {moodOptions.map((option) => (
               <Pressable
                 key={option.score}
@@ -666,7 +690,107 @@ export function MoodCheckInStrip() {
           <PrimaryButton label={moodLoading ? "Saving..." : "Save check-in"} onPress={() => void submit()} />
         </View>
       ) : null}
-    </Card>
+    </View>
+  );
+}
+
+export function HydrationSummaryCard() {
+  const profile = useAppStore((state) => state.profile);
+  const authUser = useAppStore((state) => state.authUser);
+  const quickLogs = useAppStore((state) => state.quickLogs);
+  const addQuickLog = useAppStore((state) => state.addQuickLog);
+  const waterOz = useMemo(
+    () => quickLogs.reduce((sum, item) => sum + (item.waterOz ?? 0), 0),
+    [quickLogs]
+  );
+  const isMetric = profile?.preferredUnits === "metric";
+  const waterUnit = isMetric ? "ml" : "oz";
+  const todayValue = Math.round(isMetric ? waterOz * 29.5735 : waterOz);
+  const goalValue = Math.round(isMetric ? (profile?.dailyWaterGoal ?? 0) * 29.5735 : profile?.dailyWaterGoal ?? 0);
+  const progress = goalValue > 0 ? Math.min(todayValue / goalValue, 1) : 0;
+
+  return (
+    <View style={styles.gracefulCard}>
+      <View style={styles.hydrationHeader}>
+        <View>
+          <Text style={styles.hydrationEyebrow}>Hydration</Text>
+          <Text style={styles.hydrationTitle}>Water</Text>
+        </View>
+        <Text style={styles.hydrationTotal}>
+          {todayValue} / {goalValue} {waterUnit}
+        </Text>
+      </View>
+      <View style={styles.hydrationActionRow}>
+        <View style={styles.hydrationRail}>
+          <View style={[styles.hydrationFill, { width: `${Math.max(progress * 100, 6)}%` }]} />
+        </View>
+        <Pressable
+          style={styles.hydrationAddButton}
+          onPress={() =>
+            addQuickLog({
+              id: `water-${Date.now()}`,
+              userId: authUser?.id ?? profile?.id ?? "local",
+              loggedAt: new Date().toISOString(),
+              waterOz: 8,
+            })
+          }
+        >
+          <Ionicons name="add" size={18} color={colors.blue} />
+        </Pressable>
+      </View>
+      <Text style={styles.hydrationBody}>
+        A little hydration support, tucked right under your meals so it stays easy to notice.
+      </Text>
+    </View>
+  );
+}
+
+export function QuickLogStrip() {
+  const quickLogs = useAppStore((state) => state.quickLogs);
+  const today = quickLogs[0];
+
+  const items = [
+    { icon: "cafe-outline" as const, label: "Coffee", value: `${today?.caffeineMg ?? 0} mg` },
+    { icon: "footsteps-outline" as const, label: "Steps", value: `${today?.steps ?? 0}` },
+    { icon: "moon-outline" as const, label: "Sleep", value: `${today?.sleepHours ?? 0} hr` },
+    { icon: "barbell-outline" as const, label: "Exercise", value: `${today?.exerciseMinutes ?? 0} min` },
+  ];
+
+  return (
+    <View style={styles.gracefulCard}>
+      <View style={styles.quickHeader}>
+        <Text style={styles.quickEyebrow}>Quick Log</Text>
+        <Text style={styles.quickTitle}>Small things count too</Text>
+        <Text style={styles.quickSubtitle}>Capture the factors that often shift mood and energy in the background.</Text>
+      </View>
+      <View style={styles.quickGrid}>
+        {items.map((item) => (
+          <Pressable key={item.label} style={styles.quickTile}>
+            <View style={styles.quickTileIconWrap}>
+              <Ionicons name={item.icon} size={18} color={colors.textSecondary} />
+            </View>
+            <View style={styles.quickTileCenter}>
+              <Text style={styles.quickValue}>{item.value}</Text>
+              <Text style={styles.quickLabel}>{item.label}</Text>
+            </View>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+export function GraceModeCard() {
+  return (
+    <View style={styles.graceModeCard}>
+      <View style={styles.graceModeHeader}>
+        <Text style={styles.graceModeEyebrow}>Grace Mode</Text>
+        <Text style={styles.graceModeTitle}>Having a hard day?</Text>
+        <Text style={styles.graceModeSubtitle}>You can keep this simple. One tap is still showing up.</Text>
+      </View>
+      <PrimaryButton label="Open Grace Mode" secondary />
+      <Text style={styles.graceText}>That's enough. You showed up today.</Text>
+    </View>
   );
 }
 
@@ -930,39 +1054,6 @@ export function MacroSummaryBar() {
   );
 }
 
-export function HydrationSummaryCard() {
-  const profile = useAppStore((state) => state.profile);
-  const quickLogs = useAppStore((state) => state.quickLogs);
-  const waterOz = useMemo(
-    () => quickLogs.reduce((sum, item) => sum + (item.waterOz ?? 0), 0),
-    [quickLogs]
-  );
-  const isMetric = profile?.preferredUnits === "metric";
-  const waterUnit = isMetric ? "ml" : "oz";
-  const todayValue = Math.round(isMetric ? waterOz * 29.5735 : waterOz);
-  const goalValue = Math.round(isMetric ? (profile?.dailyWaterGoal ?? 0) * 29.5735 : profile?.dailyWaterGoal ?? 0);
-  const progress = goalValue > 0 ? Math.min(todayValue / goalValue, 1) : 0;
-
-  return (
-    <Card>
-      <View style={styles.hydrationHeader}>
-        <View>
-          <Text style={styles.hydrationEyebrow}>Hydration</Text>
-          <Text style={styles.hydrationTitle}>Water</Text>
-        </View>
-        <Text style={styles.hydrationTotal}>
-          {todayValue} / {goalValue} {waterUnit}
-        </Text>
-      </View>
-      <View style={styles.hydrationRail}>
-        <View style={[styles.hydrationFill, { width: `${Math.max(progress * 100, 6)}%` }]} />
-      </View>
-      <Text style={styles.hydrationBody}>
-        A little hydration support, tucked right under your meals so it stays easy to notice.
-      </Text>
-    </Card>
-  );
-}
 
 export function FoodLogSection({ mealType, logs, onAddFood }: { mealType: FoodLog["mealType"]; logs: FoodLog[]; onAddFood?: () => void }) {
   const deleteFoodLog = useAppStore((state) => state.deleteFoodLog);
@@ -1206,45 +1297,6 @@ export function FoodSearchCard({
       });
       setGutScores({});
       setGutScoreLoading(loadingScores);
-      const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-      const fetchScoresSequentially = async () => {
-        for (let i = 0; i < nextResults.slice(0, 3).length; i++) {
-          const item = nextResults[i];
-          const key = `${item.source}-${item.id}`;
-          try {
-            const res = await fetch(
-              "https://rxeyjtykavgadfvsspsy.supabase.co/functions/v1/ai-coach",
-              {
-                method: "POST",
-                headers: {
-                  Authorization: `Bearer ${supabaseAnonKey}`,
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  mode: "gut_score",
-                  message: `gut_score: ${item.description}`,
-                  history: [],
-                  context: {},
-                }),
-              }
-            );
-            const data = await res.json();
-            if (data?.intent === "gut_score" && data?.score != null) {
-              setGutScores((prev) => ({
-                ...prev,
-                [key]: Math.min(Math.max(Number(data.score), 0), 100),
-              }));
-            }
-          } catch {}
-          setGutScoreLoading((prev) => ({ ...prev, [key]: false }));
-          if (i < nextResults.slice(0, 3).length - 1) {
-            await delay(600);
-          }
-        }
-      };
-
-      void fetchScoresSequentially();
     } catch (searchError) {
       setResults([]);
       setError(searchError instanceof Error ? searchError.message : "Unable to search foods right now.");
@@ -1966,50 +2018,6 @@ function SwipeableFoodRow({
   );
 }
 
-export function QuickLogStrip() {
-  const quickLogs = useAppStore((state) => state.quickLogs);
-  const today = quickLogs[0];
-
-  const items = [
-    { emoji: "Cf", label: "Coffee", value: `${today?.caffeineMg ?? 0} mg` },
-    { emoji: "St", label: "Steps", value: `${today?.steps ?? 0}` },
-    { emoji: "Sl", label: "Sleep", value: `${today?.sleepHours ?? 0} hr` },
-    { emoji: "Ex", label: "Exercise", value: `${today?.exerciseMinutes ?? 0} min` },
-  ];
-
-  return (
-    <Card>
-      <SectionTitle
-        eyebrow="Quick Log"
-        title="Small things count too"
-        subtitle="Capture the factors that often shift mood and energy in the background."
-      />
-      <View style={styles.quickGrid}>
-        {items.map((item) => (
-          <View key={item.label} style={styles.quickTile}>
-            <Text style={styles.quickEmoji}>{item.emoji}</Text>
-            <Text style={styles.quickLabel}>{item.label}</Text>
-            <Text style={styles.quickValue}>{item.value}</Text>
-          </View>
-        ))}
-      </View>
-    </Card>
-  );
-}
-
-export function GraceModeCard() {
-  return (
-    <Card>
-      <SectionTitle
-        eyebrow="Grace Mode"
-        title="Having a hard day?"
-        subtitle="You can keep this simple. One tap is still showing up."
-      />
-      <PrimaryButton label="Open Grace Mode" secondary />
-      <Text style={styles.graceText}>That's enough. You showed up today.</Text>
-    </Card>
-  );
-}
 
 function pickFoodColor(tag?: string) {
   switch (tag) {
@@ -2095,21 +2103,99 @@ function MacroVisualCard({
 }
 
 const styles = StyleSheet.create({
+  gracefulCard: {
+    backgroundColor: colors.white,
+    borderRadius: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+    gap: 16,
+    borderWidth: 1,
+    borderColor: "rgba(44, 26, 14, 0.06)",
+    shadowColor: "#2C1A0E",
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 2,
+  },
   rowWrap: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.sm,
   },
   stack: {
+    gap: 16,
+  },
+  moodButtonGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.sm,
   },
+  moodCardComplete: {
+    backgroundColor: "rgba(232, 168, 56, 0.08)",
+  },
+  moodHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.md,
+  },
+  moodHeaderCopy: {
+    flex: 1,
+    gap: 6,
+  },
+  moodEyebrow: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+  },
+  moodTitle: {
+    color: colors.textPrimary,
+    fontSize: 24,
+    fontWeight: "700",
+  },
+  moodSubtitle: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 22,
+  },
+  moodStatusBadge: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    alignSelf: "flex-start",
+  },
+  moodStatusBadgePending: {
+    backgroundColor: "#EEE8E1",
+  },
+  moodStatusScore: {
+    fontSize: 22,
+    fontWeight: "800",
+    lineHeight: 24,
+  },
+  moodStatusDenominator: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontWeight: "600",
+    lineHeight: 18,
+  },
+  moodStatusPendingText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontWeight: "600",
+    lineHeight: 18,
+  },
   moodButton: {
-    minWidth: 70,
+    width: "18%",
     alignItems: "center",
     gap: 6,
     paddingVertical: 12,
-    paddingHorizontal: 10,
-    borderRadius: radii.md,
+    paddingHorizontal: 8,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.white,
@@ -2127,6 +2213,27 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textTransform: "uppercase",
     letterSpacing: 0.5,
+  },
+  savedMoodBadgeCircle: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  savedMoodOutOf: {
+    color: colors.textSecondary,
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  savedMoodCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  savedMoodSubtext: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 19,
   },
   macroGrid: {
     flexDirection: "row",
@@ -2545,28 +2652,67 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: spacing.sm,
   },
-  quickTile: {
-    width: "48%",
-    backgroundColor: colors.white,
-    borderRadius: radii.md,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
+  quickHeader: {
     gap: 6,
   },
-  quickEmoji: {
-    fontSize: 18,
+  quickEyebrow: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+  },
+  quickTitle: {
+    color: colors.textPrimary,
+    fontSize: 24,
+    fontWeight: "700",
+  },
+  quickSubtitle: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 22,
+  },
+  quickTile: {
+    width: "48%",
+    minHeight: 150,
+    backgroundColor: "#FCFBF8",
+    borderRadius: 20,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: "rgba(44, 26, 14, 0.08)",
+    shadowColor: "#2C1A0E",
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 1,
+    justifyContent: "space-between",
+  },
+  quickTileIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#F3EDE7",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  quickTileCenter: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
   },
   quickLabel: {
-    fontSize: 13,
+    fontSize: 12,
     color: colors.textSecondary,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 0.7,
+    fontWeight: "700",
   },
   quickValue: {
-    fontSize: 18,
-    fontWeight: "600",
+    fontSize: 26,
+    fontWeight: "800",
     color: colors.textPrimary,
+    textAlign: "center",
   },
   graceText: {
     color: colors.textSecondary,
@@ -2577,17 +2723,50 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   savedMoodBadge: {
-    borderRadius: radii.md,
+    borderRadius: 20,
     padding: spacing.md,
-    gap: 6,
+    gap: 10,
+    flexDirection: "row",
+    alignItems: "center",
   },
   savedMoodScore: {
-    fontSize: 18,
-    fontWeight: "700",
+    fontSize: 22,
+    fontWeight: "800",
   },
   savedMoodText: {
     color: colors.textPrimary,
     fontSize: 15,
+    fontWeight: "600",
+  },
+  graceModeCard: {
+    backgroundColor: "#F3EDF8",
+    borderRadius: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+    gap: 16,
+    borderWidth: 1,
+    borderColor: "rgba(155, 132, 197, 0.28)",
+    borderStyle: "dashed",
+  },
+  graceModeHeader: {
+    gap: 6,
+  },
+  graceModeEyebrow: {
+    color: "#856AA9",
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+  },
+  graceModeTitle: {
+    color: colors.textPrimary,
+    fontSize: 24,
+    fontWeight: "700",
+  },
+  graceModeSubtitle: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 22,
   },
   errorText: {
     color: colors.accentPrimary,
@@ -2868,7 +3047,7 @@ const styles = StyleSheet.create({
   hydrationHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-end",
+    alignItems: "center",
     gap: spacing.sm,
   },
   hydrationEyebrow: {
@@ -2888,16 +3067,32 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
   },
+  hydrationActionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
   hydrationRail: {
-    height: 14,
+    flex: 1,
+    height: 18,
     borderRadius: radii.round,
-    backgroundColor: "#E8F1F8",
+    backgroundColor: "#E7F2F4",
     overflow: "hidden",
   },
   hydrationFill: {
     height: "100%",
     borderRadius: radii.round,
-    backgroundColor: colors.blue,
+    backgroundColor: "#74B8C2",
+  },
+  hydrationAddButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#EEF7F8",
+    borderWidth: 1,
+    borderColor: "rgba(116, 184, 194, 0.26)",
   },
   hydrationBody: {
     color: colors.textSecondary,

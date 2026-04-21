@@ -1,12 +1,17 @@
-import { useMemo, useState } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { useMemo, useRef, useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
+import { BlurView } from "expo-blur";
+import { Animated, Dimensions, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { colors, radii, spacing } from "@/constants/theme";
-import { Card, Chip, PrimaryButton, SectionTitle } from "@/components/ui";
+import { Card, Chip, SectionTitle } from "@/components/ui";
 import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase";
 import { useAppStore } from "@/store/useAppStore";
 import { featureFlags } from "@/lib/premium";
 
 const WEEKDAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
+const SCREEN_WIDTH = Dimensions.get("window").width;
+const PATTERN_CARD_WIDTH = SCREEN_WIDTH * 0.8;
+const PATTERN_CARD_GAP = spacing.md;
 
 function toDateKey(value: Date | string) {
   return typeof value === "string" ? value.slice(0, 10) : value.toISOString().slice(0, 10);
@@ -185,20 +190,96 @@ function getMilestoneReward(milestone: number) {
   return "⭐ Deep gut-brain insights";
 }
 
+function EditorialHeader({
+  eyebrow,
+  title,
+  subtitle,
+}: {
+  eyebrow: string;
+  title: string;
+  subtitle?: string;
+}) {
+  return (
+    <View style={styles.editorialHeader}>
+      <Text style={styles.editorialEyebrow}>{eyebrow}</Text>
+      <Text style={styles.editorialTitle}>{title}</Text>
+      {subtitle ? <Text style={styles.editorialSubtitle}>{subtitle}</Text> : null}
+    </View>
+  );
+}
+
+function PatternLockCard({
+  icon,
+  title,
+  body,
+  progress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  body: string;
+  progress: number;
+}) {
+  return (
+    <View style={[styles.patternCard, styles.patternCardLocked]}>
+      <BlurView intensity={35} tint="light" style={styles.lockedBlur}>
+        <View style={styles.lockedContent}>
+          <View style={styles.lockedIconWrap}>
+            <Ionicons name={icon} size={18} color={colors.accentPrimary} />
+          </View>
+          <Text style={styles.patternCardTitle}>{title}</Text>
+          <Text style={styles.patternBody}>{body}</Text>
+        </View>
+        <View style={styles.lockedProgressWrap}>
+          <View style={styles.lockedProgressTrack}>
+            <View style={[styles.lockedProgressFill, { width: `${Math.min((progress / 7) * 100, 100)}%` }]} />
+          </View>
+          <Text style={styles.lockedProgressLabel}>Day {Math.max(progress, 0)} of 7 logged</Text>
+        </View>
+      </BlurView>
+    </View>
+  );
+}
+
+function EmptyPatternDots() {
+  return (
+    <View style={styles.dotsIllustration} pointerEvents="none">
+      <View style={[styles.dot, styles.dotOne]} />
+      <View style={[styles.dot, styles.dotTwo]} />
+      <View style={[styles.dot, styles.dotThree]} />
+      <View style={[styles.dot, styles.dotFour]} />
+      <View style={[styles.dot, styles.dotFive]} />
+      <View style={[styles.dot, styles.dotSix]} />
+      <View style={[styles.dot, styles.dotSeven]} />
+    </View>
+  );
+}
+
 export function GutMoodScoreCard() {
   const moodLogs = useAppStore((state) => state.moodLogs);
   const foodLogs = useAppStore((state) => state.foodLogs);
   const score = useMemo(() => getGutMoodScore(moodLogs, foodLogs), [foodLogs, moodLogs]);
   const tone = getGutMoodTone(score);
+  const scoreLeft = `${Math.min(Math.max(score, 4), 96)}%`;
 
   return (
     <Card>
       <View style={styles.heroCard}>
+        <Text style={styles.editorialEyebrow}>DAILY GUT ANALYSIS</Text>
         <Text style={[styles.heroScore, { color: tone.color }]}>{score}</Text>
         <Text style={styles.heroLabel}>Gut-Mood Score</Text>
         <Text style={styles.heroBody}>{tone.body}</Text>
-        <View style={styles.progressRail}>
-          <View style={[styles.progressFill, { width: `${score}%`, backgroundColor: tone.color }]} />
+        <View style={styles.scoreScaleWrap}>
+          <View style={styles.scoreScaleTrack}>
+            <View style={[styles.scoreScaleSegment, styles.scoreScaleLow]} />
+            <View style={[styles.scoreScaleSegment, styles.scoreScaleMid]} />
+            <View style={[styles.scoreScaleSegment, styles.scoreScaleHigh]} />
+          </View>
+          <View style={[styles.scorePointer, { left: scoreLeft }]} />
+          <View style={styles.scoreScaleLabels}>
+            <Text style={styles.scoreScaleLabel}>Low</Text>
+            <Text style={styles.scoreScaleLabel}>Medium</Text>
+            <Text style={styles.scoreScaleLabel}>High</Text>
+          </View>
         </View>
       </View>
     </Card>
@@ -218,7 +299,7 @@ export function FoodMoodGate() {
 
   return (
     <Card>
-      <SectionTitle
+      <EditorialHeader
         eyebrow="GETTING STARTED"
         title="Food-Mood needs a few days to find your patterns"
         subtitle="Most people see their first real insight after just 3 consistent days."
@@ -233,15 +314,15 @@ export function FoodMoodGate() {
       </View>
       <View style={styles.checklist}>
         <View style={styles.checklistRow}>
-          <Text style={styles.checklistText}>Log your mood</Text>
+          <Text style={styles.checklistText}>📊 Log your mood</Text>
           <Text style={styles.checklistMark}>{hasMood ? "✓" : "○"}</Text>
         </View>
         <View style={styles.checklistRow}>
-          <Text style={styles.checklistText}>Log at least one meal</Text>
+          <Text style={styles.checklistText}>🍽 Log at least one meal</Text>
           <Text style={styles.checklistMark}>{hasFood ? "✓" : "○"}</Text>
         </View>
         <View style={styles.checklistRow}>
-          <Text style={styles.checklistText}>Do it again tomorrow</Text>
+          <Text style={styles.checklistText}>🔄 Do it again tomorrow</Text>
           <Text style={styles.checklistArrow}>→</Text>
         </View>
       </View>
@@ -270,7 +351,11 @@ export function StreakHeroCard() {
   return (
     <Card>
       <View style={styles.streakHero}>
-        <Text style={styles.streakNumber}>{streak}</Text>
+        <Text style={styles.editorialEyebrow}>YOUR STREAK</Text>
+        <Text style={styles.streakNumber}>
+          {streak}
+          {streak > 0 ? " 🔥" : ""}
+        </Text>
         <Text style={styles.streakLabel}>day streak</Text>
         <View style={styles.gateProgressWrap}>
           <Text style={styles.gateProgressLabel}>
@@ -294,6 +379,7 @@ export function DailyReadCard() {
   const [loading, setLoading] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
   const todayMood = moodLogs[0];
+  const buttonScale = useRef(new Animated.Value(1)).current;
 
   const getRead = async () => {
     if (!todayMood) return;
@@ -321,33 +407,76 @@ export function DailyReadCard() {
     }
   };
 
+  const animateButton = (toValue: number) => {
+    Animated.spring(buttonScale, {
+      toValue,
+      useNativeDriver: true,
+      speed: 30,
+      bounciness: 8,
+    }).start();
+  };
+
   if (!todayMood) {
     return (
       <Card>
-        <SectionTitle
-          eyebrow="TODAY"
-          title="Why do I feel this way?"
-          subtitle="Log today's mood first to unlock your daily read."
-        />
+        <View style={styles.readHeroCard}>
+          <View style={[styles.readGlow, styles.readGlowTop]} />
+          <View style={[styles.readGlow, styles.readGlowBottom]} />
+          <EditorialHeader
+            eyebrow="TODAY'S READ"
+            title="Why do I feel this way?"
+            subtitle="Log today's mood first to unlock your daily read."
+          />
+          <View style={styles.heroBadgeRow}>
+            <View style={styles.heroMetaPill}>
+              <Ionicons name="sparkles-outline" size={14} color={colors.accentPrimary} />
+              <Text style={styles.heroMetaText}>Daily Food-Mood read</Text>
+            </View>
+          </View>
+        </View>
       </Card>
     );
   }
 
   return (
     <Card>
-      <SectionTitle eyebrow="TODAY" title="Why do I feel this way?" />
-      {hasLoaded ? (
-        <>
-          <Text style={styles.dailyRead}>{reply}</Text>
-          <PrimaryButton label="Refresh" secondary onPress={() => setHasLoaded(false)} />
-        </>
-      ) : (
-        <PrimaryButton
-          label={loading ? "Thinking..." : "Get my read"}
-          secondary
-          onPress={loading ? undefined : () => void getRead()}
+      <View style={styles.readHeroCard}>
+        <View style={[styles.readGlow, styles.readGlowTop]} />
+        <View style={[styles.readGlow, styles.readGlowBottom]} />
+        <EditorialHeader
+          eyebrow="TODAY'S READ"
+          title="Why do I feel this way?"
+          subtitle="A soft read on how yesterday's food may be shaping today's mood."
         />
-      )}
+        {hasLoaded ? (
+          <>
+            <View style={styles.dailyReadBlock}>
+              <Text style={styles.dailyRead}>{reply}</Text>
+            </View>
+            <Animated.View style={[styles.readButtonWrap, { transform: [{ scale: buttonScale }] }]}>
+              <Pressable
+                style={styles.readButtonSecondary}
+                onPress={() => setHasLoaded(false)}
+                onPressIn={() => animateButton(0.97)}
+                onPressOut={() => animateButton(1)}
+              >
+                <Text style={styles.readButtonSecondaryText}>Refresh</Text>
+              </Pressable>
+            </Animated.View>
+          </>
+        ) : (
+          <Animated.View style={[styles.readButtonWrap, { transform: [{ scale: buttonScale }] }]}>
+            <Pressable
+              style={[styles.readButton, styles.readButtonFull]}
+              onPress={loading ? undefined : () => void getRead()}
+              onPressIn={() => animateButton(0.97)}
+              onPressOut={() => animateButton(1)}
+            >
+              <Text style={styles.readButtonText}>{loading ? "Thinking..." : "Get my read"}</Text>
+            </Pressable>
+          </Animated.View>
+        )}
+      </View>
     </Card>
   );
 }
@@ -358,47 +487,82 @@ export function HorizontalInsightScroll() {
   const moodMap = useMemo(() => buildMoodByDate(moodLogs), [moodLogs]);
   const calendarDates = useMemo(() => getLastNDates(28), []);
   const betterDayFoods = useMemo(() => getTopFoodsByMood(moodLogs, foodLogsData, 4), [foodLogsData, moodLogs]);
+  const pairedDays = useMemo(() => getPairedDays(moodLogs, foodLogsData), [foodLogsData, moodLogs]);
+  const hasMoodMap = moodMap.size >= 3;
+  const hasBetterDayPattern = betterDayFoods.length >= 2 && pairedDays >= 7;
 
   return (
     <View style={styles.sectionWrap}>
-      <SectionTitle eyebrow="PATTERNS" title="What your data is saying" />
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalContent}>
-        <View style={styles.scrollCard}>
-          <Text style={styles.scrollCardTitle}>28-day mood</Text>
-          <View style={styles.weekdayRow}>
-            {WEEKDAY_LABELS.map((label, index) => (
-              <Text key={`dow-${index}`} style={styles.weekdayText}>
-                {label}
-              </Text>
-            ))}
+      <EditorialHeader
+        eyebrow="PATTERNS"
+        title="What your data is saying"
+        subtitle="A slower, more honest read of the connections taking shape."
+      />
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        decelerationRate="fast"
+        snapToAlignment="start"
+        snapToInterval={PATTERN_CARD_WIDTH + PATTERN_CARD_GAP}
+        contentContainerStyle={styles.horizontalContent}
+      >
+        {hasMoodMap ? (
+          <View style={styles.patternCard}>
+            <View style={styles.patternHeaderRow}>
+              <Text style={styles.patternCardTitle}>28-day mood</Text>
+              <View style={styles.patternChip}>
+                <Text style={styles.patternChipText}>Live</Text>
+              </View>
+            </View>
+            <Text style={styles.patternBody}>A calmer look at how your check-ins are spreading across the month.</Text>
+            <View style={styles.weekdayRow}>
+              {WEEKDAY_LABELS.map((label, index) => (
+                <Text key={`dow-${index}`} style={styles.scrollWeekdayText}>
+                  {label}
+                </Text>
+              ))}
+            </View>
+            <View style={styles.heatmapGrid}>
+              {calendarDates.map((date, index) => {
+                const key = toDateKey(date);
+                const moodScore = moodMap.get(key);
+                return (
+                  <View key={`heat-${index}`} style={styles.scrollHeatmapCellWrap}>
+                    <View
+                      style={[
+                        styles.scrollHeatmapCell,
+                        {
+                          backgroundColor: moodScore
+                            ? colors.mood[Math.round(moodScore) as 1 | 2 | 3 | 4 | 5]
+                            : "rgba(44, 26, 14, 0.08)",
+                        },
+                      ]}
+                    />
+                    <Text style={styles.dateText}>{date.getDate()}</Text>
+                  </View>
+                );
+              })}
+            </View>
           </View>
-          <View style={styles.heatmapGrid}>
-            {calendarDates.map((date, index) => {
-              const key = toDateKey(date);
-              const moodScore = moodMap.get(key);
-              return (
-                <View key={`heat-${index}`} style={styles.heatmapCellWrap}>
-                  <View
-                    style={[
-                      styles.heatmapCell,
-                      {
-                        backgroundColor: moodScore
-                          ? colors.mood[Math.round(moodScore) as 1 | 2 | 3 | 4 | 5]
-                          : colors.border,
-                      },
-                    ]}
-                  />
-                  <Text style={styles.dateText}>{date.getDate()}</Text>
-                </View>
-              );
-            })}
-          </View>
-        </View>
+        ) : (
+          <PatternLockCard
+            icon="lock-closed-outline"
+            title="Mood map is warming up"
+            body="A few more check-ins will turn this into a real month view instead of a teaser."
+            progress={pairedDays}
+          />
+        )}
 
-        <View style={styles.scrollCard}>
-          <Text style={styles.scrollCardTitle}>On your better days</Text>
-          {betterDayFoods.length >= 2 ? (
-            betterDayFoods.map((item, index) => (
+        {hasBetterDayPattern ? (
+          <View style={styles.patternCard}>
+            <View style={styles.patternHeaderRow}>
+              <Text style={styles.patternCardTitle}>On your better days</Text>
+              <View style={[styles.patternChip, styles.patternChipSage]}>
+                <Text style={[styles.patternChipText, styles.patternChipTextSage]}>Unlocked</Text>
+              </View>
+            </View>
+            <Text style={styles.patternBody}>Foods that keep showing up when your mood trends steadier.</Text>
+            {betterDayFoods.map((item, index) => (
               <View key={`food-${index}`} style={styles.foodRow}>
                 <Text style={styles.foodName}>{item.foodName}</Text>
                 <View style={styles.foodBarTrack}>
@@ -408,89 +572,18 @@ export function HorizontalInsightScroll() {
                 </View>
                 <Text style={styles.foodScore}>{item.averageMood.toFixed(1)}</Text>
               </View>
-            ))
-          ) : (
-            <Text style={styles.emptyText}>Keep logging to unlock this pattern.</Text>
-          )}
-        </View>
+            ))}
+          </View>
+        ) : (
+          <PatternLockCard
+            icon="sparkles-outline"
+            title="Your brighter-day foods"
+            body="Give Food-Mood a little more time and this card will surface what tends to support your steadier days."
+            progress={pairedDays}
+          />
+        )}
       </ScrollView>
     </View>
-  );
-
-  const { streak, trendDirection } = useMemo(() => {
-    const moodByDate = new Map<string, number[]>();
-
-    moodLogs.forEach((log) => {
-      const key = log.loggedAt.slice(0, 10);
-      const existing = moodByDate.get(key) ?? [];
-      existing.push(log.moodScore);
-      moodByDate.set(key, existing);
-    });
-
-    let streakCount = 0;
-    for (let index = 0; index < 28; index += 1) {
-      const day = new Date();
-      day.setDate(day.getDate() - index);
-      const key = day.toISOString().slice(0, 10);
-      if (moodByDate.has(key)) {
-        streakCount += 1;
-      } else {
-        break;
-      }
-    }
-
-    const recentSixDays = Array.from({ length: 6 }).map((_, index) => {
-      const day = new Date();
-      day.setDate(day.getDate() - (5 - index));
-      const key = day.toISOString().slice(0, 10);
-      const scores = moodByDate.get(key) ?? [];
-      return scores.length ? scores.reduce((sum, score) => sum + score, 0) / scores.length : null;
-    });
-
-    const lastThree = recentSixDays.slice(-3).filter((value): value is number => value !== null);
-    const previousThree = recentSixDays.slice(0, 3).filter((value): value is number => value !== null);
-
-    const average = (values: number[]) =>
-      values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
-
-    const lastThreeAverage = average(lastThree);
-    const previousThreeAverage = average(previousThree);
-
-    let direction: "up" | "down" | "steady" = "steady";
-    if (lastThreeAverage !== null && previousThreeAverage !== null) {
-      if (lastThreeAverage - previousThreeAverage > 0.2) {
-        direction = "up";
-      } else if (previousThreeAverage - lastThreeAverage > 0.2) {
-        direction = "down";
-      }
-    }
-
-    return {
-      streak: streakCount,
-      trendDirection: direction,
-    };
-  }, [moodLogs]);
-
-  const trendEmoji =
-    trendDirection === "up" ? "↑" : trendDirection === "down" ? "↓" : "→";
-
-  return (
-    <Card>
-      <View style={styles.snapshotRow}>
-        <View style={styles.statBox}>
-          <Text style={styles.statLabel}>Day streak</Text>
-          <Text style={styles.statValue}>
-            {streak === 0 ? "Start your streak today" : `${streak}${streak >= 3 ? " 🔥" : ""}`}
-          </Text>
-        </View>
-        <View style={styles.statBox}>
-          <Text style={styles.statLabel}>3-day trend</Text>
-          <Text style={styles.statValue}>
-            {trendEmoji} {trendDirection}
-          </Text>
-        </View>
-      </View>
-    </Card>
   );
 }
 
@@ -628,42 +721,24 @@ export function TopFoodsByMood() {
 export function WeeklySnapshot() {
   const snapshot = useAppStore((state) => state.foodMoodSnapshot);
   const insights = useAppStore((state) => state.insights);
-  const aiNarrative = useAppStore((state) => state.aiNarrative);
   const weeklyLead = insights[0]?.insightBody;
+  const isBuilding = snapshot?.moodDelta == null;
 
   return (
     <Card>
-      <SectionTitle eyebrow="THIS WEEK" title={getWeeklySnapshotTitle(snapshot?.moodDelta)} />
-      {weeklyLead ? <Text style={styles.note}>{weeklyLead}</Text> : null}
-      {aiNarrative ? <Text style={styles.note}>{aiNarrative}</Text> : null}
-    </Card>
-  );
-
-  const insightLead =
-    insights[0]?.insightBody ??
-    "Your first real Food-Mood patterns will start to show up here as you log a little more consistently.";
-
-  return (
-    <Card>
-      <SectionTitle
-        eyebrow="Weekly Snapshot"
-        title="A gentler read on your week"
-        subtitle="This is built from your actual logs over the last 30 days."
-      />
-      <View style={styles.snapshotRow}>
-        <SnapshotStat
-          label="Mood vs last week"
-          value={
-            snapshot?.moodDelta === null || snapshot?.moodDelta === undefined
-              ? "Not enough data"
-              : `${snapshot.moodDelta >= 0 ? "+" : ""}${snapshot.moodDelta}`
+      <View style={styles.weeklySnapshotCard}>
+        <EditorialHeader
+          eyebrow="THIS WEEK"
+          title={getWeeklySnapshotTitle(snapshot?.moodDelta)}
+          subtitle={
+            isBuilding
+              ? "Your recent logs are starting to resolve into something more personal."
+              : "A softer read on what your recent entries may be adding up to."
           }
         />
-        <SnapshotStat label="Top tag" value={formatTag(snapshot?.topTag) ?? "Still forming"} />
-        <SnapshotStat label="Days logged" value={`${snapshot?.daysLoggedThisWeek ?? 0} of 7`} />
+        {isBuilding ? <EmptyPatternDots /> : null}
+        {weeklyLead ? <Text style={styles.note}>{weeklyLead}</Text> : null}
       </View>
-      <Text style={styles.note}>{insightLead}</Text>
-      {aiNarrative ? <Text style={styles.note}>{aiNarrative}</Text> : null}
     </Card>
   );
 }
@@ -713,6 +788,7 @@ export function InsightFeed() {
         const maxMetric = Math.max(...recentTrend.map((point) => getInsightMetricValue(insight.insightType, point)), 1);
         return (
           <Card key={insight.id}>
+            <Text style={styles.editorialEyebrow}>INSIGHTS</Text>
             <Text style={styles.insightTitle}>{insight.insightBody}</Text>
             {recentTrend.length ? (
               <View style={styles.chart}>
@@ -751,105 +827,6 @@ export function InsightFeed() {
               <Text style={styles.emptyText}>A few more check-ins will give this graph something real to show.</Text>
             )}
             <Text style={styles.note}>Built from your actual food, mood, sleep, and habit logs.</Text>
-          </Card>
-        );
-      })}
-    </View>
-  );
-
-  if (insightsLoading) {
-    return (
-      <Card>
-        <SectionTitle
-          eyebrow="Food-Mood"
-          title="Listening to your recent logs"
-          subtitle="Pulling together your last 30 days so the patterns feel personal, not generic."
-        />
-      </Card>
-    );
-  }
-
-  if (insightsError) {
-    return (
-      <Card>
-        <SectionTitle
-          eyebrow="Food-Mood"
-          title="Your insights hit a snag"
-          subtitle={insightsError}
-        />
-      </Card>
-    );
-  }
-
-  return (
-    <View style={styles.feed}>
-      {insights.map((insight) => {
-        const nutrientKey = getInsightTrendKey(insight.insightType);
-        const maxNutrientValue = Math.max(
-          ...trend.map((point) => {
-            if (nutrientKey === "fiber") return point.fiber;
-            if (nutrientKey === "protein") return point.protein;
-            if (nutrientKey === "fermentedCount") return point.fermentedCount;
-            if (nutrientKey === "sleepHours") return point.sleepHours;
-            return 0;
-          }),
-          1
-        );
-
-        return (
-          <Card key={insight.id}>
-            <SectionTitle title={insight.insightBody} />
-            {trend.length ? (
-              <View style={styles.sparkline}>
-                <View style={styles.sparklineBars}>
-                  {trend.map((point, index) => {
-                    const nutrientValue =
-                      nutrientKey === "fiber"
-                        ? point.fiber
-                        : nutrientKey === "protein"
-                          ? point.protein
-                          : nutrientKey === "fermentedCount"
-                            ? point.fermentedCount
-                            : nutrientKey === "sleepHours"
-                              ? point.sleepHours
-                              : 0;
-                    const nutrientHeight = Math.max(6, (nutrientValue / maxNutrientValue) * 28);
-
-                    return (
-                      <View key={`spark-bar-${index}`} style={styles.sparklineColumn}>
-                        <View style={[styles.nutrientBar, { height: nutrientHeight }]} />
-                        <Text style={styles.sparklineLabel}>{point.date.slice(5)}</Text>
-                      </View>
-                    );
-                  })}
-                </View>
-                {trend.map((point, index) => {
-                  const moodBottom = point.moodScore === null ? 8 : (point.moodScore / 5) * 60;
-                  const left = trend.length > 1 ? `${(index / (trend.length - 1)) * 100}%` : "0%";
-
-                  return (
-                    <View
-                      key={`spark-dot-${index}`}
-                      style={[
-                        styles.moodDot,
-                        {
-                          left,
-                          bottom: moodBottom,
-                          marginLeft: -5,
-                          opacity: point.moodScore === null ? 0.35 : 1,
-                          backgroundColor: point.moodScore === null ? colors.border : colors.accentPrimary,
-                        },
-                      ]}
-                    />
-                  );
-                })}
-              </View>
-            ) : (
-              <View style={styles.emptyTrendWrap}>
-                <Text style={styles.note}>A few more check-ins will give this graph something real to show.</Text>
-              </View>
-            )}
-            <Text style={styles.note}>Built from your real mood, food, sleep, and caffeine logs.</Text>
           </Card>
         );
       })}
@@ -993,10 +970,31 @@ function getInsightTrendKey(insightType: string) {
 }
 
 const styles = StyleSheet.create({
+  editorialHeader: {
+    gap: 6,
+  },
+  editorialEyebrow: {
+    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    color: colors.textSecondary,
+    fontWeight: "600",
+  },
+  editorialTitle: {
+    fontSize: 26,
+    lineHeight: 32,
+    color: colors.textPrimary,
+    fontWeight: "600",
+  },
+  editorialSubtitle: {
+    fontSize: 15,
+    lineHeight: 24,
+    color: colors.textSecondary,
+  },
   heroCard: {
     paddingVertical: 28,
     alignItems: "center",
-    gap: spacing.sm,
+    gap: spacing.md,
   },
   gateProgressWrap: {
     gap: spacing.xs,
@@ -1007,14 +1005,14 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   gateRail: {
-    height: 8,
-    borderRadius: 4,
+    height: 12,
+    borderRadius: 6,
     backgroundColor: colors.border,
     overflow: "hidden",
   },
   gateFill: {
     height: "100%",
-    borderRadius: 4,
+    borderRadius: 6,
     backgroundColor: colors.accentPrimary,
   },
   checklist: {
@@ -1043,11 +1041,11 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   streakHero: {
-    gap: spacing.sm,
+    gap: spacing.md,
   },
   streakNumber: {
-    fontSize: 64,
-    fontWeight: "800",
+    fontSize: 72,
+    fontWeight: "900",
     color: colors.accentPrimary,
   },
   streakLabel: {
@@ -1057,14 +1055,19 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
   },
   milestoneReward: {
-    fontSize: 15,
+    fontSize: 16,
     lineHeight: 24,
     color: colors.textPrimary,
-    fontWeight: "600",
+    fontWeight: "700",
+    backgroundColor: "rgba(232, 168, 56, 0.12)",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 16,
+    alignSelf: "flex-start",
   },
   heroScore: {
-    fontSize: 72,
-    fontWeight: "700",
+    fontSize: 80,
+    fontWeight: "800",
   },
   heroLabel: {
     fontSize: 12,
@@ -1078,30 +1081,273 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: "center",
   },
-  progressRail: {
+  scoreScaleWrap: {
     width: "100%",
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.border,
-    overflow: "hidden",
     marginTop: spacing.xs,
+    gap: 10,
+    position: "relative",
   },
-  progressFill: {
-    height: "100%",
-    borderRadius: 3,
+  scoreScaleTrack: {
+    flexDirection: "row",
+    height: 12,
+    borderRadius: radii.round,
+    overflow: "hidden",
+  },
+  scoreScaleSegment: {
+    flex: 1,
+  },
+  scoreScaleLow: {
+    backgroundColor: "#D9B7A0",
+  },
+  scoreScaleMid: {
+    backgroundColor: colors.accentTertiary,
+  },
+  scoreScaleHigh: {
+    backgroundColor: colors.accentSecondary,
+  },
+  scorePointer: {
+    position: "absolute",
+    top: -4,
+    width: 16,
+    height: 16,
+    borderRadius: radii.round,
+    backgroundColor: colors.white,
+    borderWidth: 2,
+    borderColor: colors.textPrimary,
+    marginLeft: -8,
+    shadowColor: "#000000",
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
+  scoreScaleLabels: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  scoreScaleLabel: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 1,
   },
   dailyRead: {
     fontSize: 16,
-    lineHeight: 26,
+    lineHeight: 30,
     color: colors.textPrimary,
   },
+  dailyReadBlock: {
+    backgroundColor: "rgba(255,255,255,0.72)",
+    borderWidth: 1,
+    borderColor: "rgba(44, 26, 14, 0.08)",
+    borderRadius: 20,
+    padding: 18,
+  },
+  readHeroCard: {
+    borderRadius: 24,
+    padding: spacing.md,
+    overflow: "hidden",
+    gap: spacing.md,
+    backgroundColor: "#F7EEE5",
+    borderWidth: 1,
+    borderColor: "rgba(196, 98, 45, 0.08)",
+    shadowColor: "#B77C54",
+    shadowOpacity: 0.14,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 4,
+  },
+  readGlow: {
+    position: "absolute",
+    borderRadius: radii.round,
+    opacity: 0.8,
+  },
+  readGlowTop: {
+    width: 180,
+    height: 180,
+    right: -40,
+    top: -60,
+    backgroundColor: "rgba(232, 168, 56, 0.16)",
+  },
+  readGlowBottom: {
+    width: 180,
+    height: 180,
+    left: -50,
+    bottom: -90,
+    backgroundColor: "rgba(138, 158, 123, 0.16)",
+  },
+  heroBadgeRow: {
+    alignItems: "flex-start",
+  },
+  heroMetaPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderRadius: radii.round,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.66)",
+    borderWidth: 1,
+    borderColor: "rgba(196, 98, 45, 0.08)",
+  },
+  heroMetaText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    fontWeight: "600",
+  },
+  readButtonWrap: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  readButton: {
+    minWidth: 180,
+    borderRadius: radii.round,
+    backgroundColor: colors.accentPrimary,
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: colors.accentPrimary,
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 3,
+  },
+  readButtonFull: {
+    alignSelf: "stretch",
+    width: "100%",
+  },
+  readButtonText: {
+    color: colors.white,
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  readButtonSecondary: {
+    minWidth: 140,
+    borderRadius: radii.round,
+    backgroundColor: "rgba(255, 255, 255, 0.8)",
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 22,
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  readButtonSecondaryText: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: "600",
+  },
   sectionWrap: {
-    gap: spacing.sm,
+    gap: 20,
   },
   horizontalContent: {
-    gap: spacing.md,
-    paddingHorizontal: spacing.lg,
+    gap: PATTERN_CARD_GAP,
     paddingBottom: spacing.sm,
+    paddingRight: spacing.lg,
+  },
+  patternCard: {
+    width: PATTERN_CARD_WIDTH,
+    borderRadius: 24,
+    backgroundColor: "#F6F0E9",
+    borderWidth: 1,
+    borderColor: "rgba(44, 26, 14, 0.08)",
+    padding: 24,
+    gap: spacing.sm,
+    shadowColor: "#8C6B55",
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 4,
+    overflow: "hidden",
+    justifyContent: "space-between",
+    minHeight: 280,
+  },
+  patternCardLocked: {
+    backgroundColor: "rgba(255, 255, 255, 0.4)",
+    borderColor: "rgba(255, 255, 255, 0.45)",
+  },
+  lockedBlur: {
+    borderRadius: 24,
+    overflow: "hidden",
+    gap: spacing.sm,
+    flex: 1,
+    justifyContent: "space-between",
+  },
+  lockedContent: {
+    gap: spacing.sm,
+  },
+  lockedIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: radii.round,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(196, 98, 45, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(196, 98, 45, 0.08)",
+    marginBottom: 16,
+  },
+  lockedProgressWrap: {
+    gap: 8,
+    marginTop: "auto",
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.xs,
+  },
+  lockedProgressTrack: {
+    height: 4,
+    borderRadius: radii.round,
+    backgroundColor: "rgba(44, 26, 14, 0.08)",
+    overflow: "hidden",
+  },
+  lockedProgressFill: {
+    height: "100%",
+    borderRadius: radii.round,
+    backgroundColor: colors.accentPrimary,
+  },
+  lockedProgressLabel: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    fontWeight: "600",
+  },
+  patternHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+  },
+  patternCardTitle: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    textTransform: "uppercase",
+    letterSpacing: 1.6,
+    fontWeight: "700",
+  },
+  patternChip: {
+    borderRadius: radii.round,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: "rgba(232, 168, 56, 0.14)",
+  },
+  patternChipSage: {
+    backgroundColor: "rgba(138, 158, 123, 0.16)",
+  },
+  patternChipText: {
+    fontSize: 11,
+    color: "#9C6D17",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    fontWeight: "700",
+  },
+  patternChipTextSage: {
+    color: colors.accentSecondary,
+  },
+  patternBody: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: colors.textSecondary,
   },
   scrollCard: {
     width: 280,
@@ -1124,6 +1370,12 @@ const styles = StyleSheet.create({
   },
   weekdayText: {
     width: 32,
+    textAlign: "center",
+    fontSize: 11,
+    color: colors.textSecondary,
+  },
+  scrollWeekdayText: {
+    width: 28,
     textAlign: "center",
     fontSize: 11,
     color: colors.textSecondary,
@@ -1166,6 +1418,69 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     color: colors.textSecondary,
   },
+  dotsIllustration: {
+    height: 130,
+    borderRadius: 22,
+    backgroundColor: "rgba(255,255,255,0.5)",
+    overflow: "hidden",
+    position: "relative",
+    marginVertical: spacing.xs,
+  },
+  dot: {
+    position: "absolute",
+    borderRadius: radii.round,
+  },
+  dotOne: {
+    width: 18,
+    height: 18,
+    left: "20%",
+    top: 28,
+    backgroundColor: "rgba(196, 98, 45, 0.24)",
+  },
+  dotTwo: {
+    width: 22,
+    height: 22,
+    left: "42%",
+    top: 18,
+    backgroundColor: "rgba(232, 168, 56, 0.22)",
+  },
+  dotThree: {
+    width: 16,
+    height: 16,
+    right: "26%",
+    top: 42,
+    backgroundColor: "rgba(143, 182, 216, 0.28)",
+  },
+  dotFour: {
+    width: 28,
+    height: 28,
+    left: "34%",
+    bottom: 26,
+    backgroundColor: "rgba(138, 158, 123, 0.24)",
+  },
+  dotFive: {
+    width: 14,
+    height: 14,
+    right: "20%",
+    bottom: 34,
+    backgroundColor: "rgba(196, 98, 45, 0.18)",
+  },
+  dotSix: {
+    width: 10,
+    height: 10,
+    left: "54%",
+    bottom: 22,
+    backgroundColor: "rgba(143, 182, 216, 0.3)",
+  },
+  dotSeven: {
+    width: 42,
+    height: 42,
+    left: "46%",
+    top: "38%",
+    marginLeft: -21,
+    marginTop: -21,
+    backgroundColor: "rgba(255,255,255,0.38)",
+  },
   consistencyRow: {
     gap: 2,
     marginBottom: spacing.sm,
@@ -1193,7 +1508,7 @@ const styles = StyleSheet.create({
   },
   insightTitle: {
     fontSize: 18,
-    lineHeight: 28,
+    lineHeight: 30,
     color: colors.textPrimary,
     fontWeight: "600",
   },
@@ -1256,9 +1571,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 4,
   },
+  scrollHeatmapCellWrap: {
+    width: 28,
+    alignItems: "center",
+    gap: 4,
+  },
   heatmapCell: {
     width: 32,
     height: 32,
+    borderRadius: 8,
+  },
+  scrollHeatmapCell: {
+    width: 28,
+    height: 28,
     borderRadius: 8,
   },
   heatmapDate: {
@@ -1349,7 +1674,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   feed: {
-    gap: spacing.md,
+    gap: 20,
+  },
+  weeklySnapshotCard: {
+    backgroundColor: "rgba(232, 168, 56, 0.08)",
+    borderRadius: 22,
+    padding: 18,
+    gap: spacing.sm,
   },
   sparkline: {
     height: 80,
@@ -1467,3 +1798,4 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
 });
+
