@@ -785,48 +785,54 @@ export function InsightFeed() {
     <View style={styles.feed}>
       {insights.map((insight) => {
         const recentTrend = trend.slice(-7);
-        const maxMetric = Math.max(...recentTrend.map((point) => getInsightMetricValue(insight.insightType, point)), 1);
+        const paddedTrend = Array.from({ length: 7 }, (_, index) => recentTrend[index - (7 - recentTrend.length)] ?? null);
+
+        const getMoodStripColor = (score?: number | null) => {
+          if (!score) {
+            return "rgba(138, 158, 123, 0.16)";
+          }
+
+          if (score <= 1) {
+            return "rgba(196, 98, 45, 0.28)";
+          }
+
+          if (score === 2) {
+            return "rgba(210, 126, 74, 0.34)";
+          }
+
+          if (score === 3) {
+            return "rgba(232, 168, 56, 0.4)";
+          }
+
+          if (score === 4) {
+            return "rgba(170, 169, 102, 0.4)";
+          }
+
+          return "rgba(138, 158, 123, 0.48)";
+        };
+
         return (
           <Card key={insight.id}>
             <Text style={styles.editorialEyebrow}>INSIGHTS</Text>
-            <Text style={styles.insightTitle}>{insight.insightBody}</Text>
-            {recentTrend.length ? (
-              <View style={styles.chart}>
-                <View style={styles.chartBars}>
-                  {recentTrend.map((point, index) => (
-                    <View key={`chart-col-${index}`} style={styles.chartColumn}>
-                      <View
-                        style={[
-                          styles.metricBar,
-                          {
-                            height: Math.max(
-                              6,
-                              (getInsightMetricValue(insight.insightType, point) / maxMetric) * 30
-                            ),
-                          },
-                        ]}
-                      />
-                    </View>
-                  ))}
-                </View>
-                {recentTrend.map((point, index) => (
+            <Text style={styles.insightBodyText}>{insight.insightBody}</Text>
+            <View style={styles.insightTimelineRow}>
+              <Text style={styles.insightTimelineLabel}>Last 7 days</Text>
+              <View style={styles.insightTimelineStrip}>
+                {paddedTrend.map((point, index) => (
                   <View
-                    key={`chart-dot-${index}`}
+                    key={`${insight.id}-timeline-${index}`}
                     style={[
-                      styles.chartDot,
+                      styles.insightTimelineCell,
                       {
-                        left: `${recentTrend.length > 1 ? (index / (recentTrend.length - 1)) * 100 : 0}%`,
-                        bottom: point.moodScore ? (point.moodScore / 5) * 60 : 6,
-                        backgroundColor: point.moodScore ? colors.accentPrimary : colors.border,
+                        backgroundColor: getMoodStripColor(point?.moodScore),
+                        borderColor: point?.moodScore ? "rgba(44, 26, 14, 0.06)" : "rgba(138, 158, 123, 0.08)",
                       },
                     ]}
                   />
                 ))}
               </View>
-            ) : (
-              <Text style={styles.emptyText}>A few more check-ins will give this graph something real to show.</Text>
-            )}
-            <Text style={styles.note}>Built from your actual food, mood, sleep, and habit logs.</Text>
+            </View>
+            <Text style={styles.insightCaption}>Built from your actual food, mood, sleep, and habit logs.</Text>
           </Card>
         );
       })}
@@ -1506,48 +1512,42 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     marginLeft: -4,
   },
-  insightTitle: {
-    fontSize: 18,
-    lineHeight: 30,
+  insightBodyText: {
+    fontSize: 17,
+    lineHeight: 26,
     color: colors.textPrimary,
+    fontWeight: "500",
+  },
+  insightTimelineRow: {
+    minHeight: 32,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+  },
+  insightTimelineLabel: {
+    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    color: colors.textSecondary,
     fontWeight: "600",
   },
-  chart: {
-    height: 80,
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radii.md,
-    paddingHorizontal: 10,
-    paddingBottom: 8,
-    justifyContent: "flex-end",
-    position: "relative",
-  },
-  chartBars: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-end",
-    height: "100%",
-  },
-  chartColumn: {
+  insightTimelineStrip: {
     flex: 1,
-    alignItems: "center",
+    flexDirection: "row",
     justifyContent: "flex-end",
+    gap: 6,
   },
-  metricBar: {
-    width: 8,
-    borderRadius: radii.round,
-    backgroundColor: colors.accentSecondary,
-    opacity: 0.8,
+  insightTimelineCell: {
+    width: 18,
+    height: 18,
+    borderRadius: 7,
+    borderWidth: 1,
   },
-  chartDot: {
-    position: "absolute",
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginLeft: -5,
-    borderWidth: 2,
-    borderColor: colors.background,
+  insightCaption: {
+    color: colors.textSecondary,
+    lineHeight: 22,
+    fontSize: 14,
   },
   heatmapWeekdayRow: {
     flexDirection: "row",

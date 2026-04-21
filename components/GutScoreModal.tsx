@@ -1,4 +1,4 @@
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import { colors, radii, spacing } from "@/constants/theme";
 
@@ -79,6 +79,12 @@ export function GutScoreModal({
   data: GutScoreData | null;
   onClose: () => void;
 }) {
+  const isLoading =
+    Boolean(data) &&
+    data?.summary === "Loading..." &&
+    data.tags.length === 0 &&
+    data.insights.every((item) => !item.body?.trim());
+
   return (
     <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
@@ -90,19 +96,33 @@ export function GutScoreModal({
                 <Text style={styles.title}>{data.foodName}</Text>
 
                 <View style={styles.heroRow}>
-                  <ScoreRing score={data.score} />
-                  <View style={styles.heroCopy}>
-                    <View style={styles.tagRow}>
-                      {data.tags.map((tag, index) => {
-                        const c = tag.tone === "green" ? TAG_COLORS.green : TAG_COLORS.amber;
-                        return (
-                          <View key={index} style={[styles.tag, { backgroundColor: c.bg, borderColor: c.border }]}>
-                            <Text style={[styles.tagText, { color: c.text }]}>{tag.label}</Text>
-                          </View>
-                        );
-                      })}
+                  {isLoading ? (
+                    <View style={styles.loadingRingWrap}>
+                      <View style={styles.loadingRing}>
+                        <ActivityIndicator color={colors.accentPrimary} />
+                      </View>
                     </View>
-                    <Text style={styles.summary}>{data.summary}</Text>
+                  ) : (
+                    <ScoreRing score={data.score} />
+                  )}
+                  <View style={styles.heroCopy}>
+                    {!isLoading ? (
+                      <>
+                        <View style={styles.tagRow}>
+                          {data.tags.map((tag, index) => {
+                            const c = tag.tone === "green" ? TAG_COLORS.green : TAG_COLORS.amber;
+                            return (
+                              <View key={index} style={[styles.tag, { backgroundColor: c.bg, borderColor: c.border }]}>
+                                <Text style={[styles.tagText, { color: c.text }]}>{tag.label}</Text>
+                              </View>
+                            );
+                          })}
+                        </View>
+                        <Text style={styles.summary}>{data.summary}</Text>
+                      </>
+                    ) : (
+                      <Text style={styles.loadingSummary}>Gathering your gut health analysis...</Text>
+                    )}
                   </View>
                 </View>
 
@@ -118,7 +138,7 @@ export function GutScoreModal({
                         </View>
                         <View style={styles.sectionCopy}>
                           <Text style={styles.insightCategory}>{item.category}</Text>
-                          <Text style={styles.sectionBody}>{item.body}</Text>
+                          {isLoading ? <View style={styles.sectionPlaceholder} /> : <Text style={styles.sectionBody}>{item.body}</Text>}
                         </View>
                       </View>
                     );
@@ -174,6 +194,22 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     marginTop: spacing.xs,
   },
+  loadingRingWrap: {
+    width: 80,
+    height: 80,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  loadingRing: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   ringWrap: {
     width: 80,
     height: 80,
@@ -219,6 +255,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 20,
   },
+  loadingSummary: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 20,
+  },
   divider: {
     height: 1,
     backgroundColor: colors.border,
@@ -259,6 +300,13 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 13,
     lineHeight: 20,
+  },
+  sectionPlaceholder: {
+    height: 14,
+    width: "82%",
+    borderRadius: radii.round,
+    backgroundColor: colors.border,
+    marginTop: 2,
   },
   closeBtn: {
     margin: spacing.lg,

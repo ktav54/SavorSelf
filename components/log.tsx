@@ -374,8 +374,17 @@ function normalizeGutTags(
   return normalized.length ? normalized.slice(0, 3) : fallback;
 }
 
-export function GutScoreBadge({ score, onPress }: { score: number; onPress?: () => void }) {
-  const accentColor = getGutAccentColor(score);
+export function GutScoreBadge({
+  score,
+  onPress,
+  loading = false,
+}: {
+  score?: number | null;
+  onPress?: () => void;
+  loading?: boolean;
+}) {
+  const hasScore = typeof score === "number" && Number.isFinite(score);
+  const accentColor = hasScore ? getGutAccentColor(score) : colors.textSecondary;
   const backgroundColor = `${accentColor}22`;
   const textColor = accentColor;
   const [barWidth, setBarWidth] = useState(0);
@@ -383,7 +392,7 @@ export function GutScoreBadge({ score, onPress }: { score: number; onPress?: () 
   const content = (
     <View style={styles.gutScoreWrap}>
       <View style={styles.gutSpectrumWrap} onLayout={(event) => setBarWidth(event.nativeEvent.layout.width)}>
-          {barWidth > 0 ? (
+          {barWidth > 0 && hasScore && !loading ? (
             <View style={[styles.gutMarkerWrap, { left: (score / 100) * barWidth - 20 }]}>
               <View style={[styles.gutScoreBadge, { backgroundColor }]}>
                 <Text style={[styles.gutScoreText, { color: textColor }]}>{score}</Text>
@@ -615,10 +624,10 @@ export function MoodCheckInStrip() {
       {todaysMood && !isEditing ? (
         <View style={styles.savedMoodWrap}>
           <View style={[styles.savedMoodBadge, { backgroundColor: `${colors.accentTertiary}14` }]}>
-            <View style={[styles.savedMoodBadgeCircle, { backgroundColor: `${colors.mood[todaysMood.moodScore]}20` }]}>
-              <Text style={[styles.savedMoodScore, { color: colors.mood[todaysMood.moodScore] }]}>{todaysMood.moodScore}</Text>
+            <View style={[styles.savedMoodScorePill, { backgroundColor: `${colors.accentTertiary}20` }]}>
+              <Text style={[styles.savedMoodScore, { color: "#9A6A1A" }]}>{todaysMood.moodScore}</Text>
+              <Text style={[styles.savedMoodScoreDenominator, { color: "#B0832E" }]}>/5</Text>
             </View>
-            <Text style={styles.savedMoodOutOf}>/5</Text>
             <View style={styles.savedMoodCopy}>
               <Text style={styles.savedMoodText}>Today's check-in is saved.</Text>
               <Text style={styles.savedMoodSubtext}>You gave the day a little context already.</Text>
@@ -642,8 +651,22 @@ export function MoodCheckInStrip() {
                 ]}
                 onPress={() => setSelectedMood(option.score)}
               >
-                <Text style={styles.moodEmoji}>{option.emoji}</Text>
-                <Text style={styles.moodLabel}>{option.label}</Text>
+                <Text
+                  style={[
+                    styles.moodScoreTile,
+                    selectedMood === option.score && { color: colors.mood[option.score] },
+                  ]}
+                >
+                  {option.score}
+                </Text>
+                <Text
+                  style={styles.moodLabel}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.75}
+                >
+                  {option.label}
+                </Text>
               </Pressable>
             ))}
           </View>
@@ -721,11 +744,24 @@ export function HydrationSummaryCard() {
         </Text>
       </View>
       <View style={styles.hydrationActionRow}>
+        <Pressable
+          style={styles.hydrationStepButton}
+          onPress={() =>
+            addQuickLog({
+              id: `water-${Date.now()}`,
+              userId: authUser?.id ?? profile?.id ?? "local",
+              loggedAt: new Date().toISOString(),
+              waterOz: -8,
+            })
+          }
+        >
+          <Ionicons name="remove" size={18} color={colors.blue} />
+        </Pressable>
         <View style={styles.hydrationRail}>
           <View style={[styles.hydrationFill, { width: `${Math.max(progress * 100, 6)}%` }]} />
         </View>
         <Pressable
-          style={styles.hydrationAddButton}
+          style={styles.hydrationStepButton}
           onPress={() =>
             addQuickLog({
               id: `water-${Date.now()}`,
@@ -914,20 +950,22 @@ export function MacroSummaryBar() {
   return (
     <>
       <Card>
-        <View style={styles.dailyGutHeader}>
-          <View>
-            <Text style={styles.dailyGutEyebrow}>Daily Gut Analysis</Text>
-            <Text style={styles.dailyGutTitle}>{dailyGutAnalysis.label}</Text>
-          </View>
-          <GutScoreBadge score={dailyGutAnalysis.averageScore} />
-        </View>
-        <View style={styles.dailyGutList}>
-          {dailyGutAnalysis.notes.map((note, index) => (
-            <View key={`daily-gut-note-${index}`} style={styles.dailyGutBulletRow}>
-              <View style={styles.dailyGutBullet} />
-              <Text style={styles.dailyGutBody}>{note}</Text>
+        <View style={styles.dailyGutPanel}>
+          <View style={styles.dailyGutHeader}>
+            <View style={styles.dailyGutHeaderCopy}>
+              <Text style={styles.dailyGutEyebrow}>Daily Gut Analysis</Text>
+              <Text style={styles.dailyGutTitle}>{dailyGutAnalysis.label}</Text>
             </View>
-          ))}
+            <GutScoreBadge score={dailyGutAnalysis.averageScore} />
+          </View>
+          <View style={styles.dailyGutList}>
+            {dailyGutAnalysis.notes.map((note, index) => (
+              <View key={`daily-gut-note-${index}`} style={styles.dailyGutBulletRow}>
+                <View style={styles.dailyGutBullet} />
+                <Text style={styles.dailyGutBody}>{note}</Text>
+              </View>
+            ))}
+          </View>
         </View>
       </Card>
       <View style={styles.macroGrid}>
@@ -1134,7 +1172,7 @@ export function FoodLogSection({ mealType, logs, onAddFood }: { mealType: FoodLo
 
   return (
     <>
-      <Card>
+      <View style={styles.mealCard}>
         <View style={styles.sectionRow}>
           <Text style={styles.mealTitle}>{mealType[0].toUpperCase() + mealType.slice(1)}</Text>
           <View style={styles.mealTotalsWrap}>
@@ -1161,12 +1199,14 @@ export function FoodLogSection({ mealType, logs, onAddFood }: { mealType: FoodLo
             </View>
           ))
         ) : (
-          <Text style={styles.emptyText}>{mealPrompt}</Text>
+          <View style={styles.mealEmptyState}>
+            <Text style={styles.mealEmptyText}>{mealPrompt}</Text>
+          </View>
         )}
         <Pressable style={styles.addMealButton} onPress={onAddFood}>
           <Text style={styles.addMealText}>Add to {mealType}</Text>
         </Pressable>
-      </Card>
+      </View>
       <Modal visible={Boolean(editingItem)} animationType="slide" transparent onRequestClose={closeEditModal}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
@@ -1293,7 +1333,7 @@ export function FoodSearchCard({
       const loadingScores: Record<string, boolean> = {};
       nextResults.forEach((item) => {
         const key = `${item.source}-${item.id}`;
-        loadingScores[key] = true;
+        loadingScores[key] = false;
       });
       setGutScores({});
       setGutScoreLoading(loadingScores);
@@ -1328,7 +1368,12 @@ export function FoodSearchCard({
     onRequestClose?.();
   };
 
-  const fetchGutScore = async (foodName: string) => {
+  const fetchGutScore = async (foodName: string, resultKey?: string) => {
+    const resolvedKey =
+      resultKey ??
+      (results.find((r) => r.description.toLowerCase() === foodName.toLowerCase()) != null
+        ? `${results.find((r) => r.description.toLowerCase() === foodName.toLowerCase())!.source}-${results.find((r) => r.description.toLowerCase() === foodName.toLowerCase())!.id}`
+        : null);
     const fallbackScore = computeGutScore({
       fiberG: 0,
       proteinG: 0,
@@ -1387,6 +1432,9 @@ export function FoodSearchCard({
       };
 
     try {
+      if (resolvedKey) {
+        setGutScoreLoading((prev) => ({ ...prev, [resolvedKey]: true }));
+      }
       const res = await fetch(
         "https://rxeyjtykavgadfvsspsy.supabase.co/functions/v1/ai-coach",
         {
@@ -1404,7 +1452,10 @@ export function FoodSearchCard({
         }
       );
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(typeof data?.error === "string" ? data.error : "Gut score request failed.");
+      }
 
       if (data?.intent === "gut_score" && data?.score != null) {
         const parsedScore = Math.min(Math.max(Number(data.score) || fallbackScore, 0), 100);
@@ -1452,24 +1503,28 @@ export function FoodSearchCard({
             ],
           });
           setGutScoreVisible(true);
-          const key = results.find(
-            (r) => r.description.toLowerCase() === foodName.toLowerCase()
-          )
-            ? `${results.find((r) => r.description.toLowerCase() === foodName.toLowerCase())!.source}-${results.find((r) => r.description.toLowerCase() === foodName.toLowerCase())!.id}`
-            : null;
-
-          if (key) {
-            setGutScores((prev) => ({ ...prev, [key]: parsedScore }));
+          if (resolvedKey) {
+            setGutScores((prev) => ({ ...prev, [resolvedKey]: parsedScore }));
           }
           return;
         }
 
       setGutScore(fallbackData);
       setGutScoreVisible(true);
+      if (resolvedKey) {
+        setGutScores((prev) => ({ ...prev, [resolvedKey]: fallbackData.score }));
+      }
     } catch (e) {
       console.log("[gut_score] fetch failed", e);
       setGutScore(fallbackData);
       setGutScoreVisible(true);
+      if (resolvedKey) {
+        setGutScores((prev) => ({ ...prev, [resolvedKey]: fallbackData.score }));
+      }
+    } finally {
+      if (resolvedKey) {
+        setGutScoreLoading((prev) => ({ ...prev, [resolvedKey]: false }));
+      }
     }
   };
 
@@ -1579,27 +1634,33 @@ export function FoodSearchCard({
                 <Pressable key={key} style={styles.searchResultCard} onPress={() => setSelectedFood(item)}>
                   <View style={styles.searchCardTopRow}>
                     <Text style={styles.foodName}>{formatFoodName(item.description)}</Text>
-                    {gutScoreLoading[key] || score == null ? (
+                    {gutScoreLoading[key] ? (
                       <View style={[styles.gutScoreCardBadge, styles.gutScoreLoadingRow]}>
                         <ActivityIndicator size="small" color={colors.accentPrimary} />
                       </View>
-                    ) : (
-                      <Pressable style={styles.gutScoreCardBadge} onPress={() => void fetchGutScore(item.description)}>
+                    ) : score != null ? (
+                      <Pressable style={styles.gutScoreCardBadge} onPress={() => void fetchGutScore(item.description, key)}>
                         <Text style={styles.gutScoreCardBadgeScore}>{score}</Text>
+                        <Text style={styles.gutScoreCardBadgeLabel}>gut</Text>
+                      </Pressable>
+                    ) : (
+                      <Pressable style={styles.gutScoreCardBadge} onPress={() => void fetchGutScore(item.description, key)}>
                         <Text style={styles.gutScoreCardBadgeLabel}>gut</Text>
                       </Pressable>
                     )}
                   </View>
 
-                  {score != null ? <GutScoreBadge score={score} onPress={() => void fetchGutScore(item.description)} /> : null}
+                  {score != null || gutScoreLoading[key] ? (
+                    <GutScoreBadge score={score ?? null} loading={gutScoreLoading[key]} onPress={() => void fetchGutScore(item.description, key)} />
+                  ) : null}
 
                   <Text style={styles.foodMeta}>
                     {Math.round(item.caloriesPer100g)} cal | {Math.round(item.proteinPer100g)}g protein | {Math.round(item.carbsPer100g)}g carbs | {Math.round(item.fatPer100g)}g fat
                   </Text>
 
                   <View style={styles.searchCardBottomRow}>
-                    <Pressable style={styles.gutScoreLink} onPress={() => void fetchGutScore(item.description)}>
-                      <Text style={styles.gutScoreLinkText}>Gut score</Text>
+                    <Pressable style={styles.gutScoreLink} onPress={() => void fetchGutScore(item.description, key)}>
+                      <Text style={styles.gutScoreLinkText}>🌿 Gut Score</Text>
                     </Pressable>
                     <Pressable style={styles.addFoodInlineBtn} onPress={() => setSelectedFood(item)}>
                       <Text style={styles.addFoodInlineBtnText}>Add food</Text>
@@ -2127,8 +2188,8 @@ const styles = StyleSheet.create({
   },
   moodButtonGrid: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
+    flexWrap: "nowrap",
+    gap: 8,
   },
   moodCardComplete: {
     backgroundColor: "rgba(232, 168, 56, 0.08)",
@@ -2190,41 +2251,43 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   moodButton: {
-    width: "18%",
+    flex: 1,
+    minWidth: 0,
     alignItems: "center",
+    justifyContent: "center",
     gap: 6,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    borderRadius: 18,
+    minHeight: 112,
+    paddingVertical: 14,
+    paddingHorizontal: 4,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.white,
+    borderColor: "rgba(44, 26, 14, 0.08)",
+    backgroundColor: "#FCFBF8",
+    shadowColor: "#2C1A0E",
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 1,
   },
-  moodEmoji: {
-    fontSize: 20,
+  moodScoreTile: {
+    color: colors.textPrimary,
+    fontSize: 28,
+    fontWeight: "800",
   },
   moodLabel: {
     color: colors.textPrimary,
-    fontSize: 13,
-    fontWeight: "500",
+    fontSize: 8,
+    fontWeight: "700",
+    textAlign: "center",
+    textTransform: "uppercase",
+    letterSpacing: 0.2,
+    width: "100%",
   },
   helper: {
     color: colors.textSecondary,
     fontSize: 13,
     textTransform: "uppercase",
     letterSpacing: 0.5,
-  },
-  savedMoodBadgeCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  savedMoodOutOf: {
-    color: colors.textSecondary,
-    fontSize: 18,
-    fontWeight: "700",
   },
   savedMoodCopy: {
     flex: 1,
@@ -2240,24 +2303,36 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: spacing.sm,
   },
+  dailyGutPanel: {
+    backgroundColor: "#FCFBF8",
+    borderRadius: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+    gap: 16,
+    borderWidth: 1,
+    borderColor: "rgba(44, 26, 14, 0.06)",
+  },
   dailyGutHeader: {
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
     gap: spacing.md,
   },
+  dailyGutHeaderCopy: {
+    flex: 1,
+    gap: 6,
+  },
   dailyGutEyebrow: {
     color: colors.textSecondary,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "700",
-    letterSpacing: 0.8,
+    letterSpacing: 1,
     textTransform: "uppercase",
   },
   dailyGutTitle: {
     color: colors.textPrimary,
     fontSize: 22,
-    fontWeight: "700",
-    marginTop: 4,
+    fontWeight: "800",
   },
   dailyGutBody: {
     color: colors.textSecondary,
@@ -2301,7 +2376,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(232, 168, 56, 0.2)",
   },
   macroCardInk: {
-    backgroundColor: "#F3EEE8",
+    backgroundColor: colors.white,
     borderColor: "rgba(44, 26, 14, 0.12)",
   },
   macroCardTop: {
@@ -2349,6 +2424,14 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
+  mealCard: {
+    backgroundColor: colors.white,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: radii.lg,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
   mealTitle: {
     color: colors.textPrimary,
     fontSize: 20,
@@ -2375,6 +2458,19 @@ const styles = StyleSheet.create({
     marginTop: 2,
     marginBottom: 6,
   },
+  mealEmptyState: {
+    backgroundColor: "#F5F0EB",
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: "rgba(196, 98, 45, 0.08)",
+  },
+  mealEmptyText: {
+    color: colors.textSecondary,
+    fontSize: 15,
+    lineHeight: 24,
+  },
   linkText: {
     color: colors.accentPrimary,
     fontWeight: "600",
@@ -2385,7 +2481,7 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingVertical: 12,
     paddingHorizontal: 4,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.white,
   },
   foodDot: {
     width: 10,
@@ -2727,11 +2823,24 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: 10,
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
+  },
+  savedMoodScorePill: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
   },
   savedMoodScore: {
     fontSize: 22,
     fontWeight: "800",
+  },
+  savedMoodScoreDenominator: {
+    fontSize: 14,
+    fontWeight: "600",
+    lineHeight: 18,
   },
   savedMoodText: {
     color: colors.textPrimary,
@@ -2861,12 +2970,12 @@ const styles = StyleSheet.create({
   gutScoreLink: {
     alignSelf: "flex-start",
     marginTop: spacing.xs,
-    paddingVertical: 4,
-    paddingHorizontal: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     borderRadius: 999,
-    backgroundColor: colors.surface,
+    backgroundColor: "#F7EEE5",
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: "rgba(196, 98, 45, 0.18)",
   },
   gutScoreLinkText: {
     color: colors.accentPrimary,
@@ -2889,7 +2998,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   searchLauncher: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.white,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radii.lg,
@@ -3084,7 +3193,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.round,
     backgroundColor: "#74B8C2",
   },
-  hydrationAddButton: {
+  hydrationStepButton: {
     width: 42,
     height: 42,
     borderRadius: 21,

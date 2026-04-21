@@ -4,7 +4,6 @@ import { ActivityIndicator, Animated, Modal, Pressable, ScrollView, StyleSheet, 
 import { GutScoreModal, type GutScoreData } from "@/components/GutScoreModal";
 import { colors, radii, spacing } from "@/constants/theme";
 import { Card, Field, PrimaryButton, SectionTitle } from "@/components/ui";
-import { GutScoreBadge } from "@/components/log";
 import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase";
 import { formatFoodName } from "@/lib/utils";
 import { parseFoodMessage, sendCoachMessage } from "@/services/coach";
@@ -295,6 +294,7 @@ export function CoachChat() {
   const [confirming, setConfirming] = useState(false);
   const [gutScoreData, setGutScoreData] = useState<GutScoreData | null>(null);
   const [proposalGutScores, setProposalGutScores] = useState<Record<string, number>>({});
+  const [proposalGutScoreLoading, setProposalGutScoreLoading] = useState<Record<string, boolean>>({});
   const [adjustModalVisible, setAdjustModalVisible] = useState(false);
   const [adjustDraftItems, setAdjustDraftItems] = useState<AdjustDraftItem[]>([]);
   const starterOpacity = useRef(new Animated.Value(1)).current;
@@ -516,6 +516,7 @@ export function CoachChat() {
   };
 
   const openGutFeedback = async (item: CoachFoodItem) => {
+    const gutScoreKey = item.name.toLowerCase();
     const fallbackScore = computeGutScore({
       foodName: item.name,
       fiberG: item.fiber ?? 0,
@@ -539,6 +540,12 @@ export function CoachChat() {
     });
 
     try {
+      setProposalGutScoreLoading((prev) => ({ ...prev, [gutScoreKey]: true }));
+      setProposalGutScores((prev) => {
+        const next = { ...prev };
+        delete next[gutScoreKey];
+        return next;
+      });
       const response = await fetch(`${supabaseUrl}/functions/v1/ai-coach`, {
         method: "POST",
         headers: {
@@ -573,7 +580,10 @@ export function CoachChat() {
         });
         setProposalGutScores((prev) => ({ ...prev, [item.name.toLowerCase()]: parsedScore }));
       }
-    } catch {}
+    } catch {
+    } finally {
+      setProposalGutScoreLoading((prev) => ({ ...prev, [gutScoreKey]: false }));
+    }
   };
 
   const updateDraftItem = (index: number, updates: Partial<AdjustDraftItem>) => {
@@ -876,28 +886,24 @@ export function CoachChat() {
             <Card>
               <Text style={styles.summaryLabel}>{message.foodProposal.mealType}</Text>
               {(pendingProposal && message.foodProposal.sourceMessage === pendingProposal.sourceMessage ? pendingProposal.items : message.foodProposal.items).map((item, itemIndex) => {
-                const gutScore = proposalGutScores[item.name.toLowerCase()] ?? computeGutScore({
-                  foodName: item.name,
-                  fiberG: item.fiber ?? 0,
-                  proteinG: item.protein,
-                  fatG: item.fat,
-                  carbsG: item.carbs,
-                  gutHealthTags: [],
-                  foodSource: item.foodSource,
-                });
+                const gutScoreKey = item.name.toLowerCase();
+                const gutScore = proposalGutScores[gutScoreKey] ?? null;
+                const gutScoreLoading = proposalGutScoreLoading[gutScoreKey] ?? false;
 
                 return (
                   <View key={`${message.timestamp}-${item.name}`} style={styles.summaryRow}>
                     <View style={styles.summaryCopy}>
                       <View style={styles.summaryTitleRow}>
                         <Text style={styles.summaryName}>{formatFoodName(item.name)}</Text>
-                        <GutScoreBadge score={gutScore} onPress={() => void openGutFeedback(item)} />
                         {message.foodProposal.items.length > 1 ? (
                           <Pressable onPress={() => openAdjustModal()}>
                             <Text style={styles.editLink}>Edit</Text>
                           </Pressable>
                         ) : null}
                       </View>
+                      <Pressable onPress={() => void openGutFeedback(item)}>
+                        <Text style={styles.gutAnalysisLink}>See gut health analysis →</Text>
+                      </Pressable>
                       {item.foodSource === "ai_estimate" ? (
                         <Text style={styles.estimateTag}>AI estimate</Text>
                       ) : null}
@@ -1084,6 +1090,12 @@ const styles = StyleSheet.create({
     color: colors.accentPrimary,
     fontSize: 13,
     fontWeight: "600",
+  },
+  gutAnalysisLink: {
+    color: colors.accentPrimary,
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: 2,
   },
   summaryMeta: { color: colors.textSecondary, fontSize: 13 },
   estimateTag: {
