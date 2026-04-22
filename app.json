@@ -4,9 +4,11 @@
     "slug": "savorself",
     "scheme": "savorself",
     "version": "1.0.0",
+    "icon": "./logo.png",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "splash": {
+      "image": "./background.png",
       "resizeMode": "contain",
       "backgroundColor": "#FAF7F2"
     },
@@ -15,13 +17,16 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.savorself.app"
+      "bundleIdentifier": "com.savorself.app",
+      "buildNumber": "1"
     },
     "android": {
       "adaptiveIcon": {
+        "foregroundImage": "./logo.png",
         "backgroundColor": "#FAF7F2"
       },
-      "package": "com.savorself.app"
+      "package": "com.savorself.app",
+      "versionCode": 1
     },
     "plugins": [
       "expo-router",
