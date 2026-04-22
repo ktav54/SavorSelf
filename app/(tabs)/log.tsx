@@ -1,4 +1,5 @@
 import { useFocusEffect } from "@react-navigation/native";
+import { addDays, format, isToday } from "date-fns";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Animated, Easing, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Screen } from "@/components/ui";
@@ -13,8 +14,11 @@ export default function LogScreen() {
   const profile = useAppStore((state) => state.profile);
   const foodLogs = useAppStore((state) => state.foodLogs);
   const moodLogs = useAppStore((state) => state.moodLogs);
+  const selectedDate = useAppStore((state) => state.selectedDate);
+  const setSelectedDate = useAppStore((state) => state.setSelectedDate);
   const loadTodayMoodLog = useAppStore((state) => state.loadTodayMoodLog);
   const loadTodayFoodLogs = useAppStore((state) => state.loadTodayFoodLogs);
+  const loadTodayQuickLog = useAppStore((state) => state.loadTodayQuickLog);
   const [defaultMealType, setDefaultMealType] = useState<MealType>("breakfast");
   const [mealContext, setMealContext] = useState<MealType | null>(null);
   const [foodSearchVisible, setFoodSearchVisible] = useState(false);
@@ -30,14 +34,16 @@ export default function LogScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      void loadTodayMoodLog();
-      void loadTodayFoodLogs();
+      const currentDate = useAppStore.getState().selectedDate;
+      void loadTodayMoodLog(currentDate);
+      void loadTodayFoodLogs(currentDate);
+      void loadTodayQuickLog(currentDate);
 
       if (!hasShownEntryThisSession.current) {
         hasShownEntryThisSession.current = true;
         setEntryStep("welcome");
       }
-    }, [loadTodayFoodLogs, loadTodayMoodLog])
+    }, [loadTodayFoodLogs, loadTodayMoodLog, loadTodayQuickLog])
   );
 
   useEffect(() => {
@@ -150,6 +156,13 @@ export default function LogScreen() {
   };
 
   const todaysMood = moodLogs[0] ?? null;
+  const isSelectedDateToday = isToday(selectedDate);
+  const logHeaderDate = format(selectedDate, "EEE MMM d yyyy").toUpperCase();
+  const generalFoodTitle = mealContext
+    ? `What did you eat for ${mealContext}?`
+    : isSelectedDateToday
+      ? "What did you eat today?"
+      : `What did you eat on ${format(selectedDate, "MMM d")}?`;
   const floatingLogoStyle = {
     transform: [
       {
@@ -197,7 +210,23 @@ export default function LogScreen() {
     <>
       <Screen scroll>
         <View style={styles.logHeader}>
-          <Text style={styles.logHeaderDate}>{new Date().toDateString()}</Text>
+          <View style={styles.logHeaderDateRow}>
+            <Pressable style={styles.dateNavButton} onPress={() => void setSelectedDate(addDays(selectedDate, -1))}>
+              <Text style={styles.dateNavText}>‹</Text>
+            </Pressable>
+            <Text style={styles.logHeaderDate}>{logHeaderDate}</Text>
+            <Pressable
+              style={[styles.dateNavButton, isSelectedDateToday && styles.dateNavButtonDisabled]}
+              onPress={() => {
+                if (!isSelectedDateToday) {
+                  void setSelectedDate(addDays(selectedDate, 1));
+                }
+              }}
+              disabled={isSelectedDateToday}
+            >
+              <Text style={[styles.dateNavText, isSelectedDateToday && styles.dateNavTextDisabled]}>›</Text>
+            </Pressable>
+          </View>
           <Text style={styles.logHeaderTitle}>{`Hi${profile?.name ? `, ${profile.name}` : ""}`}</Text>
           <Text style={styles.logHeaderSubtitle}>
             Food, water, and small patterns live here. Your mood check-in happens first, then the rest can stay gentle.
@@ -210,7 +239,7 @@ export default function LogScreen() {
           visible={foodSearchVisible}
           onRequestClose={closeFoodSearch}
           defaultMealType={defaultMealType}
-          title={mealContext ? `What did you eat for ${mealContext}?` : "What did you eat today?"}
+          title={generalFoodTitle}
         />
         <FoodLogSection mealType="breakfast" logs={foodLogs.filter((item) => item.mealType === "breakfast")} onAddFood={() => openFoodSearch("breakfast")} />
         <FoodLogSection mealType="lunch" logs={foodLogs.filter((item) => item.mealType === "lunch")} onAddFood={() => openFoodSearch("lunch")} />
@@ -256,7 +285,7 @@ export default function LogScreen() {
                 <Animated.View style={[styles.heroPill, { backgroundColor: "#F3E1A9", width: rightPillWidth }]} />
               </View>
               <Pressable style={styles.heroPrimary} onPress={() => setEntryStep("mood")}>
-                <Text style={styles.heroPrimaryText}>{todaysMood ? "Open today's check-in" : "Begin today's check-in"}</Text>
+                <Text style={styles.heroPrimaryText}>{todaysMood ? "Open this check-in" : "Begin this check-in"}</Text>
               </Pressable>
               <Pressable style={styles.heroSecondary} onPress={() => setEntryStep("hidden")}>
                 <Text style={styles.heroSecondaryText}>Skip for now</Text>
@@ -313,12 +342,38 @@ const styles = StyleSheet.create({
     paddingTop: 2,
     paddingBottom: 4,
   },
+  logHeaderDateRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
   logHeaderDate: {
     color: colors.textSecondary,
     fontSize: 12,
     letterSpacing: 0.9,
     textTransform: "uppercase",
     fontWeight: "600",
+    flex: 1,
+  },
+  dateNavButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F3EDE7",
+  },
+  dateNavButtonDisabled: {
+    backgroundColor: "#F5F1EC",
+  },
+  dateNavText: {
+    color: colors.accentPrimary,
+    fontSize: 20,
+    lineHeight: 22,
+    fontWeight: "700",
+  },
+  dateNavTextDisabled: {
+    color: colors.textSecondary,
   },
   logHeaderTitle: {
     color: colors.textPrimary,

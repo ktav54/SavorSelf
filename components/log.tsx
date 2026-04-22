@@ -629,11 +629,11 @@ export function MoodCheckInStrip() {
               <Text style={[styles.savedMoodScoreDenominator, { color: "#B0832E" }]}>/5</Text>
             </View>
             <View style={styles.savedMoodCopy}>
-              <Text style={styles.savedMoodText}>Today's check-in is saved.</Text>
+              <Text style={styles.savedMoodText}>This check-in is saved.</Text>
               <Text style={styles.savedMoodSubtext}>You gave the day a little context already.</Text>
             </View>
           </View>
-          <PrimaryButton label="Update today's check-in" secondary onPress={() => setIsEditing(true)} />
+          <PrimaryButton label="Update this check-in" secondary onPress={() => setIsEditing(true)} />
         </View>
       ) : null}
       {(!todaysMood || isEditing) ? (
@@ -719,9 +719,8 @@ export function MoodCheckInStrip() {
 
 export function HydrationSummaryCard() {
   const profile = useAppStore((state) => state.profile);
-  const authUser = useAppStore((state) => state.authUser);
   const quickLogs = useAppStore((state) => state.quickLogs);
-  const addQuickLog = useAppStore((state) => state.addQuickLog);
+  const saveWaterLog = useAppStore((state) => state.saveWaterLog);
   const waterOz = useMemo(
     () => quickLogs.reduce((sum, item) => sum + (item.waterOz ?? 0), 0),
     [quickLogs]
@@ -746,14 +745,7 @@ export function HydrationSummaryCard() {
       <View style={styles.hydrationActionRow}>
         <Pressable
           style={styles.hydrationStepButton}
-          onPress={() =>
-            addQuickLog({
-              id: `water-${Date.now()}`,
-              userId: authUser?.id ?? profile?.id ?? "local",
-              loggedAt: new Date().toISOString(),
-              waterOz: -8,
-            })
-          }
+          onPress={() => void saveWaterLog(-8)}
         >
           <Ionicons name="remove" size={18} color={colors.blue} />
         </Pressable>
@@ -762,14 +754,7 @@ export function HydrationSummaryCard() {
         </View>
         <Pressable
           style={styles.hydrationStepButton}
-          onPress={() =>
-            addQuickLog({
-              id: `water-${Date.now()}`,
-              userId: authUser?.id ?? profile?.id ?? "local",
-              loggedAt: new Date().toISOString(),
-              waterOz: 8,
-            })
-          }
+          onPress={() => void saveWaterLog(8)}
         >
           <Ionicons name="add" size={18} color={colors.blue} />
         </Pressable>
@@ -1024,7 +1009,7 @@ export function MacroSummaryBar() {
                   <Text style={styles.macroModalBody}>{macroDetails[selectedMacro].blurb}</Text>
                   <Text style={styles.macroModalCallout}>{macroDetails[selectedMacro].benefit}</Text>
                   <View style={styles.macroDetailStat}>
-                    <Text style={styles.macroDetailStatLabel}>Today's total</Text>
+                    <Text style={styles.macroDetailStatLabel}>Day total</Text>
                     <Text style={styles.macroDetailStatValue}>
                       {totals[selectedMacro]}
                       {macroDetails[selectedMacro].unit ? ` ${macroDetails[selectedMacro].unit}` : ""}
@@ -1062,12 +1047,12 @@ export function MacroSummaryBar() {
                                 ]}
                               />
                             </View>
-                            <Text style={styles.breakdownShare}>{Math.round(item.share * 100)}% of today's {macroDetails[selectedMacro].label.toLowerCase()}</Text>
+                            <Text style={styles.breakdownShare}>{Math.round(item.share * 100)}% of this day's {macroDetails[selectedMacro].label.toLowerCase()}</Text>
                           </View>
                         </View>
                       ))
                     ) : (
-                      <Text style={styles.emptyText}>Nothing logged for this one yet today.</Text>
+                      <Text style={styles.emptyText}>Nothing logged for this one yet.</Text>
                     )}
                   </View>
                   <View style={styles.learnMoreSection}>
@@ -1213,7 +1198,7 @@ export function FoodLogSection({ mealType, logs, onAddFood }: { mealType: FoodLo
             <SectionTitle
               eyebrow="Edit Food"
               title={formatFoodName(editingItem?.foodName ?? "Food")}
-              subtitle="Adjust the logged quantity for this food and we'll scale today's macros with it."
+              subtitle="Adjust the logged quantity for this food and we'll scale this day's macros with it."
             />
             <Field
               label={`Quantity (${editingItem?.unit ?? "serving"})`}
@@ -1683,7 +1668,7 @@ export function FoodSearchCard({
             <SectionTitle
               eyebrow="Add Food"
               title={formatFoodName(selectedFood?.description ?? "Selected food")}
-              subtitle="Choose a meal and portion before saving this to today's log."
+              subtitle="Choose a meal and portion before saving this to your log."
             />
             <Text style={styles.helper}>Meal</Text>
             <View style={styles.rowWrap}>
@@ -1894,9 +1879,9 @@ export function FoodSearchLauncher({
     <Pressable style={styles.searchLauncher} onPress={onPress}>
       <View style={styles.searchLauncherCopy}>
         <Text style={styles.searchLauncherEyebrow}>Add Food</Text>
-        <Text style={styles.searchLauncherTitle}>What did you eat today?</Text>
+        <Text style={styles.searchLauncherTitle}>What did you eat?</Text>
         <Text style={styles.searchLauncherSubtitle}>
-          Tap to search for a food, choose your meal, and add it to today&apos;s log.
+          Tap to search for a food, choose your meal, and add it to your log.
         </Text>
       </View>
       <Text style={styles.searchLauncherAction}>Open search</Text>

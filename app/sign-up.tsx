@@ -34,7 +34,7 @@ export default function SignUpScreen() {
   if (isAuthenticated) {
     return (
       <Screen>
-        <SectionTitle title="Welcome back..." subtitle="Taking you into your journal." />
+        <SectionTitle title="Welcome back..." subtitle="Taking you to your log." />
       </Screen>
     );
   }

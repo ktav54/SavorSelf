@@ -92,15 +92,6 @@ export interface QuickLog {
   exerciseType?: string;
 }
 
-export interface JournalEntry {
-  id: string;
-  userId: string;
-  createdAt: string;
-  promptUsed?: string;
-  body: string;
-  isGraceMode: boolean;
-}
-
 export interface AiConversationMessage {
   role: "user" | "assistant";
   content: string;

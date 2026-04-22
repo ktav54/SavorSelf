@@ -282,7 +282,6 @@ export function CoachChat() {
   const moodLogs = useAppStore((state) => state.moodLogs);
   const foodLogs = useAppStore((state) => state.foodLogs);
   const quickLogs = useAppStore((state) => state.quickLogs);
-  const journalEntries = useAppStore((state) => state.journalEntries);
   const insights = useAppStore((state) => state.insights);
   const loadFoodMoodInsights = useAppStore((state) => state.loadFoodMoodInsights);
   const addCoachMessage = useAppStore((state) => state.addCoachMessage);
@@ -344,10 +343,9 @@ export function CoachChat() {
         tags: Array.from(new Set(foodLogs.flatMap((item) => item.gutHealthTags))),
       },
       quickLogs: quickLogs.slice(-7),
-      journalEntries: journalEntries.slice(-3).map((entry) => entry.body),
       insights: insights.slice(0, 3),
     }),
-    [foodLogs, insights, journalEntries, moodLogs, quickLogs]
+    [foodLogs, insights, moodLogs, quickLogs]
   );
 
   const appendAssistant = (

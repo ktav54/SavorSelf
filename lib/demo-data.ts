@@ -3,16 +3,15 @@ import type {
   AiConversationMessage,
   FoodLog,
   FoodMoodInsight,
-  JournalEntry,
   MoodLog,
   QuickLog,
   UserProfile,
 } from "@/types/models";
 
 export const demoProfile: UserProfile = {
-  id: "demo-user",
-  email: "hello@savorself.app",
-  name: "Avery",
+  id: "",
+  email: "",
+  name: "",
   subscriptionTier: "free",
   preferredUnits: "imperial",
   onboardingComplete: false,
@@ -74,59 +73,9 @@ export const demoFoodLogs: FoodLog[] = [
   },
 ];
 
-export const demoQuickLogs: QuickLog[] = [
-  {
-    id: "quick-1",
-    userId: "demo-user",
-    loggedAt: formatISO(new Date()),
-    waterOz: 54,
-    caffeineMg: 95,
-    steps: 6120,
-    sleepHours: 7.5,
-    exerciseMinutes: 25,
-    exerciseType: "walk",
-  },
-];
+export const demoQuickLogs: QuickLog[] = [];
 
-export const demoJournalEntries: JournalEntry[] = [
-  {
-    id: "journal-1",
-    userId: "demo-user",
-    createdAt: formatISO(subDays(new Date(), 1)),
-    promptUsed: "How did your body feel today?",
-    body: "More settled after lunch than I expected. The morning coffee hit a little hard.",
-    isGraceMode: false,
-  },
-  {
-    id: "journal-2",
-    userId: "demo-user",
-    createdAt: formatISO(subDays(new Date(), 3)),
-    promptUsed: "What gave you energy and what drained it?",
-    body: "Protein at breakfast helped. Afternoon sweets left me foggy.",
-    isGraceMode: false,
-  },
-];
-
-export const demoInsights: FoodMoodInsight[] = [
-  {
-    id: "insight-1",
-    userId: "demo-user",
-    generatedAt: formatISO(new Date()),
-    insightType: "fermented_mood",
-    insightBody: "Your mood scores trend higher on days you log fermented or probiotic foods.",
-    supportingData: { deltaPercent: 67, tag: "fermented" },
-    isRead: false,
-  },
-  {
-    id: "insight-2",
-    userId: "demo-user",
-    generatedAt: formatISO(new Date()),
-    insightType: "protein_energy",
-    insightBody: "Your steadiest energy days this week began with at least 20g of morning protein.",
-    supportingData: { morningProteinDays: 3 },
-    isRead: true,
-  },
-];
+export const demoInsights: FoodMoodInsight[] = [];
 
 export const demoConversation: AiConversationMessage[] = [
   {
