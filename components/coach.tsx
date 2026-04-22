@@ -313,6 +313,23 @@ export function CoachChat() {
   }, [conversation.length]);
 
   const hasStartedConversation = conversation.length > 0;
+  const displayConversation = useMemo<Array<AiConversationMessage & { id?: string; createdAt?: string }>>(
+    () =>
+      conversation.length === 0
+        ? [
+            {
+              id: "welcome",
+              role: "assistant" as const,
+              content:
+                "Hey! I'm your SavorSelf coach. I can log your food just from a description, pull up your mood patterns, suggest what to eat based on your gut-brain data, or just talk through how you're feeling. What's on your mind?",
+              createdAt: new Date().toISOString(),
+              timestamp: new Date().toISOString(),
+              kind: "text",
+            },
+          ]
+        : conversation,
+    [conversation]
+  );
 
   const coachContext = useMemo(
     () => ({
@@ -839,7 +856,7 @@ export function CoachChat() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {conversation.map((message, index) => (
+        {displayConversation.map((message, index) => (
           <View key={`${message.timestamp}-${index}`} style={styles.messageWrap}>
             <View style={[styles.bubble, message.role === "user" ? styles.userBubble : styles.assistantBubble]}>
               <Text style={[styles.bubbleText, message.role === "user" && styles.userBubbleText]}>
@@ -899,22 +916,40 @@ export function CoachChat() {
 
         {!hasStartedConversation ? (
           <View style={styles.promptRow}>
-            <Text style={styles.promptTitle}>Suggested prompts</Text>
-            <View style={styles.promptChipsWrap}>
+            <Text style={styles.promptTitle}>What I can help with</Text>
+            <View style={styles.starterCards}>
               {[
-                "I had two scrambled eggs with toast and a coffee",
-                "How has my mood been this week?",
-                "Lunch was a turkey sandwich, chips, and an apple",
-              ].map((prompt) => (
+                {
+                  title: "🍳  Log what I ate",
+                  subtitle: "Just describe it naturally — I'll find the nutrition and add it to your log",
+                  prompt: "I want to log what I ate",
+                },
+                {
+                  title: "📊  How's my mood been?",
+                  subtitle: "I'll pull your recent patterns and give you a personal read",
+                  prompt: "How has my mood been lately?",
+                },
+                {
+                  title: "🥗  What should I eat?",
+                  subtitle: "Get a suggestion based on your gut-brain goals and recent logs",
+                  prompt: "What should I eat to support my mood today?",
+                },
+                {
+                  title: "💬  Just talk",
+                  subtitle: "No food stuff required — a supportive space to think out loud",
+                  prompt: "I just need to talk through something",
+                },
+              ].map((item) => (
                 <Pressable
-                  key={prompt}
+                  key={item.prompt}
                   onPress={() => {
-                    setDraft(prompt);
-                    void handleSend(prompt);
+                    setDraft(item.prompt);
+                    void handleSend(item.prompt);
                   }}
-                  style={styles.promptChip}
+                  style={styles.starterCard}
                 >
-                  <Text style={styles.promptChipText}>{prompt}</Text>
+                  <Text style={styles.starterCardTitle}>{item.title}</Text>
+                  <Text style={styles.starterCardSubtitle}>{item.subtitle}</Text>
                 </Pressable>
               ))}
             </View>
@@ -1043,22 +1078,28 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
-  promptChipsWrap: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
+  starterCards: {
+    gap: 10,
+    marginTop: 8,
   },
-  promptChip: {
+  starterCard: {
     backgroundColor: colors.white,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 4,
   },
-  promptChipText: {
+  starterCardTitle: {
     color: colors.textPrimary,
-    fontSize: 14,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  starterCardSubtitle: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 20,
   },
   optionCard: {
     backgroundColor: colors.white,
