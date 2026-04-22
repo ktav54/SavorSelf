@@ -8,7 +8,6 @@ import { supabase } from "@/lib/supabase";
 import {
   requestNotificationPermission,
   scheduleDailyMoodReminder,
-  scheduleLapseNudge,
   scheduleWeeklyReport,
 } from "@/services/notifications";
 import { useAppStore, type AppState } from "@/store/useAppStore";
@@ -50,7 +49,6 @@ export default function RootLayout() {
       if (granted) {
         await scheduleDailyMoodReminder();
         await scheduleWeeklyReport();
-        await scheduleLapseNudge(null);
       }
     })();
   }, []);

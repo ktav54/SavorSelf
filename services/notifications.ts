@@ -16,6 +16,12 @@ async function cancelScheduledByKey(key: string) {
   );
 }
 
+export async function cancelSavorSelfNotification(
+  key: "daily-mood-reminder" | "lapse-nudge" | "weekly-report"
+): Promise<void> {
+  await cancelScheduledByKey(key);
+}
+
 export async function requestNotificationPermission(): Promise<boolean> {
   const { status } = await Notifications.requestPermissionsAsync();
 

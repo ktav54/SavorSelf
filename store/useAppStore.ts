@@ -591,16 +591,31 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
   deleteAccount: async () => {
     const profile = useAppStore.getState().profile;
     if (!profile) {
-      return { error: "You need to be signed in first." };
+      return { error: "Not signed in." };
     }
 
-    const { error } = await supabase.from("users").delete().eq("id", profile.id);
-
-    if (error) {
-      return { error: error.message };
+    const tables = ["food_logs", "mood_logs", "quick_logs", "journal_entries"];
+    for (const table of tables) {
+      await supabase.from(table).delete().eq("user_id", profile.id);
     }
 
-    await useAppStore.getState().signOut();
+    await supabase.from("users").delete().eq("id", profile.id);
+    await supabase.auth.signOut();
+
+    set({
+      isAuthenticated: false,
+      authUser: null,
+      profile: null,
+      selectedDate: normalizeSelectedDate(),
+      moodLogs: [],
+      foodLogs: [],
+      quickLogs: [],
+      aiNarrative: "",
+      conversation: [],
+      conversationResetCount: 0,
+      authError: null,
+    });
+
     return {};
   },
   setSelectedDate: async (date) => {
@@ -667,8 +682,15 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
       moodError: null,
     });
 
-    const lastLog = data?.[0]?.logged_at ?? null;
-    void scheduleLapseNudge(lastLog);
+    const { data: recentLog } = await supabase
+      .from("mood_logs")
+      .select("logged_at")
+      .eq("user_id", profile.id)
+      .order("logged_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    void scheduleLapseNudge(recentLog?.logged_at ?? null);
   },
   loadTodayFoodLogs: async (date) => {
     const profile = useAppStore.getState().profile;

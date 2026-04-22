@@ -1,9 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "expo-router";
+import * as Notifications from "expo-notifications";
 import { Alert, Pressable, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Card, Chip, Field, PrimaryButton, Screen, SectionTitle } from "@/components/ui";
 import { colors, radii, spacing } from "@/constants/theme";
+import {
+  cancelAllSavorSelfNotifications,
+  cancelSavorSelfNotification,
+  scheduleDailyMoodReminder,
+  scheduleLapseNudge,
+  scheduleWeeklyReport,
+} from "@/services/notifications";
 import { useAppStore, type AppState } from "@/store/useAppStore";
 
 export default function SettingsScreen() {
@@ -377,7 +385,15 @@ export default function SettingsScreen() {
             <Text style={styles.switchLabel}>Daily mood check-in reminder</Text>
             <Switch
               value={dailyReminder}
-              onValueChange={setDailyReminder}
+              onValueChange={async (value) => {
+                setDailyReminder(value);
+                if (value) {
+                  await scheduleDailyMoodReminder();
+                } else {
+                  await cancelSavorSelfNotification("daily-mood-reminder");
+                  await Notifications.cancelScheduledNotificationAsync("daily-mood-reminder").catch(() => {});
+                }
+              }}
               trackColor={{ false: "#D9D0C7", true: "#E9D0BF" }}
               thumbColor={dailyReminder ? colors.accentPrimary : colors.white}
             />
@@ -387,7 +403,13 @@ export default function SettingsScreen() {
             <Text style={styles.switchLabel}>Two-day lapse nudge</Text>
             <Switch
               value={lapseNudge}
-              onValueChange={setLapseNudge}
+              onValueChange={async (value) => {
+                setLapseNudge(value);
+                if (!value) {
+                  await cancelSavorSelfNotification("lapse-nudge");
+                  await Notifications.cancelScheduledNotificationAsync("lapse-nudge").catch(() => {});
+                }
+              }}
               trackColor={{ false: "#D9D0C7", true: "#E9D0BF" }}
               thumbColor={lapseNudge ? colors.accentPrimary : colors.white}
             />
@@ -397,7 +419,15 @@ export default function SettingsScreen() {
             <Text style={styles.switchLabel}>Weekly Food-Mood report</Text>
             <Switch
               value={weeklyReport}
-              onValueChange={setWeeklyReport}
+              onValueChange={async (value) => {
+                setWeeklyReport(value);
+                if (value) {
+                  await scheduleWeeklyReport();
+                } else {
+                  await cancelSavorSelfNotification("weekly-report");
+                  await Notifications.cancelScheduledNotificationAsync("weekly-report").catch(() => {});
+                }
+              }}
               trackColor={{ false: "#D9D0C7", true: "#E9D0BF" }}
               thumbColor={weeklyReport ? colors.accentPrimary : colors.white}
             />
