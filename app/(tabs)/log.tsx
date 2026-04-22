@@ -1,14 +1,35 @@
 import { useFocusEffect } from "@react-navigation/native";
 import { addDays, format, isToday } from "date-fns";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Animated, Easing, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Animated,
+  Easing,
+  Image,
+  Modal,
+  PanResponder,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import { Screen } from "@/components/ui";
-import { FoodLogSection, FoodSearchCard, FoodSearchLauncher, GraceModeCard, HydrationSummaryCard, MacroSummaryBar, MoodCheckInStrip, QuickLogStrip } from "@/components/log";
+import {
+  FoodLogSection,
+  FoodSearchCard,
+  FoodSearchLauncher,
+  GraceModeCard,
+  HydrationSummaryCard,
+  MacroSummaryBar,
+  MoodCheckInStrip,
+  QuickLogStrip,
+} from "@/components/log";
 import { colors, radii, spacing } from "@/constants/theme";
 import { useAppStore, type AppState } from "@/store/useAppStore";
 import type { FoodLog, MealType } from "@/types/models";
 
-type EntryStep = "hidden" | "welcome" | "mood";
+type EntryStep = "hidden" | "welcome";
 
 export default function LogScreen() {
   const profile = useAppStore((state: AppState) => state.profile);
@@ -24,13 +45,14 @@ export default function LogScreen() {
   const [foodSearchVisible, setFoodSearchVisible] = useState(false);
   const [entryStep, setEntryStep] = useState<EntryStep>("hidden");
   const hasShownEntryThisSession = useRef(false);
+  const isNavigatingDate = useRef(false);
   const heroRise = useRef(new Animated.Value(24)).current;
   const heroFade = useRef(new Animated.Value(0)).current;
-  const moodBackdropFade = useRef(new Animated.Value(0)).current;
-  const moodScale = useRef(new Animated.Value(0.96)).current;
   const logoFloat = useRef(new Animated.Value(0)).current;
   const logoGlow = useRef(new Animated.Value(0)).current;
   const pillPulse = useRef(new Animated.Value(0)).current;
+  const daySlide = useRef(new Animated.Value(0)).current;
+  const { width } = useWindowDimensions();
 
   useFocusEffect(
     useCallback(() => {
@@ -39,23 +61,29 @@ export default function LogScreen() {
       void loadTodayFoodLogs(currentDate);
       void loadTodayQuickLog(currentDate);
 
-      if (!hasShownEntryThisSession.current) {
+      if (!hasShownEntryThisSession.current && isToday(currentDate)) {
         hasShownEntryThisSession.current = true;
         setEntryStep("welcome");
       }
     }, [loadTodayFoodLogs, loadTodayMoodLog, loadTodayQuickLog])
   );
 
+  const isSelectedDateToday = isToday(selectedDate);
+
+  useEffect(() => {
+    if (!isSelectedDateToday) {
+      setEntryStep("hidden");
+    }
+  }, [isSelectedDateToday]);
+
   useEffect(() => {
     if (entryStep === "hidden") {
       heroFade.setValue(0);
       heroRise.setValue(24);
-      moodBackdropFade.setValue(0);
-      moodScale.setValue(0.96);
       return;
     }
 
-    const animations = [
+    Animated.parallel([
       Animated.timing(heroFade, {
         toValue: 1,
         duration: 360,
@@ -69,28 +97,8 @@ export default function LogScreen() {
         stiffness: 120,
         mass: 0.8,
       }),
-    ];
-
-    if (entryStep === "mood") {
-      animations.push(
-        Animated.timing(moodBackdropFade, {
-          toValue: 1,
-          duration: 280,
-          easing: Easing.out(Easing.quad),
-          useNativeDriver: true,
-        }),
-        Animated.spring(moodScale, {
-          toValue: 1,
-          useNativeDriver: true,
-          damping: 16,
-          stiffness: 140,
-          mass: 0.8,
-        })
-      );
-    }
-
-    Animated.parallel(animations).start();
-  }, [entryStep, heroFade, heroRise, moodBackdropFade, moodScale]);
+    ]).start();
+  }, [entryStep, heroFade, heroRise]);
 
   useEffect(() => {
     const logoLoop = Animated.loop(
@@ -156,13 +164,13 @@ export default function LogScreen() {
   };
 
   const todaysMood = moodLogs[0] ?? null;
-  const isSelectedDateToday = isToday(selectedDate);
   const logHeaderDate = format(selectedDate, "EEE MMM d yyyy").toUpperCase();
   const generalFoodTitle = mealContext
     ? `What did you eat for ${mealContext}?`
     : isSelectedDateToday
       ? "What did you eat today?"
       : `What did you eat on ${format(selectedDate, "MMM d")}?`;
+
   const floatingLogoStyle = {
     transform: [
       {
@@ -179,6 +187,7 @@ export default function LogScreen() {
       },
     ],
   };
+
   const glowStyle = {
     opacity: logoGlow.interpolate({
       inputRange: [0, 1],
@@ -193,6 +202,7 @@ export default function LogScreen() {
       },
     ],
   };
+
   const leftPillWidth = pillPulse.interpolate({
     inputRange: [0, 1],
     outputRange: [46, 66],
@@ -206,51 +216,164 @@ export default function LogScreen() {
     outputRange: [46, 60],
   });
 
+  const navigateDate = useCallback(
+    (direction: -1 | 1) => {
+      if (isNavigatingDate.current) {
+        return;
+      }
+
+      if (direction === 1 && isToday(selectedDate)) {
+        Animated.spring(daySlide, {
+          toValue: 0,
+          useNativeDriver: true,
+          damping: 16,
+          stiffness: 200,
+          mass: 0.8,
+        }).start();
+        return;
+      }
+
+      isNavigatingDate.current = true;
+      const targetDate = addDays(selectedDate, direction);
+      const travel = Math.min(width * 0.08, 28) * (direction === 1 ? -1 : 1);
+
+      Animated.timing(daySlide, {
+        toValue: travel,
+        duration: 120,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (!finished) {
+          isNavigatingDate.current = false;
+          return;
+        }
+
+        void setSelectedDate(targetDate).finally(() => {
+          daySlide.setValue(-travel * 0.45);
+          Animated.spring(daySlide, {
+            toValue: 0,
+            useNativeDriver: true,
+            damping: 18,
+            stiffness: 190,
+            mass: 0.85,
+          }).start(() => {
+            isNavigatingDate.current = false;
+          });
+        });
+      });
+    },
+    [daySlide, selectedDate, setSelectedDate, width]
+  );
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gestureState) =>
+          Math.abs(gestureState.dx) > Math.abs(gestureState.dy) && Math.abs(gestureState.dx) > 14,
+        onPanResponderMove: (_, gestureState) => {
+          if (isNavigatingDate.current) {
+            return;
+          }
+
+          if (gestureState.dx < 0 && isSelectedDateToday) {
+            daySlide.setValue(Math.max(gestureState.dx * 0.08, -8));
+            return;
+          }
+
+          daySlide.setValue(gestureState.dx * 0.12);
+        },
+        onPanResponderRelease: (_, gestureState) => {
+          if (gestureState.dx <= -56 && !isSelectedDateToday) {
+            navigateDate(1);
+            return;
+          }
+
+          if (gestureState.dx >= 56) {
+            navigateDate(-1);
+            return;
+          }
+
+          Animated.spring(daySlide, {
+            toValue: 0,
+            useNativeDriver: true,
+            damping: 16,
+            stiffness: 200,
+            mass: 0.85,
+          }).start();
+        },
+        onPanResponderTerminate: () => {
+          Animated.spring(daySlide, {
+            toValue: 0,
+            useNativeDriver: true,
+            damping: 16,
+            stiffness: 200,
+            mass: 0.85,
+          }).start();
+        },
+      }),
+    [daySlide, isSelectedDateToday, navigateDate]
+  );
+
   return (
     <>
       <Screen scroll>
-        <View style={styles.logHeader}>
-          <View style={styles.logHeaderDateRow}>
-            <Pressable style={styles.dateNavButton} onPress={() => void setSelectedDate(addDays(selectedDate, -1))}>
-              <Text style={styles.dateNavText}>‹</Text>
-            </Pressable>
-            <Text style={styles.logHeaderDate}>{logHeaderDate}</Text>
-            <Pressable
-              style={[styles.dateNavButton, isSelectedDateToday && styles.dateNavButtonDisabled]}
-              onPress={() => {
-                if (!isSelectedDateToday) {
-                  void setSelectedDate(addDays(selectedDate, 1));
-                }
-              }}
-              disabled={isSelectedDateToday}
-            >
-              <Text style={[styles.dateNavText, isSelectedDateToday && styles.dateNavTextDisabled]}>›</Text>
-            </Pressable>
+        <Animated.View
+          {...panResponder.panHandlers}
+          style={[
+            styles.screenStack,
+            {
+              transform: [{ translateX: daySlide }],
+            },
+          ]}
+        >
+          <View style={styles.logHeader}>
+            <View style={styles.logHeaderDateRow}>
+              <Pressable style={({ pressed }) => [styles.dateNavButton, pressed && styles.dateNavPressed]} onPress={() => navigateDate(-1)}>
+                <Text style={styles.dateNavText}>{"<"}</Text>
+              </Pressable>
+              <Text style={styles.logHeaderDate}>{logHeaderDate}</Text>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.dateNavButton,
+                  isSelectedDateToday && styles.dateNavButtonDisabled,
+                  pressed && !isSelectedDateToday && styles.dateNavPressed,
+                ]}
+                onPress={() => navigateDate(1)}
+                disabled={isSelectedDateToday}
+              >
+                <Text style={[styles.dateNavText, isSelectedDateToday && styles.dateNavTextDisabled]}>{">"}</Text>
+              </Pressable>
+            </View>
+            <Text style={styles.logHeaderTitle}>{`Hi${profile?.name ? `, ${profile.name}` : ""}`}</Text>
+            <Text style={styles.logHeaderSubtitle}>
+              {isSelectedDateToday
+                ? "Today stays simple: check in, add what you ate, and let the patterns build gently."
+                : `Looking back at ${format(selectedDate, "MMMM d")}. Food comes first here, with your saved mood note tucked above.`}
+            </Text>
           </View>
-          <Text style={styles.logHeaderTitle}>{`Hi${profile?.name ? `, ${profile.name}` : ""}`}</Text>
-          <Text style={styles.logHeaderSubtitle}>
-            Food, water, and small patterns live here. Your mood check-in happens first, then the rest can stay gentle.
-          </Text>
-        </View>
-        <MoodCheckInStrip />
-        <MacroSummaryBar />
-        <FoodSearchLauncher onPress={openGeneralFoodSearch} />
-        <FoodSearchCard
-          visible={foodSearchVisible}
-          onRequestClose={closeFoodSearch}
-          defaultMealType={defaultMealType}
-          title={generalFoodTitle}
-        />
-        <FoodLogSection mealType="breakfast" logs={foodLogs.filter((item: FoodLog) => item.mealType === "breakfast")} onAddFood={() => openFoodSearch("breakfast")} />
-        <FoodLogSection mealType="lunch" logs={foodLogs.filter((item: FoodLog) => item.mealType === "lunch")} onAddFood={() => openFoodSearch("lunch")} />
-        <FoodLogSection mealType="dinner" logs={foodLogs.filter((item: FoodLog) => item.mealType === "dinner")} onAddFood={() => openFoodSearch("dinner")} />
-        <FoodLogSection mealType="snack" logs={foodLogs.filter((item: FoodLog) => item.mealType === "snack")} onAddFood={() => openFoodSearch("snack")} />
-        <HydrationSummaryCard />
-        <QuickLogStrip />
-        <GraceModeCard />
+
+          {isSelectedDateToday ? <MoodCheckInStrip /> : <MoodCheckInStrip compact />}
+
+          {isSelectedDateToday ? <MacroSummaryBar /> : null}
+          <FoodSearchLauncher onPress={openGeneralFoodSearch} />
+          <FoodSearchCard
+            visible={foodSearchVisible}
+            onRequestClose={closeFoodSearch}
+            defaultMealType={defaultMealType}
+            title={generalFoodTitle}
+          />
+          <FoodLogSection mealType="breakfast" logs={foodLogs.filter((item: FoodLog) => item.mealType === "breakfast")} onAddFood={() => openFoodSearch("breakfast")} />
+          <FoodLogSection mealType="lunch" logs={foodLogs.filter((item: FoodLog) => item.mealType === "lunch")} onAddFood={() => openFoodSearch("lunch")} />
+          <FoodLogSection mealType="dinner" logs={foodLogs.filter((item: FoodLog) => item.mealType === "dinner")} onAddFood={() => openFoodSearch("dinner")} />
+          <FoodLogSection mealType="snack" logs={foodLogs.filter((item: FoodLog) => item.mealType === "snack")} onAddFood={() => openFoodSearch("snack")} />
+          {!isSelectedDateToday ? <MacroSummaryBar /> : null}
+          <HydrationSummaryCard />
+          <QuickLogStrip />
+          <GraceModeCard />
+        </Animated.View>
       </Screen>
 
-      <Modal visible={entryStep === "welcome"} animationType="fade">
+      <Modal visible={entryStep === "welcome"} animationType="fade" transparent>
         <View style={styles.entryScreen}>
           <Animated.View
             style={[
@@ -277,15 +400,15 @@ export default function LogScreen() {
               <Text style={styles.heroWelcomeBack}>Welcome back</Text>
               <Text style={styles.heroSubtitle}>Mood-first Food & Wellness Journal</Text>
               <Text style={styles.heroBody}>
-                Hello{profile?.name ? `, ${profile.name}` : ""}. Let's start softly. We'll check in with your mood first, then your log can stay focused on the rest.
+                Hello{profile?.name ? `, ${profile.name}` : ""}. Start with a quick check-in, then let the rest of your log stay gentle.
               </Text>
               <View style={styles.heroPillRow}>
                 <Animated.View style={[styles.heroPill, { backgroundColor: "#F7DCC8", width: leftPillWidth }]} />
                 <Animated.View style={[styles.heroPill, { backgroundColor: "#D9E3D2", width: centerPillWidth }]} />
                 <Animated.View style={[styles.heroPill, { backgroundColor: "#F3E1A9", width: rightPillWidth }]} />
               </View>
-              <Pressable style={styles.heroPrimary} onPress={() => setEntryStep("mood")}>
-                <Text style={styles.heroPrimaryText}>{todaysMood ? "Open this check-in" : "Begin this check-in"}</Text>
+              <Pressable style={styles.heroPrimary} onPress={() => setEntryStep("hidden")}>
+                <Text style={styles.heroPrimaryText}>{todaysMood ? "Open today's log" : "Begin today's check-in"}</Text>
               </Pressable>
               <Pressable style={styles.heroSecondary} onPress={() => setEntryStep("hidden")}>
                 <Text style={styles.heroSecondaryText}>Skip for now</Text>
@@ -294,49 +417,14 @@ export default function LogScreen() {
           </Animated.View>
         </View>
       </Modal>
-
-      <Modal visible={entryStep === "mood"} animationType="none" transparent>
-        <Animated.View style={[styles.moodModalBackdrop, { opacity: moodBackdropFade }]}>
-        <View style={styles.entryScreen}>
-          <Animated.View
-            style={[
-              styles.moodEntryCard,
-              {
-                opacity: heroFade,
-                transform: [{ translateY: heroRise }, { scale: moodScale }],
-              },
-            ]}
-          >
-            <View style={styles.entryTopBar}>
-              <View />
-              <Pressable onPress={() => setEntryStep("hidden")} style={styles.entryCloseButton}>
-                <Text style={styles.entryCloseText}>X</Text>
-              </Pressable>
-            </View>
-            <ScrollView contentContainerStyle={styles.entryScrollContent} showsVerticalScrollIndicator={false}>
-              <View style={styles.moodEntryHeader}>
-                <View>
-                  <Text style={styles.moodEntryEyebrow}>Daily Check-In</Text>
-                  <Text style={styles.moodEntryTitle}>How are you feeling right now?</Text>
-                  <Text style={styles.moodEntrySubtitle}>
-                    A quick mood note first. You can always skip and come back when it feels right.
-                  </Text>
-                </View>
-              </View>
-              <MoodCheckInStrip />
-              <Pressable style={styles.heroSecondary} onPress={() => setEntryStep("hidden")}>
-                <Text style={styles.heroSecondaryText}>Continue to log</Text>
-              </Pressable>
-            </ScrollView>
-          </Animated.View>
-        </View>
-        </Animated.View>
-      </Modal>
     </>
   );
 }
 
 const styles = StyleSheet.create({
+  screenStack: {
+    gap: 20,
+  },
   logHeader: {
     gap: 8,
     paddingTop: 2,
@@ -349,16 +437,17 @@ const styles = StyleSheet.create({
   },
   logHeaderDate: {
     color: colors.textSecondary,
-    fontSize: 12,
-    letterSpacing: 0.9,
+    fontSize: 14,
+    letterSpacing: 1,
     textTransform: "uppercase",
     fontWeight: "600",
     flex: 1,
+    textAlign: "center",
   },
   dateNavButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#F3EDE7",
@@ -366,10 +455,13 @@ const styles = StyleSheet.create({
   dateNavButtonDisabled: {
     backgroundColor: "#F5F1EC",
   },
+  dateNavPressed: {
+    opacity: 0.7,
+  },
   dateNavText: {
     color: colors.accentPrimary,
-    fontSize: 20,
-    lineHeight: 22,
+    fontSize: 18,
+    lineHeight: 18,
     fontWeight: "700",
   },
   dateNavTextDisabled: {
@@ -377,9 +469,10 @@ const styles = StyleSheet.create({
   },
   logHeaderTitle: {
     color: colors.textPrimary,
-    fontSize: 34,
-    lineHeight: 40,
-    fontWeight: "800",
+    fontSize: 32,
+    lineHeight: 38,
+    fontWeight: "700",
+    letterSpacing: -0.5,
   },
   logHeaderSubtitle: {
     color: colors.textSecondary,
@@ -389,7 +482,7 @@ const styles = StyleSheet.create({
   },
   entryScreen: {
     flex: 1,
-    backgroundColor: colors.accentPrimary,
+    backgroundColor: "rgba(196, 98, 45, 0.96)",
     justifyContent: "center",
     padding: spacing.lg,
   },
@@ -438,7 +531,6 @@ const styles = StyleSheet.create({
   },
   heroMarkWrap: {
     alignItems: "center",
-    marginTop: 0,
   },
   heroLogoFrame: {
     backgroundColor: "rgba(250, 247, 242, 0.96)",
@@ -504,41 +596,5 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.88)",
     fontSize: 15,
     fontWeight: "600",
-  },
-  moodEntryCard: {
-    backgroundColor: "rgba(250, 247, 242, 0.08)",
-    borderRadius: 28,
-    padding: spacing.lg,
-    gap: spacing.md,
-    maxHeight: "90%",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.14)",
-  },
-  moodEntryHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: spacing.md,
-  },
-  moodEntryEyebrow: {
-    color: "rgba(255,255,255,0.82)",
-    fontSize: 12,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  moodEntryTitle: {
-    color: colors.white,
-    fontSize: 28,
-    fontWeight: "700",
-    marginTop: 4,
-  },
-  moodEntrySubtitle: {
-    color: "rgba(255,255,255,0.9)",
-    fontSize: 15,
-    lineHeight: 24,
-    marginTop: 6,
-  },
-  moodModalBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(196, 98, 45, 0.94)",
   },
 });

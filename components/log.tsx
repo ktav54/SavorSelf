@@ -3,15 +3,21 @@ import {
   ActivityIndicator,
   Animated,
   type DimensionValue,
+  LayoutAnimation,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
+  UIManager,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { CameraView, Camera } from "expo-camera";
+import * as Haptics from "expo-haptics";
+import { format, isToday } from "date-fns";
 import { colors, radii, spacing } from "@/constants/theme";
 import { GutScoreModal, type GutScoreData } from "@/components/GutScoreModal";
 import { Card, Chip, Field, PrimaryButton, SectionTitle } from "@/components/ui";
@@ -23,11 +29,19 @@ import { useAppStore, type AppState } from "@/store/useAppStore";
 import type { FoodLog, FoodUnit, MealType, MentalState, MoodLog, PhysicalState } from "@/types/models";
 
 const moodOptions = [
-  { score: 1, emoji: "1", label: "Low" },
-  { score: 2, emoji: "2", label: "Okay" },
-  { score: 3, emoji: "3", label: "Good" },
-  { score: 4, emoji: "4", label: "Great" },
-  { score: 5, emoji: "5", label: "Amazing" },
+  { score: 1, emoji: "😔", label: "Low" },
+  { score: 2, emoji: "😕", label: "Okay" },
+  { score: 3, emoji: "😐", label: "Neutral" },
+  { score: 4, emoji: "🙂", label: "Good" },
+  { score: 5, emoji: "😄", label: "Great" },
+] as const;
+
+const energyOptions = [
+  { score: 1, label: "Drained" },
+  { score: 2, label: "Low" },
+  { score: 3, label: "Okay" },
+  { score: 4, label: "Good" },
+  { score: 5, label: "Wired" },
 ] as const;
 
 const physicalOptions: PhysicalState[] = [
@@ -543,10 +557,11 @@ const macroDetails: Record<
   },
 };
 
-export function MoodCheckInStrip() {
+export function MoodCheckInStrip({ compact = false }: { compact?: boolean } = {}) {
   const moodLogs = useAppStore((state: AppState) => state.moodLogs);
   const moodLoading = useAppStore((state: AppState) => state.moodLoading);
   const moodError = useAppStore((state: AppState) => state.moodError);
+  const selectedDate = useAppStore((state: AppState) => state.selectedDate);
   const saveMoodLog = useAppStore((state: AppState) => state.saveMoodLog);
   const todaysMood = moodLogs[0] ?? null;
   const [selectedMood, setSelectedMood] = useState<1 | 2 | 3 | 4 | 5 | null>(null);
@@ -555,6 +570,16 @@ export function MoodCheckInStrip() {
   const [physicalState, setPhysicalState] = useState<PhysicalState[]>([]);
   const [mentalState, setMentalState] = useState<MentalState[]>([]);
   const [isEditing, setIsEditing] = useState(false);
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+  const stepOpacity = useRef(new Animated.Value(1)).current;
+  const stepTranslateY = useRef(new Animated.Value(0)).current;
+  const viewingToday = isToday(selectedDate);
+
+  useEffect(() => {
+    if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
+      UIManager.setLayoutAnimationEnabledExperimental(true);
+    }
+  }, []);
 
   useEffect(() => {
     if (!todaysMood) {
@@ -564,6 +589,7 @@ export function MoodCheckInStrip() {
       setMentalState([]);
       setNote("");
       setIsEditing(true);
+      setStep(1);
       return;
     }
 
@@ -573,10 +599,47 @@ export function MoodCheckInStrip() {
     setMentalState(todaysMood.mentalState);
     setNote(todaysMood.notes ?? "");
     setIsEditing(false);
+    setStep(1);
   }, [todaysMood]);
+
+  useEffect(() => {
+    stepOpacity.setValue(0);
+    stepTranslateY.setValue(12);
+    Animated.parallel([
+      Animated.timing(stepOpacity, {
+        toValue: 1,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+      Animated.timing(stepTranslateY, {
+        toValue: 0,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [step, stepOpacity, stepTranslateY]);
 
   const toggleTag = <T extends string,>(value: T, current: T[], setter: (next: T[]) => void) => {
     setter(current.includes(value) ? current.filter((item) => item !== value) : [...current, value]);
+  };
+
+  const moodOption = moodOptions.find((option) => option.score === (todaysMood?.moodScore ?? selectedMood ?? 3));
+  const energyOption = energyOptions.find((option) => option.score === (todaysMood?.energyScore ?? energyScore ?? 3));
+
+  const goToStep = (nextStep: 1 | 2 | 3 | 4) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setStep(nextStep);
+  };
+
+  const handleMoodSelect = async (score: 1 | 2 | 3 | 4 | 5) => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setSelectedMood(score);
+    goToStep(2);
+  };
+
+  const handleEnergySelect = (score: 1 | 2 | 3 | 4 | 5) => {
+    setEnergyScore(score);
+    goToStep(3);
   };
 
   const submit = async () => {
@@ -592,11 +655,147 @@ export function MoodCheckInStrip() {
       notes: note,
     };
 
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const result = await saveMoodLog(payload);
     if (!result.error) {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       setIsEditing(false);
+      setStep(1);
     }
   };
+
+  if (compact || !viewingToday) {
+    return (
+      <View style={[styles.gracefulCard, styles.moodCompactCard]}>
+        <View style={styles.moodCompactRow}>
+          <View style={styles.moodCompactLeading}>
+            <Text style={styles.moodCompactEmoji}>{todaysMood ? moodOption?.emoji : "•"}</Text>
+          </View>
+          <View style={styles.moodCompactCopy}>
+            <Text style={styles.moodCompactLabel}>
+              {todaysMood
+                ? `Feeling ${moodOption?.label ?? "Okay"} · ${energyOption?.label ?? "Okay"}`
+                : `No mood check-in saved for ${format(selectedDate, "MMM d")}`}
+            </Text>
+            <Text style={styles.moodCompactSubtext}>
+              {todaysMood ? "Saved with this day's log." : "Only today's check-in can be edited here."}
+            </Text>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  const stepContent =
+    step === 1 ? (
+      <View style={styles.moodStepWrap}>
+        <Text style={styles.moodStepQuestion}>How are you feeling right now?</Text>
+        <View style={styles.moodEmojiRow}>
+          {moodOptions.map((option) => (
+            <Pressable
+              key={option.score}
+              style={({ pressed }) => [
+                styles.moodEmojiButton,
+                selectedMood === option.score && styles.moodEmojiButtonActive,
+                pressed && styles.pressableFeedback,
+              ]}
+              onPress={() => void handleMoodSelect(option.score)}
+            >
+              <View
+                style={[
+                  styles.moodEmojiCircle,
+                  selectedMood === option.score && {
+                    backgroundColor: `${colors.mood[option.score]}18`,
+                    borderColor: colors.mood[option.score],
+                  },
+                ]}
+              >
+                <Text style={styles.moodEmoji}>{option.emoji}</Text>
+              </View>
+              <Text style={styles.moodEmojiLabel}>{option.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </View>
+    ) : step === 2 ? (
+      <View style={styles.moodStepWrap}>
+        <Text style={styles.moodStepQuestion}>How's your energy?</Text>
+        <View style={styles.energyRow}>
+          {energyOptions.map((option) => (
+            <Pressable
+              key={option.score}
+              style={({ pressed }) => [
+                styles.energyPill,
+                energyScore === option.score && styles.energyPillActive,
+                pressed && styles.pressableFeedback,
+              ]}
+              onPress={() => handleEnergySelect(option.score)}
+            >
+              <Text style={[styles.energyPillText, energyScore === option.score && styles.energyPillTextActive]}>{option.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </View>
+    ) : step === 3 ? (
+      <View style={styles.moodStepWrap}>
+        <Text style={styles.moodStepQuestion}>How do you feel physically and mentally?</Text>
+        <View style={styles.moodMultiGroup}>
+          <Text style={styles.moodMiniHeading}>Physical</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.moodChipRow}>
+            {physicalOptions.map((item) => (
+              <Pressable
+                key={item}
+                style={({ pressed }) => [
+                  styles.moodChoiceChip,
+                  physicalState.includes(item) && styles.moodChoiceChipActive,
+                  pressed && styles.pressableFeedback,
+                ]}
+                onPress={() => toggleTag(item, physicalState, setPhysicalState)}
+              >
+                <Text style={[styles.moodChoiceChipText, physicalState.includes(item) && styles.moodChoiceChipTextActive]}>{item}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+        <View style={styles.moodMultiGroup}>
+          <Text style={styles.moodMiniHeading}>Mental</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.moodChipRow}>
+            {mentalOptions.map((item) => (
+              <Pressable
+                key={item}
+                style={({ pressed }) => [
+                  styles.moodChoiceChip,
+                  mentalState.includes(item) && styles.moodChoiceChipActive,
+                  pressed && styles.pressableFeedback,
+                ]}
+                onPress={() => toggleTag(item, mentalState, setMentalState)}
+              >
+                <Text style={[styles.moodChoiceChipText, mentalState.includes(item) && styles.moodChoiceChipTextActive]}>{item}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+        <Pressable style={({ pressed }) => [styles.moodStepButton, pressed && styles.pressableFeedback]} onPress={() => goToStep(4)}>
+          <Text style={styles.moodStepButtonText}>Done</Text>
+        </Pressable>
+      </View>
+    ) : (
+      <View style={styles.moodStepWrap}>
+        <Text style={styles.moodNotePrompt}>Anything else on your mind? (optional)</Text>
+        <TextInput
+          value={note}
+          onChangeText={setNote}
+          placeholder="A quick note for today"
+          placeholderTextColor={colors.textSecondary}
+          style={styles.moodNoteInput}
+          returnKeyType="done"
+        />
+        {moodError ? <Text style={styles.errorText}>{moodError}</Text> : null}
+        <Pressable style={({ pressed }) => [styles.moodSaveButton, pressed && styles.pressableFeedback]} onPress={() => void submit()}>
+          <Text style={styles.moodSaveButtonText}>{moodLoading ? "Saving..." : "Save check-in"}</Text>
+        </Pressable>
+      </View>
+    );
 
   return (
     <View style={[styles.gracefulCard, todaysMood && !isEditing && styles.moodCardComplete]}>
@@ -606,116 +805,41 @@ export function MoodCheckInStrip() {
           <Text style={styles.moodTitle}>How are you feeling right now?</Text>
           <Text style={styles.moodSubtitle}>A quick check-in gives Food-Mood the context it needs.</Text>
         </View>
-        <View
-          style={[
-            styles.moodStatusBadge,
-            todaysMood
-              ? { backgroundColor: `${colors.accentTertiary}20` }
-              : styles.moodStatusBadgePending,
-          ]}
-        >
-          {todaysMood ? (
-            <>
-              <Text style={[styles.moodStatusScore, { color: "#9A6A1A" }]}>{todaysMood.moodScore}</Text>
-              <Text style={[styles.moodStatusDenominator, { color: "#B0832E" }]}>/5</Text>
-            </>
-          ) : (
-            <Text style={styles.moodStatusPendingText}>Pending</Text>
-          )}
-        </View>
+        {todaysMood && !isEditing ? (
+          <View style={styles.moodStatusBadge}>
+            <Text style={styles.moodStatusScore}>{moodOption?.emoji ?? "😐"}</Text>
+          </View>
+        ) : (
+          <View style={[styles.moodStatusBadge, styles.moodStatusBadgePending]}>
+            <Text style={styles.moodStatusPendingText}>Today</Text>
+          </View>
+        )}
       </View>
       {todaysMood && !isEditing ? (
-        <View style={styles.savedMoodWrap}>
-          <View style={[styles.savedMoodBadge, { backgroundColor: `${colors.accentTertiary}14` }]}>
-            <View style={[styles.savedMoodScorePill, { backgroundColor: `${colors.accentTertiary}20` }]}>
-              <Text style={[styles.savedMoodScore, { color: "#9A6A1A" }]}>{todaysMood.moodScore}</Text>
-              <Text style={[styles.savedMoodScoreDenominator, { color: "#B0832E" }]}>/5</Text>
-            </View>
-            <View style={styles.savedMoodCopy}>
-              <Text style={styles.savedMoodText}>This check-in is saved.</Text>
-              <Text style={styles.savedMoodSubtext}>You gave the day a little context already.</Text>
-            </View>
+        <View style={styles.moodSettledRow}>
+          <View style={styles.moodSettledLeading}>
+            <Text style={styles.moodSettledEmoji}>{moodOption?.emoji ?? "😐"}</Text>
           </View>
-          <PrimaryButton label="Update this check-in" secondary onPress={() => setIsEditing(true)} />
+          <Text style={styles.moodSettledText}>
+            Feeling {moodOption?.label ?? "Okay"} · {energyOption?.label ?? "Okay"}
+          </Text>
+          <Pressable style={({ pressed }) => [styles.moodEditLinkWrap, pressed && styles.pressableFeedback]} onPress={() => setIsEditing(true)}>
+            <Text style={styles.moodEditLink}>Edit</Text>
+          </Pressable>
         </View>
-      ) : null}
-      {(!todaysMood || isEditing) ? (
-        <View style={styles.stack}>
-          <View style={styles.moodButtonGrid}>
-            {moodOptions.map((option) => (
-              <Pressable
-                key={option.score}
-                style={[
-                  styles.moodButton,
-                  selectedMood === option.score && {
-                    borderColor: colors.mood[option.score],
-                    backgroundColor: `${colors.mood[option.score]}20`,
-                  },
-                ]}
-                onPress={() => setSelectedMood(option.score)}
-              >
-                <Text
-                  style={[
-                    styles.moodScoreTile,
-                    selectedMood === option.score && { color: colors.mood[option.score] },
-                  ]}
-                >
-                  {option.score}
-                </Text>
-                <Text
-                  style={styles.moodLabel}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.75}
-                >
-                  {option.label}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-          <Text style={styles.helper}>Energy level</Text>
-          <View style={styles.rowWrap}>
-            {[1, 2, 3, 4, 5].map((score) => (
-              <Chip
-                key={score}
-                label={String(score)}
-                active={energyScore === score}
-                onPress={() => setEnergyScore(score as 1 | 2 | 3 | 4 | 5)}
-              />
-            ))}
-          </View>
-          <Text style={styles.helper}>Physical state</Text>
-          <View style={styles.rowWrap}>
-            {physicalOptions.map((item) => (
-              <Chip
-                key={item}
-                label={item}
-                active={physicalState.includes(item)}
-                onPress={() => toggleTag(item, physicalState, setPhysicalState)}
-              />
-            ))}
-          </View>
-          <Text style={styles.helper}>Mental state</Text>
-          <View style={styles.rowWrap}>
-            {mentalOptions.map((item) => (
-              <Chip
-                key={item}
-                label={item}
-                active={mentalState.includes(item)}
-                onPress={() => toggleTag(item, mentalState, setMentalState)}
-              />
-            ))}
-          </View>
-          <Field
-            label="Optional note"
-            value={note}
-            onChangeText={setNote}
-            placeholder="Anything your body or mind wants to say?"
-          />
-          {moodError ? <Text style={styles.errorText}>{moodError}</Text> : null}
-          <PrimaryButton label={moodLoading ? "Saving..." : "Save check-in"} onPress={() => void submit()} />
-        </View>
-      ) : null}
+      ) : (
+        <Animated.View
+          style={[
+            styles.moodAnimatedStep,
+            {
+              opacity: stepOpacity,
+              transform: [{ translateY: stepTranslateY }],
+            },
+          ]}
+        >
+          {stepContent}
+        </Animated.View>
+      )}
     </View>
   );
 }
@@ -747,7 +871,7 @@ export function HydrationSummaryCard() {
       </View>
       <View style={styles.hydrationActionRow}>
         <Pressable
-          style={styles.hydrationStepButton}
+          style={({ pressed }) => [styles.hydrationStepButton, pressed && styles.pressableFeedback]}
           onPress={() => void saveWaterLog(-8)}
         >
           <Ionicons name="remove" size={18} color={colors.blue} />
@@ -756,7 +880,7 @@ export function HydrationSummaryCard() {
           <View style={[styles.hydrationFill, { width: `${Math.max(progress * 100, 6)}%` }]} />
         </View>
         <Pressable
-          style={styles.hydrationStepButton}
+          style={({ pressed }) => [styles.hydrationStepButton, pressed && styles.pressableFeedback]}
           onPress={() => void saveWaterLog(8)}
         >
           <Ionicons name="add" size={18} color={colors.blue} />
@@ -798,6 +922,7 @@ export function QuickLogStrip() {
   };
 
   const openModal = (item: (typeof items)[number]) => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSelectedTile({
       label: item.label,
       unitHint: item.unitHint,
@@ -835,6 +960,7 @@ export function QuickLogStrip() {
       return;
     }
 
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     closeModal();
   };
 
@@ -848,7 +974,7 @@ export function QuickLogStrip() {
         </View>
         <View style={styles.quickGrid}>
           {items.map((item) => (
-            <Pressable key={item.label} style={styles.quickTile} onPress={() => openModal(item)}>
+            <Pressable key={item.label} style={({ pressed }) => [styles.quickTile, pressed && styles.pressableFeedback]} onPress={() => openModal(item)}>
               <View style={styles.quickTileIconWrap}>
                 <Ionicons name={item.icon} size={18} color={colors.textSecondary} />
               </View>
@@ -1020,7 +1146,7 @@ export function MacroSummaryBar() {
 
   return (
     <>
-      <Card>
+      <View style={styles.gracefulCard}>
         <View style={styles.dailyGutPanel}>
           <View style={styles.dailyGutHeader}>
             <View style={styles.dailyGutHeaderCopy}>
@@ -1038,15 +1164,12 @@ export function MacroSummaryBar() {
             ))}
           </View>
         </View>
-      </Card>
-      <View style={styles.macroGrid}>
+        <View style={styles.macroPillRow}>
         <MacroVisualCard
           label="Calories"
           value={totals.calories}
           goal={Math.round(profile?.dailyCalorieGoal ?? 0)}
-          unit=""
-          accent={colors.accentPrimary}
-          tone="warm"
+          unit="kcal"
           onPress={() => setSelectedMacro("calories")}
         />
         <MacroVisualCard
@@ -1054,8 +1177,6 @@ export function MacroSummaryBar() {
           value={totals.protein}
           goal={Math.round(profile?.dailyProteinGoal ?? 0)}
           unit="g"
-          accent={colors.accentSecondary}
-          tone="sage"
           onPress={() => setSelectedMacro("protein")}
         />
         <MacroVisualCard
@@ -1063,8 +1184,6 @@ export function MacroSummaryBar() {
           value={totals.carbs}
           goal={Math.round(profile?.dailyCarbsGoal ?? 0)}
           unit="g"
-          accent={colors.accentTertiary}
-          tone="amber"
           onPress={() => setSelectedMacro("carbs")}
         />
         <MacroVisualCard
@@ -1072,10 +1191,9 @@ export function MacroSummaryBar() {
           value={totals.fat}
           goal={Math.round(profile?.dailyFatGoal ?? 0)}
           unit="g"
-          accent={colors.textPrimary}
-          tone="ink"
           onPress={() => setSelectedMacro("fat")}
         />
+        </View>
       </View>
       <Modal visible={Boolean(selectedMacro)} animationType="slide" transparent onRequestClose={() => setSelectedMacro(null)}>
         <View style={styles.modalBackdrop}>
@@ -1274,8 +1392,8 @@ export function FoodLogSection({ mealType, logs, onAddFood }: { mealType: FoodLo
             <Text style={styles.mealEmptyText}>{mealPrompt}</Text>
           </View>
         )}
-        <Pressable style={styles.addMealButton} onPress={onAddFood}>
-          <Text style={styles.addMealText}>Add to {mealType}</Text>
+        <Pressable style={({ pressed }) => [styles.addMealButton, pressed && styles.pressableFeedback]} onPress={onAddFood}>
+          <Text style={styles.addMealText}>{`+ Add to ${mealType}`}</Text>
         </Pressable>
       </View>
       <Modal visible={Boolean(editingItem)} animationType="slide" transparent onRequestClose={closeEditModal}>
@@ -1684,6 +1802,7 @@ export function FoodSearchCard({
       return;
     }
 
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     closeModal();
   };
 
@@ -1717,6 +1836,7 @@ export function FoodSearchCard({
       return;
     }
 
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     closeModal();
   };
 
@@ -1733,8 +1853,8 @@ export function FoodSearchCard({
         onChangeText={setQuery}
         placeholder="Try salmon, oats, yogurt, kimchi..."
       />
-      <Pressable style={styles.addMealButton} onPress={() => void requestAndOpenScanner()}>
-        <Text style={styles.addMealText}>Scan barcode</Text>
+      <Pressable style={({ pressed }) => [styles.addMealButton, pressed && styles.pressableFeedback]} onPress={() => void requestAndOpenScanner()}>
+        <Text style={styles.addMealText}>+ Scan barcode</Text>
       </Pressable>
       {scanError ? <Text style={styles.errorText}>{scanError}</Text> : null}
       <PrimaryButton label={loading ? "Searching..." : "Search"} onPress={() => void runSearch()} />
@@ -1760,7 +1880,7 @@ export function FoodSearchCard({
               const key = `${item.source}-${item.id}`;
               const score = gutScores[key];
               return (
-                <Pressable key={key} style={styles.searchResultCard} onPress={() => setSelectedFood(item)}>
+                <Pressable key={key} style={({ pressed }) => [styles.searchResultCard, pressed && styles.pressableFeedback]} onPress={() => setSelectedFood(item)}>
                   <View style={styles.searchCardTopRow}>
                     <Text style={styles.foodName}>{formatFoodName(item.description)}</Text>
                     {gutScoreLoading[key] ? (
@@ -1788,10 +1908,10 @@ export function FoodSearchCard({
                   </Text>
 
                   <View style={styles.searchCardBottomRow}>
-                    <Pressable style={styles.gutScoreLink} onPress={() => void fetchGutScore(item.description, key)}>
+                    <Pressable style={({ pressed }) => [styles.gutScoreLink, pressed && styles.pressableFeedback]} onPress={() => void fetchGutScore(item.description, key)}>
                       <Text style={styles.gutScoreLinkText}>🌿 Gut Score</Text>
                     </Pressable>
-                    <Pressable style={styles.addFoodInlineBtn} onPress={() => setSelectedFood(item)}>
+                    <Pressable style={({ pressed }) => [styles.addFoodInlineBtn, pressed && styles.pressableFeedback]} onPress={() => setSelectedFood(item)}>
                       <Text style={styles.addFoodInlineBtnText}>Add food</Text>
                     </Pressable>
                   </View>
@@ -2055,7 +2175,7 @@ export function FoodSearchLauncher({
   onPress?: () => void;
 }) {
   return (
-    <Pressable style={styles.searchLauncher} onPress={onPress}>
+    <Pressable style={({ pressed }) => [styles.searchLauncher, pressed && styles.pressableFeedback]} onPress={onPress}>
       <View style={styles.searchLauncherCopy}>
         <Text style={styles.searchLauncherEyebrow}>Add Food</Text>
         <Text style={styles.searchLauncherTitle}>What did you eat?</Text>
@@ -2138,13 +2258,16 @@ function SwipeableFoodRow({
         ]}
       >
         <Pressable
-          style={styles.foodRowPressable}
+          style={({ pressed }) => [styles.foodRowPressable, pressed && styles.pressableFeedback]}
           onLongPress={() => animateExpanded(true)}
           delayLongPress={180}
           onPress={() => {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             if (expanded) {
               animateExpanded(false);
+              return;
             }
+            openGutFeedback();
           }}
         >
           <View style={[styles.foodDot, { backgroundColor: pickFoodColor(item.gutHealthTags[0]) }]} />
@@ -2281,48 +2404,30 @@ function MacroVisualCard({
   value,
   goal,
   unit,
-  accent,
-  tone,
   onPress,
 }: {
   label: string;
   value: number;
   goal: number;
   unit: string;
-  accent: string;
-  tone: "warm" | "sage" | "amber" | "ink";
   onPress?: () => void;
 }) {
   const progress = goal > 0 ? Math.min(value / goal, 1) : 0;
-  const fillWidth = `${Math.max(progress * 100, 8)}%` as DimensionValue;
-  const suffix = unit ? ` ${unit}` : "";
-  const toneStyle =
-    tone === "warm"
-      ? styles.macroCardWarm
-      : tone === "sage"
-        ? styles.macroCardSage
-        : tone === "amber"
-          ? styles.macroCardAmber
-          : styles.macroCardInk;
+  const fillWidth = `${Math.max(progress * 100, 0)}%` as DimensionValue;
 
   return (
-    <Pressable style={[styles.macroCard, toneStyle]} onPress={onPress}>
-      <View style={styles.macroCardTop}>
+    <Pressable style={({ pressed }) => [styles.macroCard, pressed && styles.pressableFeedback]} onPress={onPress}>
+      <View style={styles.macroPillHeader}>
         <Text style={styles.macroLabel}>{label}</Text>
-        <View style={[styles.macroDot, { backgroundColor: accent }]} />
       </View>
-      <Text style={styles.macroValue}>
-        {value}
-        {suffix}
-      </Text>
-      <Text style={styles.macroGoalText}>
-        Goal {goal}
-        {suffix}
-      </Text>
-      <View style={styles.macroRail}>
-        <View style={[styles.macroFill, { width: fillWidth, backgroundColor: accent }]} />
+      <View style={styles.macroValueRow}>
+        <Text style={styles.macroValue}>{value}</Text>
+        <Text style={styles.macroUnit}>{unit}</Text>
       </View>
-      <Text style={styles.macroTapHint}>Tap for more</Text>
+      <View style={styles.macroUnderlineTrack}>
+        <View style={[styles.macroUnderlineFill, { width: fillWidth }]} />
+      </View>
+      {goal > 0 ? <Text style={styles.macroGoalText}>Goal {goal}</Text> : <Text style={styles.macroGoalText}>No goal set</Text>}
     </Pressable>
   );
 }
@@ -2330,17 +2435,20 @@ function MacroVisualCard({
 const styles = StyleSheet.create({
   gracefulCard: {
     backgroundColor: colors.white,
-    borderRadius: 24,
+    borderRadius: 16,
     paddingHorizontal: 20,
     paddingVertical: 20,
-    gap: 16,
+    gap: 20,
     borderWidth: 1,
-    borderColor: "rgba(44, 26, 14, 0.06)",
-    shadowColor: "#2C1A0E",
-    shadowOpacity: 0.06,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 2,
+    borderColor: colors.border,
+    ...(Platform.OS === "ios"
+      ? {
+          shadowColor: "#2C1A0E",
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.06,
+          shadowRadius: 8,
+        }
+      : {}),
   },
   rowWrap: {
     flexDirection: "row",
@@ -2348,19 +2456,14 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   stack: {
-    gap: 16,
-  },
-  moodButtonGrid: {
-    flexDirection: "row",
-    flexWrap: "nowrap",
-    gap: 8,
+    gap: 20,
   },
   moodCardComplete: {
-    backgroundColor: "rgba(232, 168, 56, 0.08)",
+    backgroundColor: colors.white,
   },
   moodHeader: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
     gap: spacing.md,
   },
@@ -2386,66 +2489,62 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
   moodStatusBadge: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    gap: 6,
+    minWidth: 48,
+    minHeight: 48,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderRadius: 999,
-    alignSelf: "flex-start",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F6EDE4",
   },
   moodStatusBadgePending: {
-    backgroundColor: "#EEE8E1",
+    backgroundColor: "#F4EEE8",
   },
   moodStatusScore: {
-    fontSize: 22,
-    fontWeight: "800",
-    lineHeight: 24,
-  },
-  moodStatusDenominator: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    fontWeight: "600",
-    lineHeight: 18,
+    fontSize: 24,
   },
   moodStatusPendingText: {
     color: colors.textSecondary,
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: "600",
-    lineHeight: 18,
+    letterSpacing: 0.7,
+    textTransform: "uppercase",
   },
-  moodButton: {
-    flex: 1,
-    minWidth: 0,
+  moodCompactCard: {
+    gap: 0,
+    paddingVertical: 14,
+  },
+  moodCompactRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  moodCompactLeading: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#F6EDE4",
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
-    minHeight: 112,
-    paddingVertical: 14,
-    paddingHorizontal: 4,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "rgba(44, 26, 14, 0.08)",
-    backgroundColor: "#FCFBF8",
-    shadowColor: "#2C1A0E",
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 1,
   },
-  moodScoreTile: {
+  moodCompactEmoji: {
+    fontSize: 20,
     color: colors.textPrimary,
-    fontSize: 28,
-    fontWeight: "800",
   },
-  moodLabel: {
+  moodCompactCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  moodCompactLabel: {
     color: colors.textPrimary,
-    fontSize: 8,
-    fontWeight: "700",
-    textAlign: "center",
-    textTransform: "uppercase",
-    letterSpacing: 0.2,
-    width: "100%",
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  moodCompactSubtext: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 18,
   },
   helper: {
     color: colors.textSecondary,
@@ -2453,28 +2552,191 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
-  savedMoodCopy: {
+  moodAnimatedStep: {
+    width: "100%",
+  },
+  moodStepWrap: {
+    gap: 16,
+  },
+  moodStepQuestion: {
+    color: colors.textPrimary,
+    fontSize: 24,
+    fontWeight: "700",
+    textAlign: "center",
+    lineHeight: 32,
+  },
+  moodEmojiRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  moodEmojiButton: {
     flex: 1,
-    gap: 2,
+    alignItems: "center",
+    gap: 8,
   },
-  savedMoodSubtext: {
+  moodEmojiButtonActive: {
+    transform: [{ translateY: -1 }],
+  },
+  moodEmojiCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  moodEmoji: {
+    fontSize: 28,
+  },
+  moodEmojiLabel: {
     color: colors.textSecondary,
-    fontSize: 13,
-    lineHeight: 19,
+    fontSize: 11,
+    fontWeight: "600",
   },
-  macroGrid: {
+  energyRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: spacing.sm,
+    gap: 8,
+    justifyContent: "center",
+  },
+  energyPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+  },
+  energyPillActive: {
+    backgroundColor: "#F6EDE4",
+    borderColor: colors.accentPrimary,
+  },
+  energyPillText: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  energyPillTextActive: {
+    color: colors.accentPrimary,
+  },
+  moodMultiGroup: {
+    gap: 8,
+  },
+  moodMiniHeading: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+  },
+  moodChipRow: {
+    gap: 8,
+    paddingRight: spacing.sm,
+  },
+  moodChoiceChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+  },
+  moodChoiceChipActive: {
+    backgroundColor: "#F6EDE4",
+    borderColor: colors.accentPrimary,
+  },
+  moodChoiceChipText: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  moodChoiceChipTextActive: {
+    color: colors.accentPrimary,
+    fontWeight: "600",
+  },
+  moodStepButton: {
+    backgroundColor: "#F6EDE4",
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  moodStepButtonText: {
+    color: colors.accentPrimary,
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  moodNotePrompt: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 22,
+  },
+  moodNoteInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    backgroundColor: colors.white,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: colors.textPrimary,
+  },
+  moodSaveButton: {
+    backgroundColor: colors.accentPrimary,
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: "center",
+  },
+  moodSaveButtonText: {
+    color: colors.white,
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  moodSettledRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  moodSettledLeading: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#F6EDE4",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  moodSettledEmoji: {
+    fontSize: 20,
+  },
+  moodSettledText: {
+    flex: 1,
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  moodEditLinkWrap: {
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+  },
+  moodEditLink: {
+    color: colors.accentPrimary,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  macroPillRow: {
+    flexDirection: "row",
+    gap: 8,
   },
   dailyGutPanel: {
-    backgroundColor: "#FCFBF8",
-    borderRadius: 20,
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-    gap: 16,
+    backgroundColor: colors.white,
+    borderRadius: 14,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    gap: 14,
     borderWidth: 1,
-    borderColor: "rgba(44, 26, 14, 0.06)",
+    borderColor: "transparent",
   },
   dailyGutHeader: {
     alignItems: "center",
@@ -2495,8 +2757,8 @@ const styles = StyleSheet.create({
   },
   dailyGutTitle: {
     color: colors.textPrimary,
-    fontSize: 22,
-    fontWeight: "800",
+    fontSize: 20,
+    fontWeight: "700",
   },
   dailyGutBody: {
     color: colors.textSecondary,
@@ -2506,7 +2768,7 @@ const styles = StyleSheet.create({
   },
   dailyGutList: {
     gap: spacing.sm,
-    marginTop: spacing.md,
+    marginTop: 0,
   },
   dailyGutBulletRow: {
     alignItems: "flex-start",
@@ -2521,67 +2783,55 @@ const styles = StyleSheet.create({
     marginTop: 7,
   },
   macroCard: {
-    width: "48%",
-    borderRadius: radii.lg,
-    padding: spacing.md,
+    flex: 1,
+    backgroundColor: colors.white,
+    borderColor: colors.border,
+    borderRadius: 14,
     borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 12,
     gap: 8,
   },
-  macroCardWarm: {
-    backgroundColor: "#FBF0E9",
-    borderColor: "rgba(196, 98, 45, 0.16)",
-  },
-  macroCardSage: {
-    backgroundColor: "#EEF3EA",
-    borderColor: "rgba(138, 158, 123, 0.2)",
-  },
-  macroCardAmber: {
-    backgroundColor: "#FCF5E4",
-    borderColor: "rgba(232, 168, 56, 0.2)",
-  },
-  macroCardInk: {
-    backgroundColor: colors.white,
-    borderColor: "rgba(44, 26, 14, 0.12)",
-  },
-  macroCardTop: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+  macroPillHeader: {
+    minHeight: 16,
   },
   macroLabel: {
     color: colors.textSecondary,
-    fontSize: 12,
+    fontSize: 10,
+    fontWeight: "700",
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
   },
-  macroDot: {
-    width: 10,
-    height: 10,
-    borderRadius: radii.round,
+  macroValueRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 4,
   },
   macroValue: {
     color: colors.textPrimary,
-    fontSize: 26,
+    fontSize: 22,
     fontWeight: "700",
+  },
+  macroUnit: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: "600",
+    marginBottom: 3,
   },
   macroGoalText: {
     color: colors.textSecondary,
-    fontSize: 13,
+    fontSize: 11,
   },
-  macroRail: {
-    height: 10,
+  macroUnderlineTrack: {
+    height: 3,
     borderRadius: radii.round,
-    backgroundColor: "rgba(255,255,255,0.82)",
+    backgroundColor: "#F1EBE4",
     overflow: "hidden",
   },
-  macroFill: {
+  macroUnderlineFill: {
     height: "100%",
     borderRadius: radii.round,
-  },
-  macroTapHint: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: "600",
+    backgroundColor: colors.accentPrimary,
   },
   sectionRow: {
     flexDirection: "row",
@@ -2592,9 +2842,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
     borderColor: colors.border,
     borderWidth: 1,
-    borderRadius: radii.lg,
+    borderRadius: 16,
     padding: spacing.md,
     gap: spacing.sm,
+    ...(Platform.OS === "ios"
+      ? {
+          shadowColor: "#2C1A0E",
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.06,
+          shadowRadius: 8,
+        }
+      : {}),
   },
   mealTitle: {
     color: colors.textPrimary,
@@ -2935,16 +3193,19 @@ const styles = StyleSheet.create({
   quickTile: {
     width: "48%",
     minHeight: 150,
-    backgroundColor: "#FCFBF8",
+    backgroundColor: colors.white,
     borderRadius: 20,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: "rgba(44, 26, 14, 0.08)",
-    shadowColor: "#2C1A0E",
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 1,
+    borderColor: colors.border,
+    ...(Platform.OS === "ios"
+      ? {
+          shadowColor: "#2C1A0E",
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.06,
+          shadowRadius: 8,
+        }
+      : {}),
     justifyContent: "space-between",
   },
   quickTileIconWrap: {
@@ -3153,26 +3414,33 @@ const styles = StyleSheet.create({
   },
   addMealButton: {
     marginTop: spacing.sm,
-    alignSelf: "flex-start",
-    backgroundColor: "#F6DFC9",
-    borderWidth: 1,
-    borderColor: colors.accentPrimary,
-    borderRadius: radii.md,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F6EDE4",
+    borderRadius: 12,
+    paddingVertical: 12,
   },
   addMealText: {
     color: colors.accentPrimary,
     fontSize: 14,
-    fontWeight: "700",
+    fontWeight: "600",
   },
   searchLauncher: {
     backgroundColor: colors.white,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: radii.lg,
+    borderRadius: 16,
     padding: spacing.lg,
     gap: spacing.sm,
+    ...(Platform.OS === "ios"
+      ? {
+          shadowColor: "#2C1A0E",
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.06,
+          shadowRadius: 8,
+        }
+      : {}),
   },
   searchLauncherCopy: {
     gap: 4,
@@ -3305,19 +3573,22 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
   },
   longPressRowShell: {
-    borderRadius: radii.md,
-    backgroundColor: colors.surface,
+    borderRadius: 14,
+    backgroundColor: colors.white,
     borderWidth: 1,
-    borderColor: "transparent",
+    borderColor: colors.border,
   },
   longPressRowShellActive: {
-    backgroundColor: "#FBF6EF",
+    backgroundColor: colors.white,
     borderColor: "rgba(196, 98, 45, 0.14)",
-    shadowColor: "#2C1A0E",
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 3,
+    ...(Platform.OS === "ios"
+      ? {
+          shadowColor: "#2C1A0E",
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.08,
+          shadowRadius: 8,
+        }
+      : {}),
   },
   foodRowPressable: {
     flexDirection: "row",
@@ -3406,6 +3677,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#EEF7F8",
     borderWidth: 1,
     borderColor: "rgba(116, 184, 194, 0.26)",
+  },
+  pressableFeedback: {
+    opacity: 0.7,
   },
   hydrationBody: {
     color: colors.textSecondary,
