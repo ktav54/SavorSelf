@@ -1,14 +1,16 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
-import { Animated, Pressable, StyleSheet, Text, View, type DimensionValue } from "react-native";
+import { Pressable, StyleSheet, Text, View, type DimensionValue } from "react-native";
 import { colors, radii, spacing } from "@/constants/theme";
 import { Card, Chip, SectionTitle } from "@/components/ui";
-import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase";
+import { sendCoachMessage } from "@/services/coach";
 import { useAppStore, type AppState } from "@/store/useAppStore";
 import { featureFlags } from "@/lib/premium";
-import type { FoodLog, FoodMoodInsight, FoodMoodTrendPoint, MoodLog } from "@/types/models";
+import type { FoodLog, FoodMoodInsight, FoodMoodTrendPoint, MoodLog, QuickLog } from "@/types/models";
 
 const PATTERN_WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const DAILY_READ_PROMPT =
+  "Generate a short, warm, personalized daily gut-brain analysis for today. Use only the data provided in context — do not make up foods or moods. Cover: how today's food choices may be affecting mood and energy through the gut-brain axis, any standout nutrients or gaps, and one gentle actionable suggestion. Keep it to 3-4 sentences. Do not use bullet points. Speak directly to the user in second person, warm and non-judgmental tone.";
 
 function toDateKey(value: Date | string) {
   return typeof value === "string" ? value.slice(0, 10) : value.toISOString().slice(0, 10);
@@ -81,21 +83,6 @@ function getTopFoodsByMood(
     .filter((item) => item.count >= 2)
     .sort((left, right) => right.averageMood - left.averageMood)
     .slice(0, limit);
-}
-
-function buildDailyReadPrompt(
-  moodLogs: MoodLog[],
-  foodLogs: FoodLog[],
-  trend: FoodMoodTrendPoint[]
-) {
-  const todayMood = moodLogs[0];
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayFoods = foodLogs.filter((log) => toDateKey(log.loggedAt) === toDateKey(yesterday));
-  const totalFiber = Math.round(yesterdayFoods.reduce((sum, log) => sum + log.fiberG, 0));
-  const totalProtein = Math.round(yesterdayFoods.reduce((sum, log) => sum + log.proteinG, 0));
-  const last3Moods = trend.slice(-3).map((point) => point.moodScore ?? "none").join(", ");
-  return `Today's mood: ${todayMood?.moodScore ?? "unknown"}/5. Physical: ${(todayMood?.physicalState ?? []).join(", ") || "none"}. Mental: ${(todayMood?.mentalState ?? []).join(", ") || "none"}. Yesterday's foods: ${yesterdayFoods.map((food) => food.foodName).join(", ") || "none"} (fiber: ${totalFiber}g, protein: ${totalProtein}g). Last 3 mood scores: ${last3Moods || "none"}. Write 2-3 warm, specific sentences connecting yesterday's food to today's mood. Reference actual foods by name. Be personal not generic.`;
 }
 
 function getGutMoodScore(
@@ -339,108 +326,188 @@ export function StreakHeroCard() {
 export function DailyReadCard() {
   const moodLogs = useAppStore((state: AppState) => state.moodLogs);
   const foodLogs = useAppStore((state: AppState) => state.foodLogs);
-  const foodMoodTrend = useAppStore((state: AppState) => state.foodMoodTrend);
+  const quickLogs = useAppStore((state: AppState) => state.quickLogs);
+  const profile = useAppStore((state: AppState) => state.profile);
   const [reply, setReply] = useState("");
   const [loading, setLoading] = useState(false);
-  const [hasLoaded, setHasLoaded] = useState(false);
-  const todayMood = moodLogs[0];
-  const buttonScale = useRef(new Animated.Value(1)).current;
+  const [errorMessage, setErrorMessage] = useState("");
+  const [refreshCount, setRefreshCount] = useState(0);
+  const todayMood = moodLogs[0] ?? null;
+  const todayQuickLog = quickLogs[0] ?? null;
+  const hasAnyTodayData = foodLogs.length > 0 || Boolean(todayMood);
 
-  const getRead = async () => {
-    if (!todayMood) return;
-    setLoading(true);
-    try {
-      const response = await fetch(`${supabaseUrl}/functions/v1/ai-coach`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${supabaseAnonKey}`,
-          "Content-Type": "application/json",
+  const totalCaloriesToday = useMemo(
+    () => foodLogs.reduce((sum: number, food: FoodLog) => sum + food.calories, 0),
+    [foodLogs]
+  );
+  const totalProteinToday = useMemo(
+    () => foodLogs.reduce((sum: number, food: FoodLog) => sum + food.proteinG, 0),
+    [foodLogs]
+  );
+  const totalFiberToday = useMemo(
+    () => foodLogs.reduce((sum: number, food: FoodLog) => sum + food.fiberG, 0),
+    [foodLogs]
+  );
+  const allGutTagsToday = useMemo(
+    () => Array.from(new Set(foodLogs.flatMap((food: FoodLog) => food.gutHealthTags))),
+    [foodLogs]
+  );
+  const foodDetails = useMemo(
+    () =>
+      foodLogs.map((food: FoodLog) => ({
+        name: food.foodName,
+        calories: food.calories,
+        protein: food.proteinG,
+        fiber: food.fiberG,
+        gutHealthTags: food.gutHealthTags,
+      })),
+    [foodLogs]
+  );
+  const readContext = useMemo(
+    () => ({
+      moodLogs: moodLogs.slice(0, 1),
+      foodSummary: {
+        averageCalories: totalCaloriesToday,
+        averageProtein: totalProteinToday,
+        averageFiber: totalFiberToday,
+        tags: allGutTagsToday,
+        todaysFoods: foodLogs.map((food: FoodLog) => food.foodName).join(", "),
+        foodDetails,
+        waterOz: todayQuickLog?.waterOz ?? 0,
+        sleepHours: todayQuickLog?.sleepHours ?? 0,
+        caffeineMg: todayQuickLog?.caffeineMg ?? 0,
+        calorieGoal: profile?.dailyCalorieGoal ?? null,
+        proteinGoal: profile?.dailyProteinGoal ?? null,
+        userName: profile?.name ?? "",
+      },
+      insights: [],
+      quickLogs: quickLogs.slice(0, 1),
+    }),
+    [
+      allGutTagsToday,
+      foodDetails,
+      foodLogs,
+      moodLogs,
+      profile?.dailyCalorieGoal,
+      profile?.dailyProteinGoal,
+      profile?.name,
+      quickLogs,
+      todayQuickLog?.caffeineMg,
+      todayQuickLog?.sleepHours,
+      todayQuickLog?.waterOz,
+      totalCaloriesToday,
+      totalFiberToday,
+      totalProteinToday,
+    ]
+  );
+  const readSignature = useMemo(
+    () =>
+      JSON.stringify({
+        mood: todayMood
+          ? {
+              loggedAt: todayMood.loggedAt,
+              moodScore: todayMood.moodScore,
+              energyScore: todayMood.energyScore,
+              physicalState: todayMood.physicalState,
+              mentalState: todayMood.mentalState,
+            }
+          : null,
+        foods: foodDetails,
+        quickLog: todayQuickLog
+          ? {
+              waterOz: todayQuickLog.waterOz ?? 0,
+              sleepHours: todayQuickLog.sleepHours ?? 0,
+              caffeineMg: todayQuickLog.caffeineMg ?? 0,
+            }
+          : null,
+        goals: {
+          calorieGoal: profile?.dailyCalorieGoal ?? null,
+          proteinGoal: profile?.dailyProteinGoal ?? null,
         },
-        body: JSON.stringify({
-          message: buildDailyReadPrompt(moodLogs, foodLogs, foodMoodTrend),
-          context: {},
-        }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error();
-      setReply(typeof data?.reply === "string" ? data.reply : "");
-    } catch {
-      setReply("I couldn't generate your read right now. Try again in a moment.");
-    } finally {
-      setHasLoaded(true);
+      }),
+    [
+      foodDetails,
+      profile?.dailyCalorieGoal,
+      profile?.dailyProteinGoal,
+      todayMood,
+      todayQuickLog,
+    ]
+  );
+
+  useEffect(() => {
+    if (!hasAnyTodayData) {
+      setReply("");
+      setErrorMessage("");
       setLoading(false);
+      return;
     }
-  };
 
-  const animateButton = (toValue: number) => {
-    Animated.spring(buttonScale, {
-      toValue,
-      useNativeDriver: true,
-      speed: 30,
-      bounciness: 8,
-    }).start();
-  };
+    let cancelled = false;
 
-  if (!todayMood) {
-    return (
-      <Card>
-        <View style={styles.readHeroCard}>
-          <View style={[styles.readGlow, styles.readGlowTop]} />
-          <View style={[styles.readGlow, styles.readGlowBottom]} />
-          <EditorialHeader
-            eyebrow="TODAY'S READ"
-            title="Why do I feel this way?"
-            subtitle="Log today's mood first to unlock your daily read."
-          />
-          <View style={styles.heroBadgeRow}>
-            <View style={styles.heroMetaPill}>
-              <Ionicons name="sparkles-outline" size={14} color={colors.accentPrimary} />
-              <Text style={styles.heroMetaText}>Daily Food-Mood read</Text>
-            </View>
-          </View>
-        </View>
-      </Card>
-    );
-  }
+    const generateRead = async () => {
+      setLoading(true);
+      setReply("");
+      setErrorMessage("");
+
+      try {
+        const result = await sendCoachMessage(DAILY_READ_PROMPT, readContext);
+        const nextReply = typeof result.reply === "string" ? result.reply.trim() : "";
+
+        if (!nextReply) {
+          throw new Error("Missing AI reply");
+        }
+
+        if (!cancelled) {
+          setReply(nextReply);
+        }
+      } catch {
+        if (!cancelled) {
+          setErrorMessage("Couldn't generate your daily read right now. Try again later.");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void generateRead();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hasAnyTodayData, readContext, readSignature, refreshCount]);
 
   return (
     <Card>
       <View style={styles.readHeroCard}>
         <View style={[styles.readGlow, styles.readGlowTop]} />
         <View style={[styles.readGlow, styles.readGlowBottom]} />
-        <EditorialHeader
-          eyebrow="TODAY'S READ"
-          title="Why do I feel this way?"
-          subtitle="A soft read on how yesterday's food may be shaping today's mood."
+        <SectionTitle
+          eyebrow="Today"
+          title="Your daily read"
+          subtitle="A warm, personalized gut-brain reflection based on what you've logged today."
         />
-        {hasLoaded ? (
-          <>
-            <View style={styles.dailyReadBlock}>
-              <Text style={styles.dailyRead}>{reply}</Text>
-            </View>
-            <Animated.View style={[styles.readButtonWrap, { transform: [{ scale: buttonScale }] }]}>
-              <Pressable
-                style={styles.readButtonSecondary}
-                onPress={() => setHasLoaded(false)}
-                onPressIn={() => animateButton(0.97)}
-                onPressOut={() => animateButton(1)}
-              >
-                <Text style={styles.readButtonSecondaryText}>Refresh</Text>
-              </Pressable>
-            </Animated.View>
-          </>
+        {!hasAnyTodayData ? (
+          <Text style={styles.note}>
+            Log some food or check in with your mood first and I'll give you a read on your day.
+          </Text>
+        ) : loading ? (
+          <Text style={styles.note}>Putting together your daily read...</Text>
+        ) : errorMessage ? (
+          <Text style={styles.note}>{errorMessage}</Text>
         ) : (
-          <Animated.View style={[styles.readButtonWrap, { transform: [{ scale: buttonScale }] }]}>
-            <Pressable
-              style={[styles.readButton, styles.readButtonFull]}
-              onPress={loading ? undefined : () => void getRead()}
-              onPressIn={() => animateButton(0.97)}
-              onPressOut={() => animateButton(1)}
-            >
-              <Text style={styles.readButtonText}>{loading ? "Thinking..." : "Get my read"}</Text>
-            </Pressable>
-          </Animated.View>
+          <View style={styles.dailyReadBlock}>
+            <Text style={styles.dailyRead}>{reply}</Text>
+          </View>
         )}
+        {hasAnyTodayData ? (
+          <View style={styles.dailyReadFooter}>
+            <Pressable disabled={loading} onPress={() => setRefreshCount((current) => current + 1)}>
+              <Text style={styles.dailyReadRefreshLink}>Refresh</Text>
+            </Pressable>
+          </View>
+        ) : null}
       </View>
     </Card>
   );
@@ -1103,6 +1170,14 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 18,
   },
+  dailyReadFooter: {
+    alignItems: "flex-end",
+  },
+  dailyReadRefreshLink: {
+    color: colors.accentPrimary,
+    fontSize: 14,
+    fontWeight: "600",
+  },
   readHeroCard: {
     borderRadius: 24,
     padding: spacing.md,
@@ -1153,49 +1228,6 @@ const styles = StyleSheet.create({
   heroMetaText: {
     fontSize: 13,
     color: colors.textSecondary,
-    fontWeight: "600",
-  },
-  readButtonWrap: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  readButton: {
-    minWidth: 180,
-    borderRadius: radii.round,
-    backgroundColor: colors.accentPrimary,
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: colors.accentPrimary,
-    shadowOpacity: 0.18,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 3,
-  },
-  readButtonFull: {
-    alignSelf: "stretch",
-    width: "100%",
-  },
-  readButtonText: {
-    color: colors.white,
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  readButtonSecondary: {
-    minWidth: 140,
-    borderRadius: radii.round,
-    backgroundColor: "rgba(255, 255, 255, 0.8)",
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: 22,
-    paddingVertical: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  readButtonSecondaryText: {
-    color: colors.textPrimary,
-    fontSize: 15,
     fontWeight: "600",
   },
   sectionWrap: {
