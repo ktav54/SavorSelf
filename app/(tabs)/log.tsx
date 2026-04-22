@@ -1,17 +1,15 @@
 import { useFocusEffect } from "@react-navigation/native";
 import { addDays, format, isToday } from "date-fns";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
   Easing,
   Image,
   Modal,
-  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  useWindowDimensions,
   View,
 } from "react-native";
 import { Screen } from "@/components/ui";
@@ -45,14 +43,12 @@ export default function LogScreen() {
   const [foodSearchVisible, setFoodSearchVisible] = useState(false);
   const [entryStep, setEntryStep] = useState<EntryStep>("hidden");
   const hasShownEntryThisSession = useRef(false);
-  const isNavigatingDate = useRef(false);
+  const touchStartX = useRef(0);
   const heroRise = useRef(new Animated.Value(24)).current;
   const heroFade = useRef(new Animated.Value(0)).current;
   const logoFloat = useRef(new Animated.Value(0)).current;
   const logoGlow = useRef(new Animated.Value(0)).current;
   const pillPulse = useRef(new Animated.Value(0)).current;
-  const daySlide = useRef(new Animated.Value(0)).current;
-  const { width } = useWindowDimensions();
 
   useFocusEffect(
     useCallback(() => {
@@ -216,119 +212,36 @@ export default function LogScreen() {
     outputRange: [46, 60],
   });
 
-  const navigateDate = useCallback(
-    (direction: -1 | 1) => {
-      if (isNavigatingDate.current) {
-        return;
-      }
+  const goToPreviousDay = useCallback(() => {
+    void setSelectedDate(addDays(selectedDate, -1));
+  }, [selectedDate, setSelectedDate]);
 
-      if (direction === 1 && isToday(selectedDate)) {
-        Animated.spring(daySlide, {
-          toValue: 0,
-          useNativeDriver: true,
-          damping: 16,
-          stiffness: 200,
-          mass: 0.8,
-        }).start();
-        return;
-      }
-
-      isNavigatingDate.current = true;
-      const targetDate = addDays(selectedDate, direction);
-      const travel = Math.min(width * 0.08, 28) * (direction === 1 ? -1 : 1);
-
-      Animated.timing(daySlide, {
-        toValue: travel,
-        duration: 120,
-        easing: Easing.out(Easing.quad),
-        useNativeDriver: true,
-      }).start(({ finished }) => {
-        if (!finished) {
-          isNavigatingDate.current = false;
-          return;
-        }
-
-        void setSelectedDate(targetDate).finally(() => {
-          daySlide.setValue(-travel * 0.45);
-          Animated.spring(daySlide, {
-            toValue: 0,
-            useNativeDriver: true,
-            damping: 18,
-            stiffness: 190,
-            mass: 0.85,
-          }).start(() => {
-            isNavigatingDate.current = false;
-          });
-        });
-      });
-    },
-    [daySlide, selectedDate, setSelectedDate, width]
-  );
-
-  const panResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponder: (_, gestureState) =>
-          Math.abs(gestureState.dx) > Math.abs(gestureState.dy) && Math.abs(gestureState.dx) > 14,
-        onPanResponderMove: (_, gestureState) => {
-          if (isNavigatingDate.current) {
-            return;
-          }
-
-          if (gestureState.dx < 0 && isSelectedDateToday) {
-            daySlide.setValue(Math.max(gestureState.dx * 0.08, -8));
-            return;
-          }
-
-          daySlide.setValue(gestureState.dx * 0.12);
-        },
-        onPanResponderRelease: (_, gestureState) => {
-          if (gestureState.dx <= -56 && !isSelectedDateToday) {
-            navigateDate(1);
-            return;
-          }
-
-          if (gestureState.dx >= 56) {
-            navigateDate(-1);
-            return;
-          }
-
-          Animated.spring(daySlide, {
-            toValue: 0,
-            useNativeDriver: true,
-            damping: 16,
-            stiffness: 200,
-            mass: 0.85,
-          }).start();
-        },
-        onPanResponderTerminate: () => {
-          Animated.spring(daySlide, {
-            toValue: 0,
-            useNativeDriver: true,
-            damping: 16,
-            stiffness: 200,
-            mass: 0.85,
-          }).start();
-        },
-      }),
-    [daySlide, isSelectedDateToday, navigateDate]
-  );
+  const goToNextDay = useCallback(() => {
+    if (!isSelectedDateToday) {
+      void setSelectedDate(addDays(selectedDate, 1));
+    }
+  }, [isSelectedDateToday, selectedDate, setSelectedDate]);
 
   return (
     <>
       <Screen scroll>
-        <Animated.View
-          {...panResponder.panHandlers}
-          style={[
-            styles.screenStack,
-            {
-              transform: [{ translateX: daySlide }],
-            },
-          ]}
+        <View
+          style={styles.screenStack}
+          onTouchStart={(event) => {
+            touchStartX.current = event.nativeEvent.pageX;
+          }}
+          onTouchEnd={(event) => {
+            const diff = touchStartX.current - event.nativeEvent.pageX;
+            if (diff > 60) {
+              goToNextDay();
+            } else if (diff < -60) {
+              goToPreviousDay();
+            }
+          }}
         >
           <View style={styles.logHeader}>
             <View style={styles.logHeaderDateRow}>
-              <Pressable style={({ pressed }) => [styles.dateNavButton, pressed && styles.dateNavPressed]} onPress={() => navigateDate(-1)}>
+              <Pressable style={({ pressed }) => [styles.dateNavButton, pressed && styles.dateNavPressed]} onPress={goToPreviousDay}>
                 <Text style={styles.dateNavText}>{"<"}</Text>
               </Pressable>
               <Text style={styles.logHeaderDate}>{logHeaderDate}</Text>
@@ -338,7 +251,7 @@ export default function LogScreen() {
                   isSelectedDateToday && styles.dateNavButtonDisabled,
                   pressed && !isSelectedDateToday && styles.dateNavPressed,
                 ]}
-                onPress={() => navigateDate(1)}
+                onPress={goToNextDay}
                 disabled={isSelectedDateToday}
               >
                 <Text style={[styles.dateNavText, isSelectedDateToday && styles.dateNavTextDisabled]}>{">"}</Text>
@@ -370,7 +283,7 @@ export default function LogScreen() {
           <HydrationSummaryCard />
           <QuickLogStrip />
           <GraceModeCard />
-        </Animated.View>
+        </View>
       </Screen>
 
       <Modal visible={entryStep === "welcome"} animationType="fade" transparent>

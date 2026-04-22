@@ -1166,14 +1166,14 @@ export function MacroSummaryBar() {
         </View>
         <View style={styles.macroPillRow}>
         <MacroVisualCard
-          label="Calories"
+          label="Cal"
           value={totals.calories}
           goal={Math.round(profile?.dailyCalorieGoal ?? 0)}
-          unit="kcal"
+          unit="cal"
           onPress={() => setSelectedMacro("calories")}
         />
         <MacroVisualCard
-          label="Protein"
+          label="Pro"
           value={totals.protein}
           goal={Math.round(profile?.dailyProteinGoal ?? 0)}
           unit="g"
@@ -2418,16 +2418,30 @@ function MacroVisualCard({
   return (
     <Pressable style={({ pressed }) => [styles.macroCard, pressed && styles.pressableFeedback]} onPress={onPress}>
       <View style={styles.macroPillHeader}>
-        <Text style={styles.macroLabel}>{label}</Text>
+        <Text style={styles.macroLabel} numberOfLines={1}>
+          {label}
+        </Text>
       </View>
       <View style={styles.macroValueRow}>
-        <Text style={styles.macroValue}>{value}</Text>
-        <Text style={styles.macroUnit}>{unit}</Text>
+        <Text style={styles.macroValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+          {value}
+        </Text>
+        <Text style={styles.macroUnit} numberOfLines={1}>
+          {unit}
+        </Text>
       </View>
       <View style={styles.macroUnderlineTrack}>
         <View style={[styles.macroUnderlineFill, { width: fillWidth }]} />
       </View>
-      {goal > 0 ? <Text style={styles.macroGoalText}>Goal {goal}</Text> : <Text style={styles.macroGoalText}>No goal set</Text>}
+      {goal > 0 ? (
+        <Text style={styles.macroGoalText} numberOfLines={1}>
+          Goal {goal}
+        </Text>
+      ) : (
+        <Text style={styles.macroGoalText} numberOfLines={1}>
+          No goal
+        </Text>
+      )}
     </Pressable>
   );
 }
@@ -2728,6 +2742,7 @@ const styles = StyleSheet.create({
   macroPillRow: {
     flexDirection: "row",
     gap: 8,
+    flexWrap: "nowrap",
   },
   dailyGutPanel: {
     backgroundColor: colors.white,
@@ -2784,11 +2799,12 @@ const styles = StyleSheet.create({
   },
   macroCard: {
     flex: 1,
+    flexShrink: 1,
     backgroundColor: colors.white,
     borderColor: colors.border,
     borderRadius: 14,
     borderWidth: 1,
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     paddingVertical: 12,
     gap: 8,
   },
