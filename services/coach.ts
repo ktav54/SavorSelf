@@ -3,6 +3,35 @@ import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase";
 
 type CoachHistoryMessage = { role: "user" | "assistant"; content: string };
 
+function normalizeCoachPayload<T extends { reply?: string }>(payload: T | string): T {
+  let normalized: unknown = payload;
+
+  if (typeof normalized === "string") {
+    try {
+      normalized = JSON.parse(normalized);
+    } catch {
+      return { reply: normalized } as T;
+    }
+  }
+
+  if (normalized && typeof normalized === "object" && "reply" in normalized) {
+    const reply = (normalized as { reply?: unknown }).reply;
+    if (typeof reply === "string") {
+      const trimmed = reply.trim();
+      if (trimmed.startsWith("{")) {
+        try {
+          const parsedReply = JSON.parse(trimmed);
+          if (typeof parsedReply?.reply === "string") {
+            (normalized as { reply?: string }).reply = parsedReply.reply;
+          }
+        } catch {}
+      }
+    }
+  }
+
+  return normalized as T;
+}
+
 async function callEdgeFunction<TRequest, TResponse>(functionName: string, body: TRequest): Promise<TResponse> {
   const attempt = async () => {
     const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
@@ -40,7 +69,7 @@ export async function sendCoachMessage(
   context: Record<string, unknown>,
   history: CoachHistoryMessage[] = []
 ) {
-  return callEdgeFunction<
+  const response = await callEdgeFunction<
     {
       message: string;
       context: Record<string, unknown>;
@@ -54,6 +83,8 @@ export async function sendCoachMessage(
     history,
     mode: "simple_chat",
   });
+
+  return normalizeCoachPayload(response);
 }
 
 export async function parseFoodMessage(input: {
@@ -62,7 +93,7 @@ export async function parseFoodMessage(input: {
   history?: CoachHistoryMessage[];
   context?: Record<string, unknown>;
 }) {
-  return callEdgeFunction<
+  const response = await callEdgeFunction<
     {
       message: string;
       pendingProposal?: CoachFoodProposal | null;
@@ -99,4 +130,6 @@ export async function parseFoodMessage(input: {
     history: input.history ?? [],
     context: input.context ?? {},
   });
+
+  return normalizeCoachPayload(response);
 }

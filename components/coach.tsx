@@ -357,9 +357,10 @@ export function CoachChat() {
     kind: "text" | "food_summary" | "clarification" | "status" = "text",
     foodProposal?: CoachFoodProposal
   ) => {
+    const replyText = extractReply(content);
     addCoachMessage({
       role: "assistant",
-      content: content?.trim() ? content : "Something went wrong, try again.",
+      content: replyText?.trim() ? replyText : "Something went wrong, try again.",
       timestamp: new Date().toISOString(),
       kind,
       foodProposal,
