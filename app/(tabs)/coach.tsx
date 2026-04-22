@@ -1,9 +1,8 @@
 import { useLayoutEffect } from "react";
 import { Ionicons } from "@expo/vector-icons";
-import { Pressable } from "react-native";
+import { Pressable, View } from "react-native";
 import { useNavigation } from "expo-router";
 import { CoachChat } from "@/components/coach";
-import { Screen } from "@/components/ui";
 import { colors } from "@/constants/theme";
 import { useAppStore, type AppState } from "@/store/useAppStore";
 
@@ -30,8 +29,8 @@ export default function CoachScreen() {
   }, [clearConversation, navigation]);
 
   return (
-    <Screen scroll>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       <CoachChat />
-    </Screen>
+    </View>
   );
 }

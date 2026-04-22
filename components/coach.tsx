@@ -1,9 +1,20 @@
 ﻿// components/coach.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { GutScoreModal, type GutScoreData } from "@/components/GutScoreModal";
 import { colors, radii, spacing } from "@/constants/theme";
-import { Card, Field, PrimaryButton, SectionTitle } from "@/components/ui";
+import { Card, PrimaryButton } from "@/components/ui";
 import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase";
 import { formatFoodName } from "@/lib/utils";
 import { parseFoodMessage, sendCoachMessage } from "@/services/coach";
@@ -263,18 +274,6 @@ function buildGutScoreData(item: CoachFoodItem, score: number, summary: string):
   };
 }
 
-export function CoachBanner() {
-  return (
-    <Card>
-      <SectionTitle
-        eyebrow="Coach"
-        title="A calm, warm place to think out loud"
-        subtitle="We can move between food logging, patterns, and whatever is on your mind without losing the thread."
-      />
-    </Card>
-  );
-}
-
 export function CoachChat() {
   const conversation = useAppStore((state: AppState) => state.conversation);
   const conversationResetCount = useAppStore((state: AppState) => state.conversationResetCount);
@@ -296,8 +295,7 @@ export function CoachChat() {
   const [proposalGutScoreLoading, setProposalGutScoreLoading] = useState<Record<string, boolean>>({});
   const [adjustModalVisible, setAdjustModalVisible] = useState(false);
   const [adjustDraftItems, setAdjustDraftItems] = useState<AdjustDraftItem[]>([]);
-  const starterOpacity = useRef(new Animated.Value(1)).current;
-  const starterRise = useRef(new Animated.Value(0)).current;
+  const scrollRef = useRef<ScrollView>(null);
   const coachUnitOptions = useMemo(
     () => getCoachUnitOptions(profile?.preferredUnits),
     [profile?.preferredUnits]
@@ -308,24 +306,13 @@ export function CoachChat() {
     setPendingProposal(null);
     setAdjustModalVisible(false);
     setAdjustDraftItems([]);
+  }, [conversationResetCount]);
 
-    starterOpacity.setValue(0);
-    starterRise.setValue(18);
-    Animated.parallel([
-      Animated.timing(starterOpacity, {
-        toValue: 1,
-        duration: 260,
-        useNativeDriver: true,
-      }),
-      Animated.spring(starterRise, {
-        toValue: 0,
-        useNativeDriver: true,
-        bounciness: 6,
-      }),
-    ]).start();
-  }, [conversationResetCount, starterOpacity, starterRise]);
+  useEffect(() => {
+    scrollRef.current?.scrollToEnd({ animated: true });
+  }, [conversation.length]);
 
-  const shouldShowStarter = useMemo(() => conversation.length === 0, [conversation]);
+  const hasStartedConversation = conversation.length > 0;
 
   const coachContext = useMemo(
     () => ({
@@ -362,9 +349,9 @@ export function CoachChat() {
     });
   };
 
-  const submit = async () => {
-    if (!draft.trim() || sending) return;
-    const message = draft.trim();
+  const handleSend = async (messageOverride?: string) => {
+    const message = (messageOverride ?? draft).trim();
+    if (!message || sending) return;
     const history = conversation
       .filter((m: AiConversationMessage) => m.content.length < 400)
       .slice(-6)
@@ -668,40 +655,12 @@ export function CoachChat() {
   };
 
   return (
-    <View style={styles.stack}>
-      <Modal transparent animationType="fade" visible={shouldShowStarter}>
-        <View style={styles.starterModalBackdrop}>
-          <Animated.View
-            style={[
-              styles.starterModalCard,
-              {
-                opacity: starterOpacity,
-                transform: [{ translateY: starterRise }],
-              },
-            ]}
-          >
-            <SectionTitle
-              eyebrow="Start Here"
-              title="What would feel most supportive right now?"
-              subtitle="These are just gentle starting points. We can move anywhere from there."
-            />
-            <Text style={styles.starterLead}>New conversation</Text>
-            <Pressable style={styles.optionCard} onPress={() => void openInsights()}>
-              <Text style={styles.optionTitle}>Analyze my Food-Mood patterns</Text>
-              <Text style={styles.optionBody}>Bring your recent logs into focus and show what's actually starting to connect.</Text>
-            </Pressable>
-            <Pressable style={styles.optionCard} onPress={openFoodLogging}>
-              <Text style={styles.optionTitle}>Log my food</Text>
-              <Text style={styles.optionBody}>Describe what you ate naturally, and I'll help turn it into a real food log.</Text>
-            </Pressable>
-            <Pressable style={styles.optionCard} onPress={openGeneralChat}>
-              <Text style={styles.optionTitle}>Just talk</Text>
-              <Text style={styles.optionBody}>No agenda needed. We can talk through energy, mood, guilt, stress, or whatever is sitting with you.</Text>
-            </Pressable>
-          </Animated.View>
-        </View>
-      </Modal>
-
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      style={styles.chatShell}
+      keyboardVerticalOffset={90}
+    >
+      <View style={styles.chatShell}>
       <Modal
         transparent
         animationType="fade"
@@ -873,109 +832,137 @@ export function CoachChat() {
       </Modal>
 
       <GutScoreModal visible={Boolean(gutScoreData)} data={gutScoreData} onClose={() => setGutScoreData(null)} />
+      <ScrollView
+        ref={scrollRef}
+        style={styles.messagesScroll}
+        contentContainerStyle={styles.messagesContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {conversation.map((message, index) => (
+          <View key={`${message.timestamp}-${index}`} style={styles.messageWrap}>
+            <View style={[styles.bubble, message.role === "user" ? styles.userBubble : styles.assistantBubble]}>
+              <Text style={[styles.bubbleText, message.role === "user" && styles.userBubbleText]}>
+                {extractReply(message.content)}
+              </Text>
+            </View>
 
-      {conversation.map((message, index) => (
-        <View key={`${message.timestamp}-${index}`} style={styles.messageWrap}>
-          <View style={[styles.bubble, message.role === "user" ? styles.userBubble : styles.assistantBubble]}>
-            <Text style={styles.bubbleText}>{extractReply(message.content)}</Text>
-          </View>
-
-          {message.role === "assistant" && message.foodProposal ? (
-            <Card>
-              <Text style={styles.summaryLabel}>{message.foodProposal.mealType}</Text>
-              {(pendingProposal && message.foodProposal.sourceMessage === pendingProposal.sourceMessage ? pendingProposal.items : message.foodProposal.items).map((item, itemIndex) => {
-                const gutScoreKey = item.name.toLowerCase();
-                const gutScore = proposalGutScores[gutScoreKey] ?? null;
-                const gutScoreLoading = proposalGutScoreLoading[gutScoreKey] ?? false;
-
-                return (
-                  <View key={`${message.timestamp}-${item.name}`} style={styles.summaryRow}>
-                    <View style={styles.summaryCopy}>
-                      <View style={styles.summaryTitleRow}>
-                        <Text style={styles.summaryName}>{formatFoodName(item.name)}</Text>
-                        {(message.foodProposal?.items.length ?? 0) > 1 ? (
-                          <Pressable onPress={() => openAdjustModal()}>
-                            <Text style={styles.editLink}>Edit</Text>
-                          </Pressable>
+            {message.role === "assistant" && message.foodProposal ? (
+              <Card>
+                <Text style={styles.summaryLabel}>{message.foodProposal.mealType}</Text>
+                {(pendingProposal && message.foodProposal.sourceMessage === pendingProposal.sourceMessage ? pendingProposal.items : message.foodProposal.items).map((item) => {
+                  return (
+                    <View key={`${message.timestamp}-${item.name}`} style={styles.summaryRow}>
+                      <View style={styles.summaryCopy}>
+                        <View style={styles.summaryTitleRow}>
+                          <Text style={styles.summaryName}>{formatFoodName(item.name)}</Text>
+                          {(message.foodProposal?.items.length ?? 0) > 1 ? (
+                            <Pressable onPress={() => openAdjustModal()}>
+                              <Text style={styles.editLink}>Edit</Text>
+                            </Pressable>
+                          ) : null}
+                        </View>
+                        <Pressable onPress={() => void openGutFeedback(item)}>
+                          <Text style={styles.gutAnalysisLink}>See gut health analysis →</Text>
+                        </Pressable>
+                        {item.foodSource === "ai_estimate" ? (
+                          <Text style={styles.estimateTag}>AI estimate</Text>
                         ) : null}
+                        <Text style={styles.summaryMeta}>{item.portion}</Text>
                       </View>
-                      <Pressable onPress={() => void openGutFeedback(item)}>
-                        <Text style={styles.gutAnalysisLink}>See gut health analysis →</Text>
-                      </Pressable>
-                      {item.foodSource === "ai_estimate" ? (
-                        <Text style={styles.estimateTag}>AI estimate</Text>
-                      ) : null}
-                      <Text style={styles.summaryMeta}>{item.portion}</Text>
+                      <View style={styles.summaryCopy}>
+                        <Text style={styles.summaryMacro}>{Math.round(item.calories)} cal</Text>
+                        <Text style={styles.summaryMeta}>
+                          {Math.round(item.protein)}p | {Math.round(item.carbs)}c | {Math.round(item.fat)}f
+                        </Text>
+                      </View>
                     </View>
-                    <View style={styles.summaryCopy}>
-                      <Text style={styles.summaryMacro}>{Math.round(item.calories)} cal</Text>
-                      <Text style={styles.summaryMeta}>
-                        {Math.round(item.protein)}p | {Math.round(item.carbs)}c | {Math.round(item.fat)}f
-                      </Text>
-                    </View>
+                  );
+                })}
+                {pendingProposal && message.foodProposal.sourceMessage === pendingProposal.sourceMessage ? (
+                  <View style={styles.actionRow}>
+                    <PrimaryButton
+                      label={confirming ? "Saving..." : "Confirm and log"}
+                      onPress={() => void confirmProposal()}
+                    />
+                    <PrimaryButton
+                      label="Adjust"
+                      secondary
+                      onPress={() => openAdjustModal()}
+                    />
                   </View>
-                );
-              })}
-              {pendingProposal && message.foodProposal.sourceMessage === pendingProposal.sourceMessage ? (
-                <View style={styles.actionRow}>
-                  <PrimaryButton
-                    label={confirming ? "Saving..." : "Confirm and log"}
-                    onPress={() => void confirmProposal()}
-                  />
-                  <PrimaryButton
-                    label="Adjust"
-                    secondary
-                    onPress={() => openAdjustModal()}
-                  />
-                </View>
-              ) : null}
-            </Card>
+                ) : null}
+              </Card>
+            ) : null}
+          </View>
+        ))}
+
+        {!hasStartedConversation ? (
+          <View style={styles.promptRow}>
+            <Text style={styles.promptTitle}>Suggested prompts</Text>
+            <View style={styles.promptChipsWrap}>
+              {[
+                "I had two scrambled eggs with toast and a coffee",
+                "How has my mood been this week?",
+                "Lunch was a turkey sandwich, chips, and an apple",
+              ].map((prompt) => (
+                <Pressable
+                  key={prompt}
+                  onPress={() => {
+                    setDraft(prompt);
+                    void handleSend(prompt);
+                  }}
+                  style={styles.promptChip}
+                >
+                  <Text style={styles.promptChipText}>{prompt}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        ) : null}
+      </ScrollView>
+
+      <View style={styles.inputBar}>
+        <View style={styles.inputFieldWrap}>
+          <TextInput
+            style={styles.inputField}
+            value={draft}
+            onChangeText={setDraft}
+            placeholder="Log food or ask anything..."
+            placeholderTextColor={colors.textSecondary}
+            multiline
+            maxLength={500}
+            returnKeyType="send"
+            onSubmitEditing={() => void handleSend()}
+          />
+          {draft.length > 400 ? (
+            <Text style={styles.inputHelperText}>
+              Message is getting long - consider sending in shorter messages for best results.
+            </Text>
+          ) : null}
+          {sending ? (
+            <View style={styles.loadingRow}>
+              <ActivityIndicator color={colors.accentPrimary} />
+              <Text style={styles.loadingText}>
+                {pendingProposal
+                  ? "Updating your food log..."
+                  : "Listening and thinking..."}
+              </Text>
+            </View>
           ) : null}
         </View>
-      ))}
-
-      <Card>
-        <Field
-          label="Message"
-          value={draft}
-          onChangeText={setDraft}
-          placeholder="I had two scrambled eggs with toast and a coffee..."
-          multiline
-        />
-        {draft.length > 400 ? (
-          <Text style={{ color: colors.accentPrimary, fontSize: 12, marginTop: 4 }}>
-            Message is getting long - consider sending in shorter messages for best results.
-          </Text>
-        ) : null}
-        <PrimaryButton
-          label={sending ? "Thinking..." : "Send"}
-          onPress={() => void submit()}
-        />
-        {sending ? (
-          <View style={styles.loadingRow}>
-            <ActivityIndicator color={colors.accentPrimary} />
-            <Text style={styles.loadingText}>
-              {pendingProposal
-                ? "Updating your food log..."
-                : "Listening and thinking..."}
-            </Text>
-          </View>
-        ) : null}
-      </Card>
-
-      <View style={styles.promptRow}>
-        <Text style={styles.promptTitle}>Suggested prompts</Text>
-        {[
-          "I had two scrambled eggs with toast and a coffee",
-          "How has my mood been this week?",
-          "Lunch was a turkey sandwich, chips, and an apple",
-        ].map((prompt) => (
-          <Pressable key={prompt} onPress={() => setDraft(prompt)}>
-            <Text style={styles.promptChip}>{prompt}</Text>
-          </Pressable>
-        ))}
+        <Pressable
+          style={[styles.sendButton, (!draft.trim() || sending) && styles.sendButtonDisabled]}
+          onPress={() => void handleSend()}
+          disabled={!draft.trim() || sending}
+        >
+          {sending
+            ? <ActivityIndicator size="small" color={colors.white} />
+            : <Text style={styles.sendButtonText}>↑</Text>}
+        </Pressable>
       </View>
-    </View>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -1021,32 +1008,57 @@ function WheelPicker({
 }
 
 const styles = StyleSheet.create({
-  stack: { gap: spacing.md },
+  chatShell: { flex: 1 },
+  messagesScroll: { flex: 1 },
+  messagesContent: {
+    padding: spacing.md,
+    gap: spacing.sm,
+    paddingBottom: 16,
+  },
   messageWrap: { gap: spacing.sm },
-  bubble: { padding: spacing.md, borderRadius: radii.lg, maxWidth: "88%" },
-  userBubble: { alignSelf: "flex-end", backgroundColor: colors.accentPrimary },
+  bubble: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 18,
+    maxWidth: "80%",
+  },
+  userBubble: {
+    alignSelf: "flex-end",
+    backgroundColor: colors.accentPrimary,
+    borderBottomRightRadius: 4,
+  },
   assistantBubble: {
     alignSelf: "flex-start",
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
+    borderBottomLeftRadius: 4,
   },
-  bubbleText: { color: colors.textPrimary, fontSize: 16, lineHeight: 25 },
-  promptRow: { gap: spacing.sm },
+  bubbleText: { color: colors.textPrimary, fontSize: 16, lineHeight: 24 },
+  userBubbleText: { color: colors.white },
+  promptRow: { gap: spacing.sm, marginTop: spacing.sm },
   promptTitle: {
     color: colors.textSecondary,
     fontSize: 12,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
+  promptChipsWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+  },
   promptChip: {
     backgroundColor: colors.white,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: radii.md,
-    padding: 12,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  promptChipText: {
     color: colors.textPrimary,
-    lineHeight: 22,
+    fontSize: 14,
   },
   optionCard: {
     backgroundColor: colors.white,
@@ -1109,20 +1121,6 @@ const styles = StyleSheet.create({
   actionRow: { gap: spacing.sm, marginTop: spacing.sm },
   loadingRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   loadingText: { color: colors.textSecondary, fontSize: 14 },
-  starterModalBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(44, 26, 14, 0.18)",
-    justifyContent: "center",
-    padding: spacing.lg,
-  },
-  starterModalCard: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radii.lg,
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
   modalFeedbackCard: {
     backgroundColor: colors.surface,
     borderWidth: 1,
@@ -1131,11 +1129,6 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: spacing.sm,
     marginTop: "30%",
-  },
-  starterLead: {
-    color: colors.accentPrimary,
-    fontSize: 17,
-    fontWeight: "600",
   },
   adjustModalBackdrop: {
     flex: 1,
@@ -1343,5 +1336,54 @@ const styles = StyleSheet.create({
   wheelOptionTextActive: {
     color: colors.accentPrimary,
     fontWeight: "700",
+  },
+  inputBar: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    paddingBottom: 24,
+    backgroundColor: colors.background,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    gap: 10,
+  },
+  inputFieldWrap: {
+    flex: 1,
+    gap: 6,
+  },
+  inputField: {
+    flex: 1,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    fontSize: 16,
+    color: colors.textPrimary,
+    maxHeight: 120,
+    lineHeight: 22,
+    textAlignVertical: "top",
+  },
+  inputHelperText: {
+    color: colors.accentPrimary,
+    fontSize: 12,
+  },
+  sendButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.accentPrimary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sendButtonDisabled: {
+    backgroundColor: colors.border,
+  },
+  sendButtonText: {
+    color: colors.white,
+    fontSize: 20,
+    fontWeight: "600",
   },
 });
