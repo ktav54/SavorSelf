@@ -3,10 +3,10 @@ import { router } from "expo-router";
 import { Text, View } from "react-native";
 import { colors } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
-import { useAppStore } from "@/store/useAppStore";
+import { useAppStore, type AppState } from "@/store/useAppStore";
 
 export default function Index() {
-  const handleSessionChange = useAppStore((state) => state.handleSessionChange);
+  const handleSessionChange = useAppStore((state: AppState) => state.handleSessionChange);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const hasNavigated = useRef(false);
 

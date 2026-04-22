@@ -3,12 +3,12 @@ import { useEffect } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { colors, spacing } from "@/constants/theme";
 import { Card, PrimaryButton, Screen, SectionTitle } from "@/components/ui";
-import { useAppStore } from "@/store/useAppStore";
+import { useAppStore, type AppState } from "@/store/useAppStore";
 
 export default function WelcomeScreen() {
-  const sessionReady = useAppStore((state) => state.sessionReady);
-  const isAuthenticated = useAppStore((state) => state.isAuthenticated);
-  const profile = useAppStore((state) => state.profile);
+  const sessionReady = useAppStore((state: AppState) => state.sessionReady);
+  const isAuthenticated = useAppStore((state: AppState) => state.isAuthenticated);
+  const profile = useAppStore((state: AppState) => state.profile);
 
   useEffect(() => {
     if (!sessionReady || !isAuthenticated) {

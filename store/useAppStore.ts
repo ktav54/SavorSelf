@@ -1,9 +1,10 @@
 import { endOfDay, startOfDay } from "date-fns";
 import { Session, User } from "@supabase/supabase-js";
-import { create } from "zustand";
+import { create, type StateCreator, type StoreApi, type UseBoundStore } from "zustand";
 import { analyzeFoodMood, generateAiNarrative } from "@/lib/food-mood";
 import { demoConversation, demoInsights, demoQuickLogs } from "@/lib/demo-data";
 import { supabase } from "@/lib/supabase";
+import { cancelAllSavorSelfNotifications, scheduleLapseNudge } from "@/services/notifications";
 import { formatFoodName } from "@/lib/utils";
 import type {
   AiConversationMessage,
@@ -19,7 +20,7 @@ import type {
   UserProfile,
 } from "@/types/models";
 
-interface AppState {
+export interface AppState {
   sessionReady: boolean;
   isAuthenticated: boolean;
   authUser: User | null;
@@ -47,7 +48,9 @@ interface AppState {
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
   signUp: (payload: { email: string; password: string; name?: string }) => Promise<{ error?: string }>;
   completeOnboarding: (details: Partial<UserProfile>) => Promise<{ error?: string }>;
-  updateProfile: (updates: Partial<Pick<UserProfile, "preferredUnits" | "dailyCalorieGoal" | "dailyProteinGoal" | "dailyCarbsGoal" | "dailyFatGoal" | "dailyWaterGoal">>) => Promise<{ error?: string }>;
+  updateProfile: (updates: Partial<Pick<UserProfile, "name" | "preferredUnits" | "dailyCalorieGoal" | "dailyProteinGoal" | "dailyCarbsGoal" | "dailyFatGoal" | "dailyWaterGoal">>) => Promise<{ error?: string }>;
+  updateEmail: (email: string) => Promise<{ error?: string }>;
+  deleteAccount: () => Promise<{ error?: string }>;
   setSelectedDate: (date: Date) => Promise<void>;
   signOut: () => Promise<void>;
   loadTodayMoodLog: (date?: Date) => Promise<void>;
@@ -56,9 +59,13 @@ interface AppState {
   loadFoodMoodInsights: () => Promise<void>;
   saveMoodLog: (input: Omit<MoodLog, "id" | "userId" | "loggedAt">) => Promise<{ error?: string }>;
   saveWaterLog: (waterOz: number) => Promise<{ error?: string }>;
+  saveQuickField: (
+    field: "caffeineMg" | "steps" | "sleepHours" | "exerciseMinutes",
+    value: number
+  ) => Promise<{ error?: string }>;
   saveFoodLog: (input: {
     foodName: string;
-    foodSource?: Exclude<FoodSource, "custom">;
+    foodSource?: FoodSource;
     externalFoodId?: string;
     mealType: MealType;
     quantity: number;
@@ -72,7 +79,7 @@ interface AppState {
   }) => Promise<{ error?: string }>;
   saveMultipleFoodLogs: (items: Array<{
     foodName: string;
-    foodSource?: Exclude<FoodSource, "custom">;
+    foodSource?: FoodSource;
     externalFoodId?: string;
     mealType: MealType;
     quantity: number;
@@ -288,7 +295,7 @@ async function updateUsersRowWithFallback(userId: string, payload: Record<string
   };
 }
 
-export const useAppStore = create<AppState>((set) => ({
+const appStateCreator: StateCreator<AppState> = (set) => ({
   sessionReady: false,
   isAuthenticated: false,
   authUser: null,
@@ -499,6 +506,10 @@ export const useAppStore = create<AppState>((set) => ({
 
     const payload: Record<string, unknown> = {};
 
+    if ("name" in updates) {
+      payload.name = updates.name ?? "";
+    }
+
     if ("preferredUnits" in updates) {
       payload.preferred_units = updates.preferredUnits;
     }
@@ -541,6 +552,57 @@ export const useAppStore = create<AppState>((set) => ({
 
     return {};
   },
+  updateEmail: async (email): Promise<{ error?: string }> => {
+    const profile = useAppStore.getState().profile;
+    if (!profile) {
+      return { error: "You need to be signed in first." };
+    }
+
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail) {
+      return { error: "Enter an email address first." };
+    }
+
+    const { error: authError } = await supabase.auth.updateUser({
+      email: trimmedEmail,
+    });
+
+    if (authError) {
+      return { error: authError.message };
+    }
+
+    const { data, error } = await supabase
+      .from("users")
+      .update({ email: trimmedEmail })
+      .eq("id", profile.id)
+      .select("*")
+      .single();
+
+    if (error) {
+      return { error: error.message };
+    }
+
+    set({
+      profile: mapProfile(data),
+    });
+
+    return {};
+  },
+  deleteAccount: async () => {
+    const profile = useAppStore.getState().profile;
+    if (!profile) {
+      return { error: "You need to be signed in first." };
+    }
+
+    const { error } = await supabase.from("users").delete().eq("id", profile.id);
+
+    if (error) {
+      return { error: error.message };
+    }
+
+    await useAppStore.getState().signOut();
+    return {};
+  },
   setSelectedDate: async (date) => {
     const target = normalizeSelectedDate(date);
     set({
@@ -553,6 +615,7 @@ export const useAppStore = create<AppState>((set) => ({
     ]);
   },
   signOut: async () => {
+    await cancelAllSavorSelfNotifications();
     await supabase.auth.signOut();
     set({
       isAuthenticated: false,
@@ -603,6 +666,9 @@ export const useAppStore = create<AppState>((set) => ({
       moodLoading: false,
       moodError: null,
     });
+
+    const lastLog = data?.[0]?.logged_at ?? null;
+    void scheduleLapseNudge(lastLog);
   },
   loadTodayFoodLogs: async (date) => {
     const profile = useAppStore.getState().profile;
@@ -855,6 +921,63 @@ export const useAppStore = create<AppState>((set) => ({
 
     return {};
   },
+  saveQuickField: async (field, value) => {
+    const profile = useAppStore.getState().profile;
+    const selectedDate = useAppStore.getState().selectedDate;
+    if (!profile) {
+      return { error: "You need to be signed in first." };
+    }
+
+    const columnMap = {
+      caffeineMg: "caffeine_mg",
+      steps: "steps",
+      sleepHours: "sleep_hours",
+      exerciseMinutes: "exercise_minutes",
+    } as const;
+
+    const { start, end } = getDayWindow(selectedDate);
+
+    const { data: existing, error: existingError } = await supabase
+      .from("quick_logs")
+      .select("*")
+      .eq("user_id", profile.id)
+      .gte("logged_at", start)
+      .lte("logged_at", end)
+      .order("logged_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existingError) {
+      return { error: existingError.message };
+    }
+
+    const column = columnMap[field];
+    const query = existing?.id
+      ? supabase
+          .from("quick_logs")
+          .update({ [column]: value })
+          .eq("id", existing.id)
+          .select("*")
+          .single()
+      : supabase
+          .from("quick_logs")
+          .insert({
+            user_id: profile.id,
+            logged_at: getLoggedAtForDate(selectedDate),
+            [column]: value,
+          })
+          .select("*")
+          .single();
+
+    const { error } = await query;
+
+    if (error) {
+      return { error: error.message };
+    }
+
+    await useAppStore.getState().loadTodayQuickLog(selectedDate);
+    return {};
+  },
   saveFoodLog: async (input) => {
     const profile = useAppStore.getState().profile;
     const selectedDate = useAppStore.getState().selectedDate;
@@ -1048,4 +1171,6 @@ export const useAppStore = create<AppState>((set) => ({
       conversation: [],
       conversationResetCount: state.conversationResetCount + 1,
     })),
-}));
+});
+
+export const useAppStore: UseBoundStore<StoreApi<AppState>> = create<AppState>(appStateCreator);

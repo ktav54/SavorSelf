@@ -7,8 +7,8 @@ import { Card, Field, PrimaryButton, SectionTitle } from "@/components/ui";
 import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase";
 import { formatFoodName } from "@/lib/utils";
 import { parseFoodMessage, sendCoachMessage } from "@/services/coach";
-import { useAppStore } from "@/store/useAppStore";
-import type { CoachFoodItem, CoachFoodProposal, FoodUnit } from "@/types/models";
+import { useAppStore, type AppState } from "@/store/useAppStore";
+import type { AiConversationMessage, CoachFoodItem, CoachFoodProposal, FoodMoodInsight, FoodUnit } from "@/types/models";
 
 type AdjustDraftItem = {
   name: string;
@@ -276,16 +276,16 @@ export function CoachBanner() {
 }
 
 export function CoachChat() {
-  const conversation = useAppStore((state) => state.conversation);
-  const conversationResetCount = useAppStore((state) => state.conversationResetCount);
-  const profile = useAppStore((state) => state.profile);
-  const moodLogs = useAppStore((state) => state.moodLogs);
-  const foodLogs = useAppStore((state) => state.foodLogs);
-  const quickLogs = useAppStore((state) => state.quickLogs);
-  const insights = useAppStore((state) => state.insights);
-  const loadFoodMoodInsights = useAppStore((state) => state.loadFoodMoodInsights);
-  const addCoachMessage = useAppStore((state) => state.addCoachMessage);
-  const saveMultipleFoodLogs = useAppStore((state) => state.saveMultipleFoodLogs);
+  const conversation = useAppStore((state: AppState) => state.conversation);
+  const conversationResetCount = useAppStore((state: AppState) => state.conversationResetCount);
+  const profile = useAppStore((state: AppState) => state.profile);
+  const moodLogs = useAppStore((state: AppState) => state.moodLogs);
+  const foodLogs = useAppStore((state: AppState) => state.foodLogs);
+  const quickLogs = useAppStore((state: AppState) => state.quickLogs);
+  const insights = useAppStore((state: AppState) => state.insights);
+  const loadFoodMoodInsights = useAppStore((state: AppState) => state.loadFoodMoodInsights);
+  const addCoachMessage = useAppStore((state: AppState) => state.addCoachMessage);
+  const saveMultipleFoodLogs = useAppStore((state: AppState) => state.saveMultipleFoodLogs);
 
   const [draft, setDraft] = useState("");
   const [pendingProposal, setPendingProposal] = useState<CoachFoodProposal | null>(null);
@@ -366,9 +366,9 @@ export function CoachChat() {
     if (!draft.trim() || sending) return;
     const message = draft.trim();
     const history = conversation
-      .filter((m) => m.content.length < 400)
+      .filter((m: AiConversationMessage) => m.content.length < 400)
       .slice(-6)
-      .map((m) => ({ role: m.role, content: m.content }));
+      .map((m: AiConversationMessage) => ({ role: m.role, content: m.content }));
     addCoachMessage({ role: "user", content: message, timestamp: new Date().toISOString() });
     setDraft("");
     setSending(true);
@@ -424,7 +424,7 @@ export function CoachChat() {
           break;
         }
         case "clarification":
-          appendAssistant(result.reply, "clarification");
+          appendAssistant(result.reply ?? "", "clarification");
           break;
         default:
           if (!result.reply || /hit a snag|try again/i.test(result.reply)) {
@@ -488,7 +488,7 @@ export function CoachChat() {
       role: "assistant",
       content:
         latestInsights.length > 0
-          ? `Here's what stands out right now:\n\n${latestInsights.map((i) => `• ${i.insightBody}`).join("\n")}`
+          ? `Here's what stands out right now:\n\n${latestInsights.map((i: FoodMoodInsight) => `• ${i.insightBody}`).join("\n")}`
           : "I'm starting to look for your Food-Mood patterns. A few more check-ins will help me say something personal and true.",
       timestamp: new Date().toISOString(),
       kind: "text",
@@ -893,7 +893,7 @@ export function CoachChat() {
                     <View style={styles.summaryCopy}>
                       <View style={styles.summaryTitleRow}>
                         <Text style={styles.summaryName}>{formatFoodName(item.name)}</Text>
-                        {message.foodProposal.items.length > 1 ? (
+                        {(message.foodProposal?.items.length ?? 0) > 1 ? (
                           <Pressable onPress={() => openAdjustModal()}>
                             <Text style={styles.editLink}>Edit</Text>
                           </Pressable>

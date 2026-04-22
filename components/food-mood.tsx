@@ -1,17 +1,14 @@
 import { useMemo, useRef, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
-import { BlurView } from "expo-blur";
-import { Animated, Dimensions, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Animated, Pressable, StyleSheet, Text, View, type DimensionValue } from "react-native";
 import { colors, radii, spacing } from "@/constants/theme";
 import { Card, Chip, SectionTitle } from "@/components/ui";
 import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase";
-import { useAppStore } from "@/store/useAppStore";
+import { useAppStore, type AppState } from "@/store/useAppStore";
 import { featureFlags } from "@/lib/premium";
+import type { FoodLog, FoodMoodInsight, FoodMoodTrendPoint, MoodLog } from "@/types/models";
 
-const WEEKDAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
-const SCREEN_WIDTH = Dimensions.get("window").width;
-const PATTERN_CARD_WIDTH = SCREEN_WIDTH * 0.8;
-const PATTERN_CARD_GAP = spacing.md;
+const PATTERN_WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 function toDateKey(value: Date | string) {
   return typeof value === "string" ? value.slice(0, 10) : value.toISOString().slice(0, 10);
@@ -34,7 +31,7 @@ function getLastNDates(count: number) {
   });
 }
 
-function buildMoodByDate(moodLogs: ReturnType<typeof useAppStore.getState>["moodLogs"]) {
+function buildMoodByDate(moodLogs: MoodLog[]) {
   const map = new Map<string, number[]>();
   moodLogs.forEach((log) => {
     const key = toDateKey(log.loggedAt);
@@ -43,7 +40,7 @@ function buildMoodByDate(moodLogs: ReturnType<typeof useAppStore.getState>["mood
   return new Map(Array.from(map.entries()).map(([key, scores]) => [key, average(scores)]));
 }
 
-function getCurrentMoodStreak(moodLogs: ReturnType<typeof useAppStore.getState>["moodLogs"]) {
+function getCurrentMoodStreak(moodLogs: MoodLog[]) {
   const moodByDate = buildMoodByDate(moodLogs);
   let streak = 0;
   for (let index = 0; index < 28; index += 1) {
@@ -56,7 +53,7 @@ function getCurrentMoodStreak(moodLogs: ReturnType<typeof useAppStore.getState>[
   return streak;
 }
 
-function getThreeDayTrend(moodLogs: ReturnType<typeof useAppStore.getState>["moodLogs"]) {
+function getThreeDayTrend(moodLogs: MoodLog[]) {
   const moodByDate = buildMoodByDate(moodLogs);
   const recentSix = getLastNDates(6)
     .map((date) => moodByDate.get(toDateKey(date)) ?? null)
@@ -68,8 +65,8 @@ function getThreeDayTrend(moodLogs: ReturnType<typeof useAppStore.getState>["moo
 }
 
 function getTopFoodsByMood(
-  moodLogs: ReturnType<typeof useAppStore.getState>["moodLogs"],
-  foodLogs: ReturnType<typeof useAppStore.getState>["foodLogs"],
+  moodLogs: MoodLog[],
+  foodLogs: FoodLog[],
   limit: number
 ) {
   const moodByDate = buildMoodByDate(moodLogs);
@@ -87,9 +84,9 @@ function getTopFoodsByMood(
 }
 
 function buildDailyReadPrompt(
-  moodLogs: ReturnType<typeof useAppStore.getState>["moodLogs"],
-  foodLogs: ReturnType<typeof useAppStore.getState>["foodLogs"],
-  trend: ReturnType<typeof useAppStore.getState>["foodMoodTrend"]
+  moodLogs: MoodLog[],
+  foodLogs: FoodLog[],
+  trend: FoodMoodTrendPoint[]
 ) {
   const todayMood = moodLogs[0];
   const yesterday = new Date();
@@ -102,8 +99,8 @@ function buildDailyReadPrompt(
 }
 
 function getGutMoodScore(
-  moodLogs: ReturnType<typeof useAppStore.getState>["moodLogs"],
-  foodLogs: ReturnType<typeof useAppStore.getState>["foodLogs"]
+  moodLogs: MoodLog[],
+  foodLogs: FoodLog[]
 ) {
   const weekKeys = getLastNDates(7).map(toDateKey);
   const weeklyMoodLogs = moodLogs.filter((log) => weekKeys.includes(toDateKey(log.loggedAt)));
@@ -161,7 +158,7 @@ function getWeeklySnapshotTitle(delta: number | null | undefined) {
 
 function getInsightMetricValue(
   insightType: string,
-  point: ReturnType<typeof useAppStore.getState>["foodMoodTrend"][number]
+  point: FoodMoodTrendPoint
 ) {
   if (insightType.includes("protein")) return point.protein;
   if (insightType.includes("fermented")) return point.fermentedCount;
@@ -170,8 +167,8 @@ function getInsightMetricValue(
 }
 
 function getPairedDays(
-  moodLogs: ReturnType<typeof useAppStore.getState>["moodLogs"],
-  foodLogs: ReturnType<typeof useAppStore.getState>["foodLogs"]
+  moodLogs: MoodLog[],
+  foodLogs: FoodLog[]
 ) {
   const moodDays = new Set(moodLogs.map((log) => toDateKey(log.loggedAt)));
   const foodDays = new Set(foodLogs.map((log) => toDateKey(log.loggedAt)));
@@ -208,38 +205,6 @@ function EditorialHeader({
   );
 }
 
-function PatternLockCard({
-  icon,
-  title,
-  body,
-  progress,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  title: string;
-  body: string;
-  progress: number;
-}) {
-  return (
-    <View style={[styles.patternCard, styles.patternCardLocked]}>
-      <BlurView intensity={35} tint="light" style={styles.lockedBlur}>
-        <View style={styles.lockedContent}>
-          <View style={styles.lockedIconWrap}>
-            <Ionicons name={icon} size={18} color={colors.accentPrimary} />
-          </View>
-          <Text style={styles.patternCardTitle}>{title}</Text>
-          <Text style={styles.patternBody}>{body}</Text>
-        </View>
-        <View style={styles.lockedProgressWrap}>
-          <View style={styles.lockedProgressTrack}>
-            <View style={[styles.lockedProgressFill, { width: `${Math.min((progress / 7) * 100, 100)}%` }]} />
-          </View>
-          <Text style={styles.lockedProgressLabel}>Day {Math.max(progress, 0)} of 7 logged</Text>
-        </View>
-      </BlurView>
-    </View>
-  );
-}
-
 function EmptyPatternDots() {
   return (
     <View style={styles.dotsIllustration} pointerEvents="none">
@@ -255,11 +220,11 @@ function EmptyPatternDots() {
 }
 
 export function GutMoodScoreCard() {
-  const moodLogs = useAppStore((state) => state.moodLogs);
-  const foodLogs = useAppStore((state) => state.foodLogs);
+  const moodLogs = useAppStore((state: AppState) => state.moodLogs);
+  const foodLogs = useAppStore((state: AppState) => state.foodLogs);
   const score = useMemo(() => getGutMoodScore(moodLogs, foodLogs), [foodLogs, moodLogs]);
   const tone = getGutMoodTone(score);
-  const scoreLeft = `${Math.min(Math.max(score, 4), 96)}%`;
+  const scoreLeft = `${Math.min(Math.max(score, 4), 96)}%` as DimensionValue;
 
   return (
     <Card>
@@ -287,8 +252,8 @@ export function GutMoodScoreCard() {
 }
 
 export function FoodMoodGate() {
-  const moodLogs = useAppStore((state) => state.moodLogs);
-  const foodLogs = useAppStore((state) => state.foodLogs);
+  const moodLogs = useAppStore((state: AppState) => state.moodLogs);
+  const foodLogs = useAppStore((state: AppState) => state.foodLogs);
   const pairedDays = useMemo(() => getPairedDays(moodLogs, foodLogs), [foodLogs, moodLogs]);
   const hasMood = moodLogs.length > 0;
   const hasFood = foodLogs.length > 0;
@@ -331,7 +296,7 @@ export function FoodMoodGate() {
 }
 
 export function StreakHeroCard() {
-  const moodLogs = useAppStore((state) => state.moodLogs);
+  const moodLogs = useAppStore((state: AppState) => state.moodLogs);
   const streak = useMemo(() => getCurrentMoodStreak(moodLogs), [moodLogs]);
 
   if (streak === 0) {
@@ -372,9 +337,9 @@ export function StreakHeroCard() {
 }
 
 export function DailyReadCard() {
-  const moodLogs = useAppStore((state) => state.moodLogs);
-  const foodLogs = useAppStore((state) => state.foodLogs);
-  const foodMoodTrend = useAppStore((state) => state.foodMoodTrend);
+  const moodLogs = useAppStore((state: AppState) => state.moodLogs);
+  const foodLogs = useAppStore((state: AppState) => state.foodLogs);
+  const foodMoodTrend = useAppStore((state: AppState) => state.foodMoodTrend);
   const [reply, setReply] = useState("");
   const [loading, setLoading] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
@@ -482,14 +447,31 @@ export function DailyReadCard() {
 }
 
 export function HorizontalInsightScroll() {
-  const moodLogs = useAppStore((state) => state.moodLogs);
-  const foodLogsData = useAppStore((state) => state.foodLogs);
+  const moodLogs = useAppStore((state: AppState) => state.moodLogs);
+  const foodLogsData = useAppStore((state: AppState) => state.foodLogs);
   const moodMap = useMemo(() => buildMoodByDate(moodLogs), [moodLogs]);
   const calendarDates = useMemo(() => getLastNDates(28), []);
   const betterDayFoods = useMemo(() => getTopFoodsByMood(moodLogs, foodLogsData, 4), [foodLogsData, moodLogs]);
   const pairedDays = useMemo(() => getPairedDays(moodLogs, foodLogsData), [foodLogsData, moodLogs]);
-  const hasMoodMap = moodMap.size >= 3;
-  const hasBetterDayPattern = betterDayFoods.length >= 2 && pairedDays >= 7;
+  const loggedMoodDays = useMemo(
+    () => calendarDates.filter((date) => moodMap.has(toDateKey(date))).length,
+    [calendarDates, moodMap]
+  );
+  const moodWeeks = useMemo(
+    () => Array.from({ length: 4 }, (_, index) => calendarDates.slice(index * 7, index * 7 + 7)),
+    [calendarDates]
+  );
+  const patternFoods = betterDayFoods.slice(0, 3);
+
+  const getPatternMoodColor = (score?: number | null) => {
+    const rounded = score == null ? null : clamp(Math.round(score), 1, 5);
+    if (rounded == null) return "#EDE8E3";
+    if (rounded === 1) return "#D4A89A";
+    if (rounded === 2) return "#C9956A";
+    if (rounded === 3) return "#B5C4A1";
+    if (rounded === 4) return "#89A87C";
+    return "#5C8A52";
+  };
 
   return (
     <View style={styles.sectionWrap}>
@@ -498,97 +480,67 @@ export function HorizontalInsightScroll() {
         title="What your data is saying"
         subtitle="A slower, more honest read of the connections taking shape."
       />
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        decelerationRate="fast"
-        snapToAlignment="start"
-        snapToInterval={PATTERN_CARD_WIDTH + PATTERN_CARD_GAP}
-        contentContainerStyle={styles.horizontalContent}
-      >
-        {hasMoodMap ? (
-          <View style={styles.patternCard}>
-            <View style={styles.patternHeaderRow}>
-              <Text style={styles.patternCardTitle}>28-day mood</Text>
-              <View style={styles.patternChip}>
-                <Text style={styles.patternChipText}>Live</Text>
+      <View style={styles.patternCardsStack}>
+        <Card>
+          <View style={styles.patternSurfaceCard}>
+            <Text style={styles.editorialEyebrow}>MOOD MAP</Text>
+            <Text style={styles.patternSurfaceTitle}>Your month at a glance</Text>
+            <View style={styles.patternHeatmapWrap}>
+              <View style={styles.patternWeekdayRow}>
+                {PATTERN_WEEKDAY_LABELS.map((label) => (
+                  <Text key={label} style={styles.patternWeekdayText}>
+                    {label}
+                  </Text>
+                ))}
               </View>
-            </View>
-            <Text style={styles.patternBody}>A calmer look at how your check-ins are spreading across the month.</Text>
-            <View style={styles.weekdayRow}>
-              {WEEKDAY_LABELS.map((label, index) => (
-                <Text key={`dow-${index}`} style={styles.scrollWeekdayText}>
-                  {label}
-                </Text>
-              ))}
-            </View>
-            <View style={styles.heatmapGrid}>
-              {calendarDates.map((date, index) => {
-                const key = toDateKey(date);
-                const moodScore = moodMap.get(key);
-                return (
-                  <View key={`heat-${index}`} style={styles.scrollHeatmapCellWrap}>
-                    <View
-                      style={[
-                        styles.scrollHeatmapCell,
-                        {
-                          backgroundColor: moodScore
-                            ? colors.mood[Math.round(moodScore) as 1 | 2 | 3 | 4 | 5]
-                            : "rgba(44, 26, 14, 0.08)",
-                        },
-                      ]}
-                    />
-                    <Text style={styles.dateText}>{date.getDate()}</Text>
+              <View style={styles.patternHeatmapRows}>
+                {moodWeeks.map((week, weekIndex) => (
+                  <View key={`pattern-week-${weekIndex}`} style={styles.patternHeatmapRow}>
+                    {week.map((date, dayIndex) => (
+                      <View
+                        key={`pattern-day-${weekIndex}-${dayIndex}`}
+                        style={[
+                          styles.patternHeatmapCell,
+                          { backgroundColor: getPatternMoodColor(moodMap.get(toDateKey(date))) },
+                        ]}
+                      />
+                    ))}
                   </View>
-                );
-              })}
-            </View>
-          </View>
-        ) : (
-          <PatternLockCard
-            icon="lock-closed-outline"
-            title="Mood map is warming up"
-            body="A few more check-ins will turn this into a real month view instead of a teaser."
-            progress={pairedDays}
-          />
-        )}
-
-        {hasBetterDayPattern ? (
-          <View style={styles.patternCard}>
-            <View style={styles.patternHeaderRow}>
-              <Text style={styles.patternCardTitle}>On your better days</Text>
-              <View style={[styles.patternChip, styles.patternChipSage]}>
-                <Text style={[styles.patternChipText, styles.patternChipTextSage]}>Unlocked</Text>
+                ))}
               </View>
             </View>
-            <Text style={styles.patternBody}>Foods that keep showing up when your mood trends steadier.</Text>
-            {betterDayFoods.map((item, index) => (
-              <View key={`food-${index}`} style={styles.foodRow}>
-                <Text style={styles.foodName}>{item.foodName}</Text>
-                <View style={styles.foodBarTrack}>
-                  <View
-                    style={[styles.foodBarFill, { width: Math.max((item.averageMood / 5) * 120, 12) }]}
-                  />
-                </View>
-                <Text style={styles.foodScore}>{item.averageMood.toFixed(1)}</Text>
-              </View>
-            ))}
+            <Text style={styles.patternMetaText}>{loggedMoodDays} of 28 days logged</Text>
           </View>
-        ) : (
-          <PatternLockCard
-            icon="sparkles-outline"
-            title="Your brighter-day foods"
-            body="Give Food-Mood a little more time and this card will surface what tends to support your steadier days."
-            progress={pairedDays}
-          />
-        )}
-      </ScrollView>
+        </Card>
+        <Card>
+          <View style={styles.patternSurfaceCard}>
+            <Text style={styles.editorialEyebrow}>YOUR PATTERN</Text>
+            <Text style={styles.patternSurfaceTitle}>Foods that show up on your better days</Text>
+            {pairedDays < 7 || !patternFoods.length ? (
+              <View style={styles.patternEmptyState}>
+                <Text style={styles.patternEmptyText}>
+                  Log a few more days and Food-Mood will surface which foods tend to appear when you're
+                  feeling your best.
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.patternPillWrap}>
+                {patternFoods.map((item) => (
+                  <View key={item.foodName} style={styles.patternFoodPill}>
+                    <Text style={styles.patternFoodPillText}>{item.foodName}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        </Card>
+      </View>
     </View>
   );
 }
 
 export function MoodHeatmap() {
-  const moodLogs = useAppStore((state) => state.moodLogs);
+  const moodLogs = useAppStore((state: AppState) => state.moodLogs);
 
   const cells = useMemo(() => {
     const moodMap = new Map(moodLogs.map((log) => [log.loggedAt.slice(0, 10), log.moodScore]));
@@ -658,8 +610,8 @@ export function MoodHeatmap() {
 }
 
 export function TopFoodsByMood() {
-  const moodLogs = useAppStore((state) => state.moodLogs);
-  const foodLogs = useAppStore((state) => state.foodLogs);
+  const moodLogs = useAppStore((state: AppState) => state.moodLogs);
+  const foodLogs = useAppStore((state: AppState) => state.foodLogs);
 
   const topFoods = useMemo(() => {
     const moodByDate = new Map(moodLogs.map((log) => [log.loggedAt.slice(0, 10), log.moodScore]));
@@ -719,8 +671,8 @@ export function TopFoodsByMood() {
 }
 
 export function WeeklySnapshot() {
-  const snapshot = useAppStore((state) => state.foodMoodSnapshot);
-  const insights = useAppStore((state) => state.insights);
+  const snapshot = useAppStore((state: AppState) => state.foodMoodSnapshot);
+  const insights = useAppStore((state: AppState) => state.insights);
   const weeklyLead = insights[0]?.insightBody;
   const isBuilding = snapshot?.moodDelta == null;
 
@@ -744,10 +696,10 @@ export function WeeklySnapshot() {
 }
 
 export function InsightFeed() {
-  const insights = useAppStore((state) => state.insights);
-  const insightsLoading = useAppStore((state) => state.insightsLoading);
-  const insightsError = useAppStore((state) => state.insightsError);
-  const trend = useAppStore((state) => state.foodMoodTrend);
+  const insights = useAppStore((state: AppState) => state.insights);
+  const insightsLoading = useAppStore((state: AppState) => state.insightsLoading);
+  const insightsError = useAppStore((state: AppState) => state.insightsError);
+  const trend = useAppStore((state: AppState) => state.foodMoodTrend);
 
   if (insightsLoading) {
     return (
@@ -842,8 +794,8 @@ export function InsightFeed() {
 
 export function TrendCard() {
   return null;
-  const profile = useAppStore((state) => state.profile);
-  const trend = useAppStore((state) => state.foodMoodTrend);
+  const profile = useAppStore((state: AppState) => state.profile);
+  const trend = useAppStore((state: AppState) => state.foodMoodTrend);
   const canViewThirtyDay = featureFlags.canSeeThirtyDayTrends(profile);
   const points = trend.length ? trend : [];
 
@@ -917,8 +869,8 @@ export function TrendCard() {
 
 export function NutrientSpotlight() {
   return null;
-  const profile = useAppStore((state) => state.profile);
-  const foodLogs = useAppStore((state) => state.foodLogs);
+  const profile = useAppStore((state: AppState) => state.profile);
+  const foodLogs = useAppStore((state: AppState) => state.foodLogs);
   const isVisible = featureFlags.canSeeNutrientSpotlight(profile);
   const lowFiber = foodLogs.length ? foodLogs.reduce((sum, item) => sum + item.fiberG, 0) < 20 : false;
 
@@ -1249,175 +1201,82 @@ const styles = StyleSheet.create({
   sectionWrap: {
     gap: 20,
   },
-  horizontalContent: {
-    gap: PATTERN_CARD_GAP,
-    paddingBottom: spacing.sm,
-    paddingRight: spacing.lg,
+  patternCardsStack: {
+    gap: spacing.md,
   },
-  patternCard: {
-    width: PATTERN_CARD_WIDTH,
-    borderRadius: 24,
-    backgroundColor: "#F6F0E9",
-    borderWidth: 1,
-    borderColor: "rgba(44, 26, 14, 0.08)",
-    padding: 24,
-    gap: spacing.sm,
-    shadowColor: "#8C6B55",
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 4,
-    overflow: "hidden",
-    justifyContent: "space-between",
-    minHeight: 280,
+  patternSurfaceCard: {
+    gap: spacing.md,
   },
-  patternCardLocked: {
-    backgroundColor: "rgba(255, 255, 255, 0.4)",
-    borderColor: "rgba(255, 255, 255, 0.45)",
-  },
-  lockedBlur: {
-    borderRadius: 24,
-    overflow: "hidden",
-    gap: spacing.sm,
-    flex: 1,
-    justifyContent: "space-between",
-  },
-  lockedContent: {
-    gap: spacing.sm,
-  },
-  lockedIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: radii.round,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(196, 98, 45, 0.08)",
-    borderWidth: 1,
-    borderColor: "rgba(196, 98, 45, 0.08)",
-    marginBottom: 16,
-  },
-  lockedProgressWrap: {
-    gap: 8,
-    marginTop: "auto",
-    paddingTop: spacing.xs,
-    paddingBottom: spacing.xs,
-  },
-  lockedProgressTrack: {
-    height: 4,
-    borderRadius: radii.round,
-    backgroundColor: "rgba(44, 26, 14, 0.08)",
-    overflow: "hidden",
-  },
-  lockedProgressFill: {
-    height: "100%",
-    borderRadius: radii.round,
-    backgroundColor: colors.accentPrimary,
-  },
-  lockedProgressLabel: {
-    fontSize: 12,
-    color: colors.textSecondary,
+  patternSurfaceTitle: {
+    fontSize: 24,
+    lineHeight: 30,
+    color: colors.textPrimary,
     fontWeight: "600",
   },
-  patternHeaderRow: {
+  patternHeatmapWrap: {
+    gap: 10,
+  },
+  patternWeekdayRow: {
     flexDirection: "row",
-    alignItems: "center",
     justifyContent: "space-between",
-    gap: spacing.sm,
+    gap: 6,
   },
-  patternCardTitle: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    textTransform: "uppercase",
-    letterSpacing: 1.6,
-    fontWeight: "700",
-  },
-  patternChip: {
-    borderRadius: radii.round,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: "rgba(232, 168, 56, 0.14)",
-  },
-  patternChipSage: {
-    backgroundColor: "rgba(138, 158, 123, 0.16)",
-  },
-  patternChipText: {
-    fontSize: 11,
-    color: "#9C6D17",
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    fontWeight: "700",
-  },
-  patternChipTextSage: {
-    color: colors.accentSecondary,
-  },
-  patternBody: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: colors.textSecondary,
-  },
-  scrollCard: {
-    width: 280,
-    borderRadius: radii.lg,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  scrollCardTitle: {
+  patternWeekdayText: {
+    flex: 1,
+    textAlign: "center",
     fontSize: 11,
     color: colors.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.8,
-  },
-  weekdayRow: {
-    flexDirection: "row",
-    gap: 4,
-  },
-  weekdayText: {
-    width: 32,
-    textAlign: "center",
-    fontSize: 11,
-    color: colors.textSecondary,
-  },
-  scrollWeekdayText: {
-    width: 28,
-    textAlign: "center",
-    fontSize: 11,
-    color: colors.textSecondary,
-  },
-  dateText: {
-    color: colors.textSecondary,
-    fontSize: 10,
-  },
-  foodRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-  },
-  foodName: {
-    flex: 1,
-    fontSize: 14,
-    color: colors.textPrimary,
     fontWeight: "600",
   },
-  foodBarTrack: {
-    width: 120,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.white,
-    overflow: "hidden",
+  patternHeatmapRows: {
+    gap: 6,
   },
-  foodBarFill: {
-    height: "100%",
-    borderRadius: 3,
-    backgroundColor: colors.accentSecondary,
+  patternHeatmapRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 6,
   },
-  foodScore: {
-    width: 32,
-    textAlign: "right",
-    fontSize: 13,
+  patternHeatmapCell: {
+    flex: 1,
+    aspectRatio: 1,
+    borderRadius: 8,
+  },
+  patternMetaText: {
+    fontSize: 14,
     color: colors.textSecondary,
+    lineHeight: 20,
+  },
+  patternEmptyState: {
+    backgroundColor: "rgba(255,255,255,0.58)",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "rgba(44, 26, 14, 0.06)",
+    padding: 18,
+  },
+  patternEmptyText: {
+    fontSize: 15,
+    lineHeight: 24,
+    color: colors.textSecondary,
+  },
+  patternPillWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+  },
+  patternFoodPill: {
+    borderRadius: radii.round,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: "rgba(196, 98, 45, 0.28)",
+    backgroundColor: "rgba(255,255,255,0.72)",
+  },
+  patternFoodPillText: {
+    fontSize: 14,
+    color: colors.accentPrimary,
+    fontWeight: "600",
   },
   emptyText: {
     fontSize: 15,
@@ -1571,19 +1430,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 4,
   },
-  scrollHeatmapCellWrap: {
-    width: 28,
-    alignItems: "center",
-    gap: 4,
-  },
   heatmapCell: {
     width: 32,
     height: 32,
-    borderRadius: 8,
-  },
-  scrollHeatmapCell: {
-    width: 28,
-    height: 28,
     borderRadius: 8,
   },
   heatmapDate: {

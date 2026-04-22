@@ -2,15 +2,15 @@ import { router } from "expo-router";
 import { useEffect, useState } from "react";
 import { Text } from "react-native";
 import { Card, Field, PrimaryButton, Screen, SectionTitle } from "@/components/ui";
-import { useAppStore } from "@/store/useAppStore";
+import { useAppStore, type AppState } from "@/store/useAppStore";
 
 export default function SignUpScreen() {
-  const signUp = useAppStore((state) => state.signUp);
-  const authLoading = useAppStore((state) => state.authLoading);
-  const authError = useAppStore((state) => state.authError);
-  const sessionReady = useAppStore((state) => state.sessionReady);
-  const isAuthenticated = useAppStore((state) => state.isAuthenticated);
-  const profile = useAppStore((state) => state.profile);
+  const signUp = useAppStore((state: AppState) => state.signUp);
+  const authLoading = useAppStore((state: AppState) => state.authLoading);
+  const authError = useAppStore((state: AppState) => state.authError);
+  const sessionReady = useAppStore((state: AppState) => state.sessionReady);
+  const isAuthenticated = useAppStore((state: AppState) => state.isAuthenticated);
+  const profile = useAppStore((state: AppState) => state.profile);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

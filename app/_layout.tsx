@@ -1,15 +1,32 @@
 import { useEffect } from "react";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import * as Notifications from "expo-notifications";
 import { Text, View } from "react-native";
 import { colors } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
-import { useAppStore } from "@/store/useAppStore";
+import {
+  requestNotificationPermission,
+  scheduleDailyMoodReminder,
+  scheduleLapseNudge,
+  scheduleWeeklyReport,
+} from "@/services/notifications";
+import { useAppStore, type AppState } from "@/store/useAppStore";
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: false,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
 
 export default function RootLayout() {
-  const initializeAuth = useAppStore((state) => state.initializeAuth);
-  const handleSessionChange = useAppStore((state) => state.handleSessionChange);
-  const sessionReady = useAppStore((state) => state.sessionReady);
+  const initializeAuth = useAppStore((state: AppState) => state.initializeAuth);
+  const handleSessionChange = useAppStore((state: AppState) => state.handleSessionChange);
+  const sessionReady = useAppStore((state: AppState) => state.sessionReady);
 
   useEffect(() => {
     void initializeAuth();
@@ -26,6 +43,17 @@ export default function RootLayout() {
       subscription.unsubscribe();
     };
   }, [handleSessionChange, initializeAuth]);
+
+  useEffect(() => {
+    void (async () => {
+      const granted = await requestNotificationPermission();
+      if (granted) {
+        await scheduleDailyMoodReminder();
+        await scheduleWeeklyReport();
+        await scheduleLapseNudge(null);
+      }
+    })();
+  }, []);
 
   if (!sessionReady) {
     return (

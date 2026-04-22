@@ -10,12 +10,13 @@ import {
   WeeklySnapshot,
 } from "@/components/food-mood";
 import { Screen } from "@/components/ui";
-import { useAppStore } from "@/store/useAppStore";
+import { useAppStore, type AppState } from "@/store/useAppStore";
+import type { FoodLog } from "@/types/models";
 
 export default function FoodMoodScreen() {
-  const loadFoodMoodInsights = useAppStore((state) => state.loadFoodMoodInsights);
-  const moodLogs = useAppStore((state) => state.moodLogs);
-  const foodLogs = useAppStore((state) => state.foodLogs);
+  const loadFoodMoodInsights = useAppStore((state: AppState) => state.loadFoodMoodInsights);
+  const moodLogs = useAppStore((state: AppState) => state.moodLogs);
+  const foodLogs = useAppStore((state: AppState) => state.foodLogs);
 
   const hasEnoughData = useMemo(() => {
     const cutoff = new Date();
@@ -25,18 +26,18 @@ export default function FoodMoodScreen() {
     const moodDays = new Set(
       moodLogs
         .map((log) => new Date(log.loggedAt))
-        .filter((date) => date >= cutoff)
-        .map((date) => date.toISOString().slice(0, 10))
+        .filter((date: Date) => date >= cutoff)
+        .map((date: Date) => date.toISOString().slice(0, 10))
     );
 
     const foodDays = new Set(
       foodLogs
-        .map((log) => new Date(log.loggedAt))
-        .filter((date) => date >= cutoff)
-        .map((date) => date.toISOString().slice(0, 10))
+        .map((log: FoodLog) => new Date(log.loggedAt))
+        .filter((date: Date) => date >= cutoff)
+        .map((date: Date) => date.toISOString().slice(0, 10))
     );
 
-    const pairedDays = Array.from(moodDays).filter((day) => foodDays.has(day)).length;
+    const pairedDays = Array.from(moodDays).filter((day: string) => foodDays.has(day)).length;
     return pairedDays >= 3;
   }, [foodLogs, moodLogs]);
 

@@ -5,11 +5,11 @@ import { useNavigation } from "expo-router";
 import { CoachChat } from "@/components/coach";
 import { Screen } from "@/components/ui";
 import { colors } from "@/constants/theme";
-import { useAppStore } from "@/store/useAppStore";
+import { useAppStore, type AppState } from "@/store/useAppStore";
 
 export default function CoachScreen() {
   const navigation = useNavigation();
-  const clearConversation = useAppStore((state) => state.clearConversation);
+  const clearConversation = useAppStore((state: AppState) => state.clearConversation);
 
   useLayoutEffect(() => {
     navigation.setOptions({

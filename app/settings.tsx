@@ -1,132 +1,180 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "expo-router";
-import { Animated, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, spacing } from "@/constants/theme";
-import { PrimaryButton, Screen, SectionTitle } from "@/components/ui";
-import { useAppStore } from "@/store/useAppStore";
+import { Card, Chip, Field, PrimaryButton, Screen, SectionTitle } from "@/components/ui";
+import { colors, radii, spacing } from "@/constants/theme";
+import { useAppStore, type AppState } from "@/store/useAppStore";
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const profile = useAppStore((state) => state.profile);
-  const signOut = useAppStore((state) => state.signOut);
-  const updateProfile = useAppStore((state) => state.updateProfile);
+  const profile = useAppStore((state: AppState) => state.profile);
+  const signOut = useAppStore((state: AppState) => state.signOut);
+  const updateProfile = useAppStore((state: AppState) => state.updateProfile);
+  const updateEmail = useAppStore((state: AppState) => state.updateEmail);
+  const deleteAccount = useAppStore((state: AppState) => state.deleteAccount);
+
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [isEditingEmail, setIsEditingEmail] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [emailDraft, setEmailDraft] = useState("");
   const [calorieGoal, setCalorieGoal] = useState("");
   const [proteinGoal, setProteinGoal] = useState("");
   const [carbsGoal, setCarbsGoal] = useState("");
   const [fatGoal, setFatGoal] = useState("");
   const [waterGoal, setWaterGoal] = useState("");
-  const [macroStatusMessage, setMacroStatusMessage] = useState("");
-  const [waterStatusMessage, setWaterStatusMessage] = useState("");
-  const [savingMacros, setSavingMacros] = useState(false);
-  const [savingWater, setSavingWater] = useState(false);
-  const [unitControlWidth, setUnitControlWidth] = useState(0);
-  const macroButtonScale = useRef(new Animated.Value(1)).current;
-  const waterButtonScale = useRef(new Animated.Value(1)).current;
-  const unitThumbOffset = useRef(new Animated.Value(profile?.preferredUnits === "metric" ? 1 : 0)).current;
-  const waterUnitLabel = profile?.preferredUnits === "metric" ? "ml" : "oz";
+  const [savingName, setSavingName] = useState(false);
+  const [savingEmail, setSavingEmail] = useState(false);
+  const [savingGoals, setSavingGoals] = useState(false);
+  const [savingUnits, setSavingUnits] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [profileMessage, setProfileMessage] = useState("");
+  const [emailMessage, setEmailMessage] = useState("");
+  const [unitMessage, setUnitMessage] = useState("");
+  const [goalsMessage, setGoalsMessage] = useState("");
+  const [accountMessage, setAccountMessage] = useState("");
+  const [dailyReminder, setDailyReminder] = useState(true);
+  const [lapseNudge, setLapseNudge] = useState(true);
+  const [weeklyReport, setWeeklyReport] = useState(true);
 
   useEffect(() => {
+    setNameDraft(profile?.name ?? "");
+    setEmailDraft(profile?.email ?? "");
     setCalorieGoal(profile?.dailyCalorieGoal != null ? String(profile.dailyCalorieGoal) : "");
     setProteinGoal(profile?.dailyProteinGoal != null ? String(profile.dailyProteinGoal) : "");
     setCarbsGoal(profile?.dailyCarbsGoal != null ? String(profile.dailyCarbsGoal) : "");
     setFatGoal(profile?.dailyFatGoal != null ? String(profile.dailyFatGoal) : "");
     setWaterGoal(profile?.dailyWaterGoal != null ? String(profile.dailyWaterGoal) : "");
-  }, [profile?.id]);
+  }, [profile]);
 
   useEffect(() => {
-    Animated.spring(unitThumbOffset, {
-      toValue: profile?.preferredUnits === "metric" ? 1 : 0,
-      useNativeDriver: true,
-      friction: 8,
-      tension: 120,
-    }).start();
-  }, [profile?.preferredUnits, unitThumbOffset]);
-
-  const handleUnitChange = async (value: "imperial" | "metric") => {
-    if (!profile || profile.preferredUnits === value) {
+    if (goalsMessage !== "Goals saved.") {
       return;
     }
 
-    const result = await updateProfile({ preferredUnits: value });
-    setMacroStatusMessage(result.error ? result.error : `Units updated to ${value}.`);
+    const timer = setTimeout(() => {
+      setGoalsMessage("");
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [goalsMessage]);
+
+  const waterUnitLabel = profile?.preferredUnits === "metric" ? "ml" : "oz";
+  const subscriptionLabel = useMemo(() => {
+    const tier = profile?.subscriptionTier ?? "free";
+    return tier.charAt(0).toUpperCase() + tier.slice(1);
+  }, [profile?.subscriptionTier]);
+
+  const handleSaveName = async () => {
+    setSavingName(true);
+    setProfileMessage("");
+
+    const result = await updateProfile({
+      name: nameDraft.trim(),
+    });
+
+    setSavingName(false);
+
+    if (result.error) {
+      setProfileMessage(result.error);
+      return;
+    }
+
+    setIsEditingName(false);
+    setProfileMessage("Name saved.");
   };
 
-  const pulseButton = (value: Animated.Value) => {
-    Animated.sequence([
-      Animated.timing(value, {
-        toValue: 0.96,
-        duration: 90,
-        useNativeDriver: true,
-      }),
-      Animated.spring(value, {
-        toValue: 1,
-        useNativeDriver: true,
-        friction: 5,
-        tension: 180,
-      }),
-    ]).start();
+  const handleSaveEmail = async () => {
+    setSavingEmail(true);
+    setEmailMessage("");
+
+    const result = await updateEmail(emailDraft);
+
+    setSavingEmail(false);
+
+    if (result.error) {
+      setEmailMessage(result.error);
+      return;
+    }
+
+    setIsEditingEmail(false);
+    setEmailMessage("Email updated.");
+  };
+
+  const handleUnitChange = async (next: "imperial" | "metric") => {
+    if (!profile || profile.preferredUnits === next || savingUnits) {
+      return;
+    }
+
+    setSavingUnits(true);
+    setUnitMessage("");
+
+    const result = await updateProfile({
+      preferredUnits: next,
+    });
+
+    setSavingUnits(false);
+
+    if (result.error) {
+      setUnitMessage(result.error);
+    }
   };
 
   const handleSaveGoals = async () => {
-    setSavingMacros(true);
-    setMacroStatusMessage("");
-    pulseButton(macroButtonScale);
-
-    const coreResult = await updateProfile({
-      dailyCalorieGoal: calorieGoal.trim() ? Number(calorieGoal) : undefined,
-      dailyProteinGoal: proteinGoal.trim() ? Number(proteinGoal) : undefined,
-    });
-
-    if (coreResult.error) {
-      setMacroStatusMessage(coreResult.error);
-      setSavingMacros(false);
-      return;
-    }
-
-    const shouldSaveCarbs = carbsGoal.trim().length > 0;
-    const shouldSaveFat = fatGoal.trim().length > 0;
-
-    if (!shouldSaveCarbs && !shouldSaveFat) {
-      setMacroStatusMessage("Macro goals saved.");
-      setSavingMacros(false);
-      return;
-    }
-
-    const extendedResult = await updateProfile({
-      ...(shouldSaveCarbs ? { dailyCarbsGoal: Number(carbsGoal) } : {}),
-      ...(shouldSaveFat ? { dailyFatGoal: Number(fatGoal) } : {}),
-    });
-
-    if (extendedResult.error) {
-      setMacroStatusMessage(`Calories and protein saved. ${extendedResult.error}`);
-      setSavingMacros(false);
-      return;
-    }
-
-    setMacroStatusMessage("Macro goals saved.");
-    setSavingMacros(false);
-  };
-
-  const handleSaveWaterGoal = async () => {
-    setSavingWater(true);
-    setWaterStatusMessage("");
-    pulseButton(waterButtonScale);
+    setSavingGoals(true);
+    setGoalsMessage("");
 
     const result = await updateProfile({
+      dailyCalorieGoal: calorieGoal.trim() ? Number(calorieGoal) : undefined,
+      dailyProteinGoal: proteinGoal.trim() ? Number(proteinGoal) : undefined,
+      dailyCarbsGoal: carbsGoal.trim() ? Number(carbsGoal) : undefined,
+      dailyFatGoal: fatGoal.trim() ? Number(fatGoal) : undefined,
       dailyWaterGoal: waterGoal.trim() ? Number(waterGoal) : undefined,
     });
 
-    setWaterStatusMessage(result.error ? result.error : "Hydration goal saved.");
-    setSavingWater(false);
+    setSavingGoals(false);
+    setGoalsMessage(result.error ?? "Goals saved.");
   };
 
-  const unitThumbTravel = Math.max(unitControlWidth / 2 - 6, 0);
-  const unitThumbTranslateX = unitThumbOffset.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, unitThumbTravel],
-  });
-  const waterStep = profile?.preferredUnits === "metric" ? 250 : 8;
+  const handleSignOut = async () => {
+    setSigningOut(true);
+    await signOut();
+    setSigningOut(false);
+    router.replace("/welcome");
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      "Delete account?",
+      "This will permanently delete your data and cannot be undone.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            void (async () => {
+              setDeletingAccount(true);
+              setAccountMessage("");
+              const result = await deleteAccount();
+              setDeletingAccount(false);
+
+              if (result.error) {
+                setAccountMessage(result.error);
+                return;
+              }
+
+              router.replace("/welcome");
+            })();
+          },
+        },
+      ]
+    );
+  };
 
   return (
     <Screen scroll>
@@ -140,307 +188,230 @@ export default function SettingsScreen() {
 
         <SectionTitle
           eyebrow="Preferences"
-          title="Graceful defaults, tuned to you"
-          subtitle="Each setting helps the app reflect your body, your routine, and the kind of steadiness you want more of."
+          title="Your profile, goals, and defaults"
+          subtitle="A quieter place to keep SavorSelf aligned with your name, your goals, and the kind of support you want from it."
         />
 
-        <View style={styles.card}>
-          <View style={styles.sectionHeader}>
-            <View style={[styles.sectionIconWrap, styles.sectionIconSoft]}>
-              <Ionicons name="swap-horizontal" size={18} color={colors.accentPrimary} />
+        <Card>
+          <Text style={styles.heading}>Profile</Text>
+
+          <View style={styles.infoBlock}>
+            <View style={styles.inlineLabelRow}>
+              <Text style={styles.itemLabel}>Name</Text>
+              {!isEditingName ? (
+                <Pressable onPress={() => setIsEditingName(true)}>
+                  <Text style={styles.editLink}>Edit</Text>
+                </Pressable>
+              ) : null}
             </View>
-            <View style={styles.sectionCopy}>
-              <Text style={styles.heading}>Units</Text>
-              <Text style={styles.subtext}>
-                Keeping units natural to you makes hydration and nutrition cues easier to trust and act on.
-              </Text>
-            </View>
+            {!isEditingName ? (
+              <Text style={styles.profileValue}>{profile?.name || "Add your name"}</Text>
+            ) : (
+              <View style={styles.editWrap}>
+                <Field label="Name" value={nameDraft} onChangeText={setNameDraft} placeholder="Your name" />
+                <View style={styles.actionRow}>
+                  <PrimaryButton label={savingName ? "Saving..." : "Save"} onPress={() => void handleSaveName()} />
+                  <PrimaryButton
+                    label="Cancel"
+                    secondary
+                    onPress={() => {
+                      setNameDraft(profile?.name ?? "");
+                      setIsEditingName(false);
+                      setProfileMessage("");
+                    }}
+                  />
+                </View>
+              </View>
+            )}
           </View>
 
-          <View
-            style={styles.segmentedControl}
-            onLayout={(event) => setUnitControlWidth(event.nativeEvent.layout.width)}
-          >
-            <Animated.View
-              style={[
-                styles.segmentedThumb,
-                {
-                  width: unitControlWidth > 0 ? unitControlWidth / 2 - 6 : "50%",
-                  transform: [{ translateX: unitThumbTranslateX }],
-                },
-              ]}
+          <View style={styles.infoBlock}>
+            <View style={styles.inlineLabelRow}>
+              <Text style={styles.itemLabel}>Email</Text>
+              {!isEditingEmail ? (
+                <Pressable onPress={() => setIsEditingEmail(true)}>
+                  <Text style={styles.editLink}>Edit</Text>
+                </Pressable>
+              ) : null}
+            </View>
+            {!isEditingEmail ? (
+              <Text style={styles.metaValue}>{profile?.email || "No email yet"}</Text>
+            ) : (
+              <View style={styles.editWrap}>
+                <Field label="Email" value={emailDraft} onChangeText={setEmailDraft} placeholder="you@example.com" />
+                <View style={styles.actionRow}>
+                  <PrimaryButton label={savingEmail ? "Saving..." : "Save"} onPress={() => void handleSaveEmail()} />
+                  <PrimaryButton
+                    label="Cancel"
+                    secondary
+                    onPress={() => {
+                      setEmailDraft(profile?.email ?? "");
+                      setIsEditingEmail(false);
+                      setEmailMessage("");
+                    }}
+                  />
+                </View>
+              </View>
+            )}
+          </View>
+
+          {profileMessage ? <Text style={styles.status}>{profileMessage}</Text> : null}
+          {emailMessage ? <Text style={styles.status}>{emailMessage}</Text> : null}
+        </Card>
+
+        <Card>
+          <Text style={styles.heading}>Units</Text>
+          <Text style={styles.subtext}>Choose the measurement system that feels most natural when you log and review your day.</Text>
+          <View style={styles.chipRow}>
+            <Chip
+              label="Imperial"
+              active={profile?.preferredUnits === "imperial"}
+              onPress={() => void handleUnitChange("imperial")}
             />
-            <Pressable style={styles.segmentButton} onPress={() => void handleUnitChange("imperial")}>
-              <Text style={[styles.segmentText, profile?.preferredUnits === "imperial" && styles.segmentTextActive]}>Imperial</Text>
-            </Pressable>
-            <Pressable style={styles.segmentButton} onPress={() => void handleUnitChange("metric")}>
-              <Text style={[styles.segmentText, profile?.preferredUnits === "metric" && styles.segmentTextActive]}>Metric</Text>
-            </Pressable>
+            <Chip
+              label="Metric"
+              active={profile?.preferredUnits === "metric"}
+              onPress={() => void handleUnitChange("metric")}
+            />
           </View>
-        </View>
+          {savingUnits ? <Text style={styles.status}>Saving units...</Text> : null}
+          {unitMessage ? <Text style={styles.status}>{unitMessage}</Text> : null}
+        </Card>
 
-        <View style={styles.card}>
-          <View style={styles.sectionHeader}>
-            <View style={[styles.sectionIconWrap, styles.sectionIconSage]}>
-              <Ionicons name="leaf-outline" size={18} color={colors.accentSecondary} />
-            </View>
-            <View style={styles.sectionCopy}>
-              <Text style={styles.heading}>Macro Goals</Text>
-              <Text style={styles.subtext}>
-                Gentle macro targets can support steadier blood sugar, calmer energy, and clearer mood patterns.
-              </Text>
-            </View>
-          </View>
+        <Card>
+          <Text style={styles.heading}>Daily Goals</Text>
+          <Text style={styles.subtext}>These targets shape the nutrition and hydration context SavorSelf reflects back to you.</Text>
 
-          <View style={styles.stepperGroup}>
-            <View style={styles.stepperRow}>
-              <View style={styles.stepperLabelWrap}>
-                <Text style={styles.label}>Calories</Text>
-                <Text style={styles.stepperHint}>per day</Text>
+          <View style={styles.goalStack}>
+            <View style={styles.goalRow}>
+              <View style={styles.goalCopy}>
+                <Text style={styles.goalLabel}>Calories</Text>
+                <Text style={styles.goalHint}>calories</Text>
               </View>
-              <View style={styles.stepperControl}>
-                <Pressable
-                  style={styles.stepperButton}
-                  onPress={() => setCalorieGoal(String(Math.max(0, (Number(calorieGoal) || 0) - 50)))}
-                >
-                  <Ionicons name="remove" size={18} color={colors.textPrimary} />
-                </Pressable>
-                <TextInput
-                  value={calorieGoal}
-                  onChangeText={setCalorieGoal}
-                  keyboardType="numeric"
-                  placeholder="0"
-                  placeholderTextColor={colors.textSecondary}
-                  style={styles.stepperInput}
-                />
-                <Pressable
-                  style={styles.stepperButton}
-                  onPress={() => setCalorieGoal(String((Number(calorieGoal) || 0) + 50))}
-                >
-                  <Ionicons name="add" size={18} color={colors.textPrimary} />
-                </Pressable>
-              </View>
+              <TextInput
+                value={calorieGoal}
+                onChangeText={setCalorieGoal}
+                keyboardType="numeric"
+                placeholder="calories"
+                placeholderTextColor={colors.textSecondary}
+                style={styles.goalInput}
+              />
             </View>
 
-            <View style={styles.stepperRow}>
-              <View style={styles.stepperLabelWrap}>
-                <Text style={styles.label}>Protein</Text>
-                <Text style={styles.stepperHint}>grams</Text>
+            <View style={styles.goalRow}>
+              <View style={styles.goalCopy}>
+                <Text style={styles.goalLabel}>Protein</Text>
+                <Text style={styles.goalHint}>grams</Text>
               </View>
-              <View style={styles.stepperControl}>
-                <Pressable
-                  style={styles.stepperButton}
-                  onPress={() => setProteinGoal(String(Math.max(0, (Number(proteinGoal) || 0) - 5)))}
-                >
-                  <Ionicons name="remove" size={18} color={colors.textPrimary} />
-                </Pressable>
-                <TextInput
-                  value={proteinGoal}
-                  onChangeText={setProteinGoal}
-                  keyboardType="numeric"
-                  placeholder="0"
-                  placeholderTextColor={colors.textSecondary}
-                  style={styles.stepperInput}
-                />
-                <Pressable
-                  style={styles.stepperButton}
-                  onPress={() => setProteinGoal(String((Number(proteinGoal) || 0) + 5))}
-                >
-                  <Ionicons name="add" size={18} color={colors.textPrimary} />
-                </Pressable>
-              </View>
+              <TextInput
+                value={proteinGoal}
+                onChangeText={setProteinGoal}
+                keyboardType="numeric"
+                placeholder="grams"
+                placeholderTextColor={colors.textSecondary}
+                style={styles.goalInput}
+              />
             </View>
 
-            <View style={styles.stepperRow}>
-              <View style={styles.stepperLabelWrap}>
-                <Text style={styles.label}>Carbs</Text>
-                <Text style={styles.stepperHint}>grams</Text>
+            <View style={styles.goalRow}>
+              <View style={styles.goalCopy}>
+                <Text style={styles.goalLabel}>Carbs</Text>
+                <Text style={styles.goalHint}>grams</Text>
               </View>
-              <View style={styles.stepperControl}>
-                <Pressable
-                  style={styles.stepperButton}
-                  onPress={() => setCarbsGoal(String(Math.max(0, (Number(carbsGoal) || 0) - 5)))}
-                >
-                  <Ionicons name="remove" size={18} color={colors.textPrimary} />
-                </Pressable>
-                <TextInput
-                  value={carbsGoal}
-                  onChangeText={setCarbsGoal}
-                  keyboardType="numeric"
-                  placeholder="0"
-                  placeholderTextColor={colors.textSecondary}
-                  style={styles.stepperInput}
-                />
-                <Pressable
-                  style={styles.stepperButton}
-                  onPress={() => setCarbsGoal(String((Number(carbsGoal) || 0) + 5))}
-                >
-                  <Ionicons name="add" size={18} color={colors.textPrimary} />
-                </Pressable>
+              <TextInput
+                value={carbsGoal}
+                onChangeText={setCarbsGoal}
+                keyboardType="numeric"
+                placeholder="grams"
+                placeholderTextColor={colors.textSecondary}
+                style={styles.goalInput}
+              />
+            </View>
+
+            <View style={styles.goalRow}>
+              <View style={styles.goalCopy}>
+                <Text style={styles.goalLabel}>Fat</Text>
+                <Text style={styles.goalHint}>grams</Text>
               </View>
+              <TextInput
+                value={fatGoal}
+                onChangeText={setFatGoal}
+                keyboardType="numeric"
+                placeholder="grams"
+                placeholderTextColor={colors.textSecondary}
+                style={styles.goalInput}
+              />
             </View>
 
-            <View style={styles.stepperRow}>
-              <View style={styles.stepperLabelWrap}>
-                <Text style={styles.label}>Fat</Text>
-                <Text style={styles.stepperHint}>grams</Text>
+            <View style={styles.goalRow}>
+              <View style={styles.goalCopy}>
+                <Text style={styles.goalLabel}>Water</Text>
+                <Text style={styles.goalHint}>{waterUnitLabel}</Text>
               </View>
-              <View style={styles.stepperControl}>
-                <Pressable
-                  style={styles.stepperButton}
-                  onPress={() => setFatGoal(String(Math.max(0, (Number(fatGoal) || 0) - 5)))}
-                >
-                  <Ionicons name="remove" size={18} color={colors.textPrimary} />
-                </Pressable>
-                <TextInput
-                  value={fatGoal}
-                  onChangeText={setFatGoal}
-                  keyboardType="numeric"
-                  placeholder="0"
-                  placeholderTextColor={colors.textSecondary}
-                  style={styles.stepperInput}
-                />
-                <Pressable
-                  style={styles.stepperButton}
-                  onPress={() => setFatGoal(String((Number(fatGoal) || 0) + 5))}
-                >
-                  <Ionicons name="add" size={18} color={colors.textPrimary} />
-                </Pressable>
-              </View>
-            </View>
-          </View>
-
-          <Animated.View style={[styles.buttonWrap, { transform: [{ scale: macroButtonScale }] }]}>
-            <PrimaryButton label={savingMacros ? "Saving..." : "Save Goals"} onPress={() => void handleSaveGoals()} />
-          </Animated.View>
-          {macroStatusMessage ? <Text style={styles.status}>{macroStatusMessage}</Text> : null}
-        </View>
-
-        <View style={styles.card}>
-          <View style={styles.sectionHeader}>
-            <View style={[styles.sectionIconWrap, styles.sectionIconWater]}>
-              <Ionicons name="water-outline" size={18} color={colors.blue} />
-            </View>
-            <View style={styles.sectionCopy}>
-              <Text style={styles.heading}>Hydration</Text>
-              <Text style={styles.subtext}>
-                Hydration quietly shapes digestion, focus, and how settled your nervous system feels through the day.
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.hydrationHero}>
-            <Text style={styles.hydrationValue}>{waterGoal || "0"}</Text>
-            <Text style={styles.hydrationUnit}>{waterUnitLabel} daily target</Text>
-          </View>
-
-          <View style={styles.stepperRow}>
-            <View style={styles.stepperLabelWrap}>
-              <Text style={styles.label}>Water Goal</Text>
-              <Text style={styles.stepperHint}>in {waterUnitLabel}</Text>
-            </View>
-            <View style={styles.stepperControl}>
-              <Pressable
-                style={styles.stepperButton}
-                onPress={() => setWaterGoal(String(Math.max(0, (Number(waterGoal) || 0) - waterStep)))}
-              >
-                <Ionicons name="remove" size={18} color={colors.textPrimary} />
-              </Pressable>
               <TextInput
                 value={waterGoal}
                 onChangeText={setWaterGoal}
                 keyboardType="numeric"
-                placeholder="0"
+                placeholder={waterUnitLabel}
                 placeholderTextColor={colors.textSecondary}
-                style={styles.stepperInput}
+                style={styles.goalInput}
               />
-              <Pressable
-                style={styles.stepperButton}
-                onPress={() => setWaterGoal(String((Number(waterGoal) || 0) + waterStep))}
-              >
-                <Ionicons name="add" size={18} color={colors.textPrimary} />
-              </Pressable>
             </View>
           </View>
 
-          <Text style={styles.helper}>Small daily consistency here tends to support better digestion and steadier energy.</Text>
+          <PrimaryButton label={savingGoals ? "Saving..." : "Save goals"} onPress={() => void handleSaveGoals()} />
+          {goalsMessage ? <Text style={styles.status}>{goalsMessage}</Text> : null}
+        </Card>
 
-          <Animated.View style={[styles.buttonWrap, { transform: [{ scale: waterButtonScale }] }]}>
-            <PrimaryButton
-              label={savingWater ? "Saving..." : "Save Water Goal"}
-              onPress={() => void handleSaveWaterGoal()}
-              secondary
+        <Card>
+          <Text style={styles.heading}>Subscription</Text>
+          <Text style={styles.profileValue}>{subscriptionLabel}</Text>
+          <Text style={styles.subtext}>Premium features coming soon.</Text>
+        </Card>
+
+        <Card>
+          <Text style={styles.heading}>Notifications</Text>
+          <Text style={styles.subtext}>These are local for now, but they make the settings feel real and ready for the next step.</Text>
+
+          <View style={styles.switchRow}>
+            <Text style={styles.switchLabel}>Daily mood check-in reminder</Text>
+            <Switch
+              value={dailyReminder}
+              onValueChange={setDailyReminder}
+              trackColor={{ false: "#D9D0C7", true: "#E9D0BF" }}
+              thumbColor={dailyReminder ? colors.accentPrimary : colors.white}
             />
-          </Animated.View>
-          {waterStatusMessage ? <Text style={styles.status}>{waterStatusMessage}</Text> : null}
-        </View>
-
-        <View style={[styles.card, styles.proCard]}>
-          <View style={styles.proGlowOne} />
-          <View style={styles.proGlowTwo} />
-          <View style={styles.proTopRow}>
-            <View style={styles.proBadge}>
-              <Text style={styles.proBadgeText}>PRO</Text>
-            </View>
-            <Text style={styles.proTier}>Tier: {profile?.subscriptionTier ?? "free"}</Text>
-          </View>
-          <Text style={styles.proTitle}>Subscription</Text>
-          <Text style={styles.proBody}>
-            Premium space for deeper insights, richer reports, and a more tailored gut-brain experience.
-          </Text>
-          <View style={styles.proPlaceholder}>
-            <Ionicons name="sparkles-outline" size={16} color={colors.accentPrimary} />
-            <Text style={styles.proPlaceholderText}>RevenueCat can plug in here when monetization turns on.</Text>
-          </View>
-        </View>
-
-        <View style={styles.card}>
-          <View style={styles.sectionHeader}>
-            <View style={[styles.sectionIconWrap, styles.sectionIconNotification]}>
-              <Ionicons name="notifications-outline" size={18} color={colors.accentPrimary} />
-            </View>
-            <View style={styles.sectionCopy}>
-              <Text style={styles.heading}>Notifications</Text>
-              <Text style={styles.subtext}>
-                Gentle reminders work best when they feel supportive, not demanding, especially for habit-building and mood tracking.
-              </Text>
-            </View>
           </View>
 
-          <View style={styles.notificationRow}>
-            <View>
-              <Text style={styles.notificationTitle}>Daily morning check-in</Text>
-              <Text style={styles.notificationText}>A soft reset to notice mood, meals, and how your body is landing today.</Text>
-            </View>
-            <View style={styles.notificationPill}>
-              <Text style={styles.notificationPillText}>Soon</Text>
-            </View>
+          <View style={styles.switchRow}>
+            <Text style={styles.switchLabel}>Two-day lapse nudge</Text>
+            <Switch
+              value={lapseNudge}
+              onValueChange={setLapseNudge}
+              trackColor={{ false: "#D9D0C7", true: "#E9D0BF" }}
+              thumbColor={lapseNudge ? colors.accentPrimary : colors.white}
+            />
           </View>
 
-          <View style={styles.notificationRow}>
-            <View>
-              <Text style={styles.notificationTitle}>Two-day lapse nudge</Text>
-              <Text style={styles.notificationText}>A warm re-entry cue when logging has gone quiet for a couple of days.</Text>
-            </View>
-            <View style={styles.notificationPill}>
-              <Text style={styles.notificationPillText}>Soon</Text>
-            </View>
+          <View style={styles.switchRow}>
+            <Text style={styles.switchLabel}>Weekly Food-Mood report</Text>
+            <Switch
+              value={weeklyReport}
+              onValueChange={setWeeklyReport}
+              trackColor={{ false: "#D9D0C7", true: "#E9D0BF" }}
+              thumbColor={weeklyReport ? colors.accentPrimary : colors.white}
+            />
           </View>
+        </Card>
 
-          <View style={[styles.notificationRow, styles.notificationRowLast]}>
-            <View>
-              <Text style={styles.notificationTitle}>Weekly Food-Mood report</Text>
-              <Text style={styles.notificationText}>A calmer end-of-week glance at what is starting to connect in your patterns.</Text>
-            </View>
-            <View style={styles.notificationPill}>
-              <Text style={styles.notificationPillText}>Soon</Text>
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.signOutWrap}>
-          <PrimaryButton label="Sign out" secondary onPress={() => void signOut()} />
-        </View>
+        <Card>
+          <Text style={styles.heading}>Account</Text>
+          <PrimaryButton label={signingOut ? "Signing out..." : "Sign out"} secondary onPress={() => void handleSignOut()} />
+          <Pressable style={styles.deleteButton} onPress={handleDeleteAccount}>
+            <Text style={styles.deleteButtonText}>{deletingAccount ? "Deleting..." : "Delete account"}</Text>
+          </Pressable>
+          {accountMessage ? <Text style={styles.status}>{accountMessage}</Text> : null}
+        </Card>
       </View>
     </Screen>
   );
@@ -455,7 +426,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
     marginBottom: spacing.xs,
   },
@@ -475,112 +445,63 @@ const styles = StyleSheet.create({
     borderColor: "rgba(196, 98, 45, 0.22)",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#2C1A0E",
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 2,
-  },
-  closeText: {
-    color: colors.accentPrimary,
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  card: {
-    backgroundColor: colors.white,
-    borderRadius: 24,
-    padding: spacing.lg,
-    gap: spacing.md,
-    shadowColor: "#2C1A0E",
-    shadowOpacity: 0.06,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 3,
-  },
-  sectionHeader: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: spacing.sm,
-  },
-  sectionIconWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 2,
-  },
-  sectionIconSoft: {
-    backgroundColor: "#F8ECE2",
-  },
-  sectionIconSage: {
-    backgroundColor: "#ECF2EA",
-  },
-  sectionIconWater: {
-    backgroundColor: "#EAF2F9",
-  },
-  sectionIconNotification: {
-    backgroundColor: "#F8ECE2",
-  },
-  sectionCopy: {
-    flex: 1,
-    gap: 6,
   },
   heading: {
     color: colors.textPrimary,
-    fontSize: 21,
-    fontWeight: "700",
+    fontSize: 18,
+    fontWeight: "600",
   },
   subtext: {
     color: colors.textSecondary,
     fontSize: 14,
     lineHeight: 22,
   },
-  segmentedControl: {
-    position: "relative",
+  infoBlock: {
+    gap: 6,
+  },
+  inlineLabelRow: {
     flexDirection: "row",
-    backgroundColor: "#F2EDE6",
-    borderRadius: 20,
-    padding: 3,
-    overflow: "hidden",
-  },
-  segmentedThumb: {
-    position: "absolute",
-    top: 3,
-    bottom: 3,
-    left: 3,
-    borderRadius: 17,
-    backgroundColor: "#FDFBF8",
-    shadowColor: "#2C1A0E",
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
-  },
-  segmentButton: {
-    flex: 1,
+    justifyContent: "space-between",
     alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 14,
-    zIndex: 1,
-  },
-  segmentText: {
-    color: colors.textSecondary,
-    fontSize: 15,
-    fontWeight: "600",
-  },
-  segmentTextActive: {
-    color: colors.textPrimary,
-  },
-  label: {
-    color: colors.textPrimary,
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  stepperGroup: {
     gap: spacing.sm,
   },
-  stepperRow: {
+  itemLabel: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    fontWeight: "600",
+  },
+  profileValue: {
+    color: colors.textPrimary,
+    fontSize: 20,
+    fontWeight: "600",
+  },
+  metaValue: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    lineHeight: 22,
+  },
+  editLink: {
+    color: colors.accentPrimary,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  editWrap: {
+    gap: spacing.sm,
+  },
+  actionRow: {
+    gap: spacing.sm,
+  },
+  chipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+  },
+  goalStack: {
+    gap: spacing.sm,
+  },
+  goalRow: {
     backgroundColor: "#F7F2EB",
     borderRadius: 20,
     paddingHorizontal: spacing.md,
@@ -590,184 +511,65 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: spacing.md,
   },
-  stepperLabelWrap: {
-    gap: 4,
+  goalCopy: {
     flex: 1,
+    gap: 4,
   },
-  stepperHint: {
+  goalLabel: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  goalHint: {
     color: colors.textSecondary,
     fontSize: 12,
     textTransform: "uppercase",
     letterSpacing: 0.6,
     fontWeight: "600",
   },
-  stepperControl: {
-    flexDirection: "row",
-    alignItems: "center",
+  goalInput: {
+    minWidth: 104,
     backgroundColor: colors.white,
-    borderRadius: 18,
-    paddingHorizontal: 6,
-    paddingVertical: 6,
-    minWidth: 170,
-    justifyContent: "space-between",
-  },
-  stepperButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#F2EDE6",
-  },
-  stepperInput: {
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     color: colors.textPrimary,
     fontSize: 18,
     fontWeight: "700",
     textAlign: "center",
-    minWidth: 62,
-    paddingHorizontal: 10,
-    paddingVertical: 0,
+    borderWidth: 1,
+    borderColor: "rgba(44, 26, 14, 0.08)",
   },
-  buttonWrap: {
-    marginTop: spacing.xs,
-  },
-  hydrationHero: {
-    backgroundColor: "#EEF4F8",
-    borderRadius: 22,
-    padding: spacing.lg,
+  switchRow: {
     alignItems: "center",
-    gap: 4,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: spacing.md,
+    paddingVertical: spacing.xs,
   },
-  hydrationValue: {
+  switchLabel: {
     color: colors.textPrimary,
-    fontSize: 38,
-    fontWeight: "800",
-  },
-  hydrationUnit: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
-    fontWeight: "600",
-  },
-  helper: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    lineHeight: 20,
+    flex: 1,
+    fontSize: 16,
+    lineHeight: 22,
   },
   status: {
     color: colors.accentPrimary,
     fontSize: 14,
     lineHeight: 20,
   },
-  proCard: {
-    overflow: "hidden",
-    backgroundColor: "#FFF6EE",
-  },
-  proGlowOne: {
-    position: "absolute",
-    top: -30,
-    right: -10,
-    width: 150,
-    height: 150,
-    borderRadius: 75,
-    backgroundColor: "rgba(196, 98, 45, 0.16)",
-  },
-  proGlowTwo: {
-    position: "absolute",
-    bottom: -46,
-    left: -20,
-    width: 170,
-    height: 170,
-    borderRadius: 85,
-    backgroundColor: "rgba(138, 158, 123, 0.14)",
-  },
-  proTopRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
+  deleteButton: {
     alignItems: "center",
+    backgroundColor: colors.white,
+    borderColor: colors.border,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 14,
   },
-  proBadge: {
-    backgroundColor: colors.textPrimary,
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  proBadgeText: {
-    color: colors.white,
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 0.9,
-  },
-  proTier: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: "600",
-    textTransform: "capitalize",
-  },
-  proTitle: {
-    color: colors.textPrimary,
-    fontSize: 24,
-    fontWeight: "700",
-  },
-  proBody: {
-    color: colors.textSecondary,
-    fontSize: 15,
-    lineHeight: 24,
-    maxWidth: "88%",
-  },
-  proPlaceholder: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    backgroundColor: "rgba(255,255,255,0.68)",
-    borderRadius: 18,
-    padding: spacing.md,
-  },
-  proPlaceholderText: {
-    flex: 1,
-    color: colors.textPrimary,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  notificationRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: spacing.md,
-    paddingBottom: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(44, 26, 14, 0.06)",
-  },
-  notificationRowLast: {
-    paddingBottom: 0,
-    borderBottomWidth: 0,
-  },
-  notificationTitle: {
-    color: colors.textPrimary,
+  deleteButtonText: {
+    color: "#C4622D",
     fontSize: 16,
     fontWeight: "600",
-    marginBottom: 4,
-  },
-  notificationText: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    lineHeight: 21,
-    maxWidth: 240,
-  },
-  notificationPill: {
-    backgroundColor: "#ECF2EA",
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  notificationPillText: {
-    color: colors.accentSecondary,
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 0.4,
-  },
-  signOutWrap: {
-    marginTop: spacing.xs,
   },
 });

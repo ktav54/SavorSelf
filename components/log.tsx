@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
+  type DimensionValue,
   Modal,
   Pressable,
   ScrollView,
@@ -10,13 +11,15 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { CameraView, Camera } from "expo-camera";
 import { colors, radii, spacing } from "@/constants/theme";
 import { GutScoreModal, type GutScoreData } from "@/components/GutScoreModal";
 import { Card, Chip, Field, PrimaryButton, SectionTitle } from "@/components/ui";
 import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase";
 import { formatFoodName } from "@/lib/utils";
+import { fetchBarcodeProduct } from "@/services/openFoodFacts";
 import { searchFoodCatalog, type FoodSearchResult } from "@/services/usda";
-import { useAppStore } from "@/store/useAppStore";
+import { useAppStore, type AppState } from "@/store/useAppStore";
 import type { FoodLog, FoodUnit, MealType, MentalState, MoodLog, PhysicalState } from "@/types/models";
 
 const moodOptions = [
@@ -541,10 +544,10 @@ const macroDetails: Record<
 };
 
 export function MoodCheckInStrip() {
-  const moodLogs = useAppStore((state) => state.moodLogs);
-  const moodLoading = useAppStore((state) => state.moodLoading);
-  const moodError = useAppStore((state) => state.moodError);
-  const saveMoodLog = useAppStore((state) => state.saveMoodLog);
+  const moodLogs = useAppStore((state: AppState) => state.moodLogs);
+  const moodLoading = useAppStore((state: AppState) => state.moodLoading);
+  const moodError = useAppStore((state: AppState) => state.moodError);
+  const saveMoodLog = useAppStore((state: AppState) => state.saveMoodLog);
   const todaysMood = moodLogs[0] ?? null;
   const [selectedMood, setSelectedMood] = useState<1 | 2 | 3 | 4 | 5 | null>(null);
   const [energyScore, setEnergyScore] = useState<1 | 2 | 3 | 4 | 5>(3);
@@ -718,9 +721,9 @@ export function MoodCheckInStrip() {
 }
 
 export function HydrationSummaryCard() {
-  const profile = useAppStore((state) => state.profile);
-  const quickLogs = useAppStore((state) => state.quickLogs);
-  const saveWaterLog = useAppStore((state) => state.saveWaterLog);
+  const profile = useAppStore((state: AppState) => state.profile);
+  const quickLogs = useAppStore((state: AppState) => state.quickLogs);
+  const saveWaterLog = useAppStore((state: AppState) => state.saveWaterLog);
   const waterOz = useMemo(
     () => quickLogs.reduce((sum, item) => sum + (item.waterOz ?? 0), 0),
     [quickLogs]
@@ -767,37 +770,120 @@ export function HydrationSummaryCard() {
 }
 
 export function QuickLogStrip() {
-  const quickLogs = useAppStore((state) => state.quickLogs);
-  const today = quickLogs[0];
+  const quickLogs = useAppStore((state: AppState) => state.quickLogs);
+  const saveWaterLog = useAppStore((state: AppState) => state.saveWaterLog);
+  const saveQuickField = useAppStore((state: AppState) => state.saveQuickField);
+  const today = quickLogs[0] ?? null;
+  const [selectedTile, setSelectedTile] = useState<{
+    label: string;
+    unitHint: string;
+    field: "waterOz" | "caffeineMg" | "steps" | "sleepHours";
+  } | null>(null);
+  const [inputValue, setInputValue] = useState("");
+  const [saveError, setSaveError] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const items = [
-    { icon: "cafe-outline" as const, label: "Coffee", value: `${today?.caffeineMg ?? 0} mg` },
-    { icon: "footsteps-outline" as const, label: "Steps", value: `${today?.steps ?? 0}` },
-    { icon: "moon-outline" as const, label: "Sleep", value: `${today?.sleepHours ?? 0} hr` },
-    { icon: "barbell-outline" as const, label: "Exercise", value: `${today?.exerciseMinutes ?? 0} min` },
+    { icon: "cafe-outline" as const, label: "Coffee", value: `${today?.caffeineMg ?? 0} mg`, field: "caffeineMg" as const, unitHint: "mg" },
+    { icon: "water-outline" as const, label: "Water", value: `${today?.waterOz ?? 0} oz`, field: "waterOz" as const, unitHint: "oz" },
+    { icon: "footsteps-outline" as const, label: "Steps", value: `${today?.steps ?? 0} steps`, field: "steps" as const, unitHint: "steps" },
+    { icon: "moon-outline" as const, label: "Sleep", value: `${today?.sleepHours ?? 0} hr`, field: "sleepHours" as const, unitHint: "hours" },
   ];
 
+  const closeModal = () => {
+    setSelectedTile(null);
+    setInputValue("");
+    setSaveError("");
+    setSaving(false);
+  };
+
+  const openModal = (item: (typeof items)[number]) => {
+    setSelectedTile({
+      label: item.label,
+      unitHint: item.unitHint,
+      field: item.field,
+    });
+    setInputValue("");
+    setSaveError("");
+  };
+
+  const handleSave = async () => {
+    if (!selectedTile) {
+      return;
+    }
+
+    const parsedValue = Number(inputValue);
+    if (!Number.isFinite(parsedValue)) {
+      setSaveError("Enter a valid number first.");
+      return;
+    }
+
+    setSaving(true);
+    setSaveError("");
+
+    let result: { error?: string };
+    if (selectedTile.field === "waterOz") {
+      result = await saveWaterLog(parsedValue);
+    } else {
+      result = await saveQuickField(selectedTile.field, parsedValue);
+    }
+
+    setSaving(false);
+
+    if (result.error) {
+      setSaveError(result.error);
+      return;
+    }
+
+    closeModal();
+  };
+
   return (
-    <View style={styles.gracefulCard}>
-      <View style={styles.quickHeader}>
-        <Text style={styles.quickEyebrow}>Quick Log</Text>
-        <Text style={styles.quickTitle}>Small things count too</Text>
-        <Text style={styles.quickSubtitle}>Capture the factors that often shift mood and energy in the background.</Text>
+    <>
+      <View style={styles.gracefulCard}>
+        <View style={styles.quickHeader}>
+          <Text style={styles.quickEyebrow}>Quick Log</Text>
+          <Text style={styles.quickTitle}>Small things count too</Text>
+          <Text style={styles.quickSubtitle}>Capture the factors that often shift mood and energy in the background.</Text>
+        </View>
+        <View style={styles.quickGrid}>
+          {items.map((item) => (
+            <Pressable key={item.label} style={styles.quickTile} onPress={() => openModal(item)}>
+              <View style={styles.quickTileIconWrap}>
+                <Ionicons name={item.icon} size={18} color={colors.textSecondary} />
+              </View>
+              <View style={styles.quickTileCenter}>
+                <Text style={styles.quickValue}>{item.value}</Text>
+                <Text style={styles.quickLabel}>{item.label}</Text>
+              </View>
+            </Pressable>
+          ))}
+        </View>
       </View>
-      <View style={styles.quickGrid}>
-        {items.map((item) => (
-          <Pressable key={item.label} style={styles.quickTile}>
-            <View style={styles.quickTileIconWrap}>
-              <Ionicons name={item.icon} size={18} color={colors.textSecondary} />
+      <Modal visible={Boolean(selectedTile)} animationType="slide" transparent onRequestClose={closeModal}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <SectionTitle
+              eyebrow="Quick Log"
+              title={`Log ${selectedTile?.label ?? "Value"}`}
+              subtitle="Add a quick number and we'll update today's background context."
+            />
+            <Field
+              label={`${selectedTile?.label ?? "Value"}`}
+              value={inputValue}
+              onChangeText={setInputValue}
+              placeholder="0"
+            />
+            <Text style={styles.quickModalUnitHint}>{selectedTile?.unitHint ?? ""}</Text>
+            {saveError ? <Text style={styles.errorText}>{saveError}</Text> : null}
+            <View style={styles.modalActions}>
+              <PrimaryButton label="Cancel" secondary onPress={closeModal} />
+              <PrimaryButton label={saving ? "Saving..." : "Save"} onPress={() => void handleSave()} />
             </View>
-            <View style={styles.quickTileCenter}>
-              <Text style={styles.quickValue}>{item.value}</Text>
-              <Text style={styles.quickLabel}>{item.label}</Text>
-            </View>
-          </Pressable>
-        ))}
-      </View>
-    </View>
+          </View>
+        </View>
+      </Modal>
+    </>
   );
 }
 
@@ -816,8 +902,8 @@ export function GraceModeCard() {
 }
 
 export function MacroSummaryBar() {
-  const profile = useAppStore((state) => state.profile);
-  const foodLogs = useAppStore((state) => state.foodLogs);
+  const profile = useAppStore((state: AppState) => state.profile);
+  const foodLogs = useAppStore((state: AppState) => state.foodLogs);
   const [selectedMacro, setSelectedMacro] = useState<MacroKey | null>(null);
 
   const totals = useMemo(() => {
@@ -1079,8 +1165,8 @@ export function MacroSummaryBar() {
 
 
 export function FoodLogSection({ mealType, logs, onAddFood }: { mealType: FoodLog["mealType"]; logs: FoodLog[]; onAddFood?: () => void }) {
-  const deleteFoodLog = useAppStore((state) => state.deleteFoodLog);
-  const updateFoodLog = useAppStore((state) => state.updateFoodLog);
+  const deleteFoodLog = useAppStore((state: AppState) => state.deleteFoodLog);
+  const updateFoodLog = useAppStore((state: AppState) => state.updateFoodLog);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingItem, setEditingItem] = useState<FoodLog | null>(null);
   const [editQuantity, setEditQuantity] = useState("");
@@ -1237,10 +1323,10 @@ export function FoodSearchCard({
   onRequestClose?: () => void;
   title?: string;
 }) {
-  const saveFoodLog = useAppStore((state) => state.saveFoodLog);
-  const foodLoading = useAppStore((state) => state.foodLoading);
-  const foodError = useAppStore((state) => state.foodError);
-  const profile = useAppStore((state) => state.profile);
+  const saveFoodLog = useAppStore((state: AppState) => state.saveFoodLog);
+  const foodLoading = useAppStore((state: AppState) => state.foodLoading);
+  const foodError = useAppStore((state: AppState) => state.foodError);
+  const profile = useAppStore((state: AppState) => state.profile);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<FoodSearchResult[]>([]);
   const [gutScores, setGutScores] = useState<Record<string, number>>({});
@@ -1262,6 +1348,10 @@ export function FoodSearchCard({
   const [showExtraUnits, setShowExtraUnits] = useState(false);
   const [gutScore, setGutScore] = useState<GutScoreData | null>(null);
   const [gutScoreVisible, setGutScoreVisible] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [cameraPermission, setCameraPermission] = useState<boolean | null>(null);
+  const [scanError, setScanError] = useState("");
+  const scannedRef = useRef(false);
   const unitOptions = useMemo(
     () => getPreferredUnitOptions(profile?.preferredUnits),
     [profile?.preferredUnits]
@@ -1350,8 +1440,58 @@ export function FoodSearchCard({
     setShowExtraUnits(false);
     setGutScore(null);
     setGutScoreVisible(false);
+    setScannerOpen(false);
+    scannedRef.current = false;
     onRequestClose?.();
   };
+
+  async function requestAndOpenScanner() {
+    scannedRef.current = false;
+    const { status } = await Camera.requestCameraPermissionsAsync();
+    if (status === "granted") {
+      setCameraPermission(true);
+      setScannerOpen(true);
+      setScanError("");
+    } else {
+      setCameraPermission(false);
+      setScanError("Camera permission is needed to scan barcodes.");
+    }
+  }
+
+  async function handleBarcodeScan({ data }: { data: string }) {
+    if (scannedRef.current) {
+      return;
+    }
+
+    scannedRef.current = true;
+    setScannerOpen(false);
+
+    try {
+      const product = await fetchBarcodeProduct(data);
+      if (!product) {
+        setScanError("No product found for that barcode. Try searching by name.");
+        scannedRef.current = false;
+        return;
+      }
+
+      setScanError("");
+      setSaveError("");
+      setSelectedFood({
+        id: product.code,
+        description: product.productName + (product.brands ? ` (${product.brands})` : ""),
+        subtitle: product.brands ? `Scanned barcode • ${product.brands}` : "Scanned barcode",
+        caloriesPer100g: product.caloriesPer100g,
+        proteinPer100g: product.proteinPer100g,
+        carbsPer100g: product.carbsPer100g,
+        fatPer100g: product.fatPer100g,
+        source: "open_food_facts",
+        isBranded: Boolean(product.brands),
+      });
+    } catch {
+      setScanError("Something went wrong reading that barcode. Try again.");
+      scannedRef.current = false;
+    }
+  }
 
   const fetchGutScore = async (foodName: string, resultKey?: string) => {
     const resolvedKey =
@@ -1593,6 +1733,10 @@ export function FoodSearchCard({
         onChangeText={setQuery}
         placeholder="Try salmon, oats, yogurt, kimchi..."
       />
+      <Pressable style={styles.addMealButton} onPress={() => void requestAndOpenScanner()}>
+        <Text style={styles.addMealText}>Scan barcode</Text>
+      </Pressable>
+      {scanError ? <Text style={styles.errorText}>{scanError}</Text> : null}
       <PrimaryButton label={loading ? "Searching..." : "Search"} onPress={() => void runSearch()} />
       <PrimaryButton
         label="Add manually"
@@ -1662,6 +1806,41 @@ export function FoodSearchCard({
         </Text>
       ) : null}
       <GutScoreModal visible={gutScoreVisible} data={gutScore} onClose={() => setGutScoreVisible(false)} />
+      <Modal
+        visible={scannerOpen}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={() => {
+          setScannerOpen(false);
+          scannedRef.current = false;
+        }}
+      >
+        <View style={styles.scannerScreen}>
+          {cameraPermission ? (
+            <CameraView
+              style={styles.scannerCamera}
+              facing="back"
+              barcodeScannerSettings={{ barcodeTypes: ["ean13", "ean8", "upc_a", "upc_e"] }}
+              onBarcodeScanned={handleBarcodeScan}
+            />
+          ) : (
+            <View style={styles.scannerFallback}>
+              <Text style={styles.errorText}>Camera permission is needed to scan barcodes.</Text>
+            </View>
+          )}
+          <View style={styles.scannerFooter}>
+            <Pressable
+              style={styles.scannerCancelButton}
+              onPress={() => {
+                setScannerOpen(false);
+                scannedRef.current = false;
+              }}
+            >
+              <Text style={styles.scannerCancelText}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
       <Modal visible={Boolean(selectedFood)} animationType="slide" transparent onRequestClose={closeModal}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
@@ -2115,7 +2294,7 @@ function MacroVisualCard({
   onPress?: () => void;
 }) {
   const progress = goal > 0 ? Math.min(value / goal, 1) : 0;
-  const fillWidth = `${Math.max(progress * 100, 8)}%`;
+  const fillWidth = `${Math.max(progress * 100, 8)}%` as DimensionValue;
   const suffix = unit ? ` ${unit}` : "";
   const toneStyle =
     tone === "warm"
@@ -2795,6 +2974,11 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     textAlign: "center",
   },
+  quickModalUnitHint: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    marginTop: -4,
+  },
   graceText: {
     color: colors.textSecondary,
     fontSize: 16,
@@ -3028,6 +3212,41 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     maxHeight: "85%",
+  },
+  scannerScreen: {
+    flex: 1,
+    backgroundColor: "#000",
+  },
+  scannerCamera: {
+    flex: 1,
+  },
+  scannerFallback: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: spacing.lg,
+    backgroundColor: colors.background,
+  },
+  scannerFooter: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: spacing.xl,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  scannerCancelButton: {
+    backgroundColor: colors.white,
+    borderRadius: 999,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  scannerCancelText: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: "600",
   },
   modalActions: {
     gap: spacing.sm,

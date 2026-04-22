@@ -4,7 +4,7 @@ import { StyleSheet, Text, View } from "react-native";
 import { colors, spacing } from "@/constants/theme";
 import { Card, Chip, Field, PrimaryButton, Screen, SectionTitle } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
-import { useAppStore } from "@/store/useAppStore";
+import { useAppStore, type AppState } from "@/store/useAppStore";
 
 const goals = [
   "Understand my mood",
@@ -16,9 +16,9 @@ const goals = [
 ];
 
 export default function OnboardingScreen() {
-  const completeOnboarding = useAppStore((state) => state.completeOnboarding);
-  const profile = useAppStore((state) => state.profile);
-  const sessionReady = useAppStore((state) => state.sessionReady);
+  const completeOnboarding = useAppStore((state: AppState) => state.completeOnboarding);
+  const profile = useAppStore((state: AppState) => state.profile);
+  const sessionReady = useAppStore((state: AppState) => state.sessionReady);
   const [step, setStep] = useState(0);
   const [selectedGoals, setSelectedGoals] = useState<string[]>([]);
   const [name, setName] = useState("");
@@ -154,8 +154,40 @@ export default function OnboardingScreen() {
             title="Your gut and brain are in constant conversation."
             subtitle="The vagus nerve helps carry signals both ways. Over time, your logs become a personal pattern engine."
           />
-          <View style={styles.animationStub}>
-            <Text style={styles.stubText}>Animated explainer placeholder</Text>
+          <View style={styles.explainerCard}>
+            <View style={styles.explainerRow}>
+              <View style={styles.explainerIconWrap}>
+                <Text style={styles.explainerIcon}>🍽️</Text>
+              </View>
+              <View style={styles.explainerCopy}>
+                <Text style={styles.explainerLabel}>Log what you eat</Text>
+                <Text style={styles.explainerDescription}>
+                  Quick, conversational food logging — no calorie obsessing required.
+                </Text>
+              </View>
+            </View>
+            <View style={styles.explainerRow}>
+              <View style={styles.explainerIconWrap}>
+                <Text style={styles.explainerIcon}>🧠</Text>
+              </View>
+              <View style={styles.explainerCopy}>
+                <Text style={styles.explainerLabel}>Track how you feel</Text>
+                <Text style={styles.explainerDescription}>
+                  Mood, energy, physical and mental state — checked in daily.
+                </Text>
+              </View>
+            </View>
+            <View style={styles.explainerRow}>
+              <View style={styles.explainerIconWrap}>
+                <Text style={styles.explainerIcon}>✨</Text>
+              </View>
+              <View style={styles.explainerCopy}>
+                <Text style={styles.explainerLabel}>Discover your patterns</Text>
+                <Text style={styles.explainerDescription}>
+                  SavorSelf finds the connections between food and mood from your own data.
+                </Text>
+              </View>
+            </View>
           </View>
           <PrimaryButton
             label={isSaving ? "Saving..." : "Start my first log"}
@@ -163,7 +195,7 @@ export default function OnboardingScreen() {
               setSaveError("");
               setIsSaving(true);
               const result = await completeOnboarding({
-                name: name || "Avery",
+                name: name.trim() || "",
                 preferredUnits: units,
                 dailyCalorieGoal: calories ? Number(calories) : undefined,
                 dailyProteinGoal: protein ? Number(protein) : undefined,
@@ -192,16 +224,41 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: spacing.sm,
   },
-  animationStub: {
-    minHeight: 180,
-    alignItems: "center",
-    justifyContent: "center",
+  explainerCard: {
     backgroundColor: "#F6E8D8",
     borderRadius: 16,
+    padding: 20,
+    gap: 20,
   },
-  stubText: {
+  explainerRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+  },
+  explainerIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.white,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  explainerIcon: {
+    fontSize: 18,
+  },
+  explainerCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  explainerLabel: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: colors.textPrimary,
+  },
+  explainerDescription: {
+    fontSize: 13,
     color: colors.textSecondary,
-    fontSize: 16,
+    lineHeight: 20,
   },
   errorText: {
     color: colors.accentPrimary,

@@ -72,6 +72,6 @@ export async function searchOpenFoodFactsProducts(query: string): Promise<OpenFo
   const products = Array.isArray(payload.products) ? payload.products : [];
 
   return products
-    .filter((product) => product?.product_name)
-    .map((product) => mapProduct(product));
+    .filter((product: any) => product?.product_name)
+    .map((product: any) => mapProduct(product));
 }

@@ -5,20 +5,20 @@ import { Animated, Easing, Image, Modal, Pressable, ScrollView, StyleSheet, Text
 import { Screen } from "@/components/ui";
 import { FoodLogSection, FoodSearchCard, FoodSearchLauncher, GraceModeCard, HydrationSummaryCard, MacroSummaryBar, MoodCheckInStrip, QuickLogStrip } from "@/components/log";
 import { colors, radii, spacing } from "@/constants/theme";
-import { useAppStore } from "@/store/useAppStore";
-import type { MealType } from "@/types/models";
+import { useAppStore, type AppState } from "@/store/useAppStore";
+import type { FoodLog, MealType } from "@/types/models";
 
 type EntryStep = "hidden" | "welcome" | "mood";
 
 export default function LogScreen() {
-  const profile = useAppStore((state) => state.profile);
-  const foodLogs = useAppStore((state) => state.foodLogs);
-  const moodLogs = useAppStore((state) => state.moodLogs);
-  const selectedDate = useAppStore((state) => state.selectedDate);
-  const setSelectedDate = useAppStore((state) => state.setSelectedDate);
-  const loadTodayMoodLog = useAppStore((state) => state.loadTodayMoodLog);
-  const loadTodayFoodLogs = useAppStore((state) => state.loadTodayFoodLogs);
-  const loadTodayQuickLog = useAppStore((state) => state.loadTodayQuickLog);
+  const profile = useAppStore((state: AppState) => state.profile);
+  const foodLogs = useAppStore((state: AppState) => state.foodLogs);
+  const moodLogs = useAppStore((state: AppState) => state.moodLogs);
+  const selectedDate = useAppStore((state: AppState) => state.selectedDate);
+  const setSelectedDate = useAppStore((state: AppState) => state.setSelectedDate);
+  const loadTodayMoodLog = useAppStore((state: AppState) => state.loadTodayMoodLog);
+  const loadTodayFoodLogs = useAppStore((state: AppState) => state.loadTodayFoodLogs);
+  const loadTodayQuickLog = useAppStore((state: AppState) => state.loadTodayQuickLog);
   const [defaultMealType, setDefaultMealType] = useState<MealType>("breakfast");
   const [mealContext, setMealContext] = useState<MealType | null>(null);
   const [foodSearchVisible, setFoodSearchVisible] = useState(false);
@@ -241,10 +241,10 @@ export default function LogScreen() {
           defaultMealType={defaultMealType}
           title={generalFoodTitle}
         />
-        <FoodLogSection mealType="breakfast" logs={foodLogs.filter((item) => item.mealType === "breakfast")} onAddFood={() => openFoodSearch("breakfast")} />
-        <FoodLogSection mealType="lunch" logs={foodLogs.filter((item) => item.mealType === "lunch")} onAddFood={() => openFoodSearch("lunch")} />
-        <FoodLogSection mealType="dinner" logs={foodLogs.filter((item) => item.mealType === "dinner")} onAddFood={() => openFoodSearch("dinner")} />
-        <FoodLogSection mealType="snack" logs={foodLogs.filter((item) => item.mealType === "snack")} onAddFood={() => openFoodSearch("snack")} />
+        <FoodLogSection mealType="breakfast" logs={foodLogs.filter((item: FoodLog) => item.mealType === "breakfast")} onAddFood={() => openFoodSearch("breakfast")} />
+        <FoodLogSection mealType="lunch" logs={foodLogs.filter((item: FoodLog) => item.mealType === "lunch")} onAddFood={() => openFoodSearch("lunch")} />
+        <FoodLogSection mealType="dinner" logs={foodLogs.filter((item: FoodLog) => item.mealType === "dinner")} onAddFood={() => openFoodSearch("dinner")} />
+        <FoodLogSection mealType="snack" logs={foodLogs.filter((item: FoodLog) => item.mealType === "snack")} onAddFood={() => openFoodSearch("snack")} />
         <HydrationSummaryCard />
         <QuickLogStrip />
         <GraceModeCard />
