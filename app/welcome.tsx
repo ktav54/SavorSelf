@@ -2,7 +2,7 @@ import { Link, router } from "expo-router";
 import { useEffect } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { colors, spacing } from "@/constants/theme";
-import { Card, PrimaryButton, Screen, SectionTitle } from "@/components/ui";
+import { Card, PrimaryButton, Screen } from "@/components/ui";
 import { useAppStore, type AppState } from "@/store/useAppStore";
 
 export default function WelcomeScreen() {
@@ -40,39 +40,75 @@ export default function WelcomeScreen() {
 
   return (
     <Screen>
-      <View style={styles.hero}>
-        <Text style={styles.logo}>SavorSelf</Text>
-        <SectionTitle
-          title="Savor what you eat. Understand how you feel."
-          subtitle="A mood-first food and wellness journal designed around grace, pattern-finding, and the gut-brain connection."
-        />
+      <View style={styles.screen}>
+        <View style={styles.hero}>
+          <Text style={styles.logo}>SavorSelf</Text>
+          <Text style={styles.tagline}>Food. Mood. You.</Text>
+          <View style={styles.copyBlock}>
+            <Text style={styles.heroTitle}>Savor what you eat. Understand how you feel.</Text>
+            <Text style={styles.heroSubtitle}>
+              A mood-first food and wellness journal designed around grace, pattern-finding, and the gut-brain connection.
+            </Text>
+          </View>
+        </View>
+        <View style={styles.bottomCardWrap}>
+          <Card>
+            <PrimaryButton label="Let's begin" onPress={() => router.push("/sign-up")} />
+            <Link href="/sign-in" style={styles.link}>
+              I already have an account
+            </Link>
+          </Card>
+        </View>
       </View>
-      <Card>
-        <PrimaryButton label="Let's begin" onPress={() => router.push("/sign-up")} />
-        <Link href="/sign-in" style={styles.link}>
-          I already have an account
-        </Link>
-      </Card>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+  },
   hero: {
     flex: 1,
     justifyContent: "center",
     gap: spacing.md,
   },
   logo: {
-    fontSize: 40,
-    fontWeight: "600",
+    fontSize: 42,
+    fontWeight: "800",
+    letterSpacing: -1,
     color: colors.textPrimary,
+  },
+  tagline: {
+    fontSize: 16,
+    color: colors.accentPrimary,
+    fontWeight: "600",
+    letterSpacing: 2,
+    textTransform: "uppercase",
+    marginBottom: 16,
+  },
+  copyBlock: {
+    gap: 8,
+  },
+  bottomCardWrap: {
+    marginTop: "auto",
+  },
+  heroTitle: {
+    color: colors.textPrimary,
+    fontSize: 30,
+    fontWeight: "700",
+    letterSpacing: -0.5,
+  },
+  heroSubtitle: {
+    color: colors.textSecondary,
+    fontSize: 17,
+    lineHeight: 28,
   },
   link: {
     color: colors.accentPrimary,
     textAlign: "center",
-    marginTop: 12,
-    fontSize: 16,
+    marginTop: 16,
+    fontSize: 15,
   },
   loadingWrap: {
     flex: 1,

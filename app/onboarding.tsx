@@ -2,7 +2,7 @@ import { router } from "expo-router";
 import { useEffect, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { colors, spacing } from "@/constants/theme";
-import { Card, Chip, Field, PrimaryButton, Screen, SectionTitle } from "@/components/ui";
+import { Card, Chip, Field, PrimaryButton, Screen } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
 import { useAppStore, type AppState } from "@/store/useAppStore";
 
@@ -14,6 +14,16 @@ const goals = [
   "Manage a health condition",
   "Just curious",
 ];
+
+function StepHeader({ eyebrow, title, subtitle }: { eyebrow?: string; title: string; subtitle?: string }) {
+  return (
+    <View style={styles.stepHeader}>
+      {eyebrow ? <Text style={styles.stepEyebrow}>{eyebrow}</Text> : null}
+      <Text style={styles.stepTitle}>{title}</Text>
+      {subtitle ? <Text style={styles.stepSubtitle}>{subtitle}</Text> : null}
+    </View>
+  );
+}
 
 export default function OnboardingScreen() {
   const completeOnboarding = useAppStore((state: AppState) => state.completeOnboarding);
@@ -70,7 +80,7 @@ export default function OnboardingScreen() {
     return (
       <Screen>
         <Card>
-          <SectionTitle
+          <StepHeader
             eyebrow="Loading"
             title="Loading SavorSelf..."
             subtitle="Restoring your account and onboarding state."
@@ -84,7 +94,7 @@ export default function OnboardingScreen() {
     return (
       <Screen>
         <Card>
-          <SectionTitle
+          <StepHeader
             eyebrow="Welcome back"
             title="Opening your log..."
             subtitle="Your account and onboarding are already in place."
@@ -98,7 +108,7 @@ export default function OnboardingScreen() {
     <Screen scroll>
       {step === 0 ? (
         <Card>
-          <SectionTitle
+          <StepHeader
             eyebrow="Welcome"
             title="SavorSelf"
             subtitle="Your gut and brain are in constant conversation. SavorSelf listens."
@@ -109,7 +119,7 @@ export default function OnboardingScreen() {
 
       {step === 1 ? (
         <Card>
-          <SectionTitle
+          <StepHeader
             eyebrow="Goals"
             title="What brings you to SavorSelf?"
             subtitle="There are no wrong answers here."
@@ -130,7 +140,7 @@ export default function OnboardingScreen() {
 
       {step === 2 ? (
         <Card>
-          <SectionTitle
+          <StepHeader
             eyebrow="Setup"
             title="A few details to make this feel personal"
             subtitle="Goals are optional. Units can always change later."
@@ -149,7 +159,7 @@ export default function OnboardingScreen() {
 
       {step === 3 ? (
         <Card>
-          <SectionTitle
+          <StepHeader
             eyebrow="Food-Mood"
             title="Your gut and brain are in constant conversation."
             subtitle="The vagus nerve helps carry signals both ways. Over time, your logs become a personal pattern engine."
@@ -219,6 +229,27 @@ export default function OnboardingScreen() {
 }
 
 const styles = StyleSheet.create({
+  stepHeader: {
+    gap: 6,
+  },
+  stepEyebrow: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: colors.textSecondary,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  stepTitle: {
+    fontSize: 28,
+    fontWeight: "700",
+    letterSpacing: -0.5,
+    color: colors.textPrimary,
+  },
+  stepSubtitle: {
+    fontSize: 15,
+    lineHeight: 24,
+    color: colors.textSecondary,
+  },
   wrap: {
     flexDirection: "row",
     flexWrap: "wrap",

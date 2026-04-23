@@ -92,18 +92,20 @@ const styles = StyleSheet.create({
   },
   eyebrow: {
     color: colors.accentPrimary,
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 2,
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: 1,
     textTransform: "uppercase",
   },
   title: {
     color: colors.textPrimary,
     fontSize: 26,
     fontWeight: "700",
+    letterSpacing: -0.5,
   },
   subtitle: {
     color: colors.textSecondary,
     fontSize: 14,
+    lineHeight: 22,
   },
 });
