@@ -1,15 +1,20 @@
 import { useCallback, useMemo } from "react";
 import { useFocusEffect } from "@react-navigation/native";
+import { format } from "date-fns";
+import { StyleSheet, Text, View } from "react-native";
 import {
   DailyReadCard,
   FoodMoodGate,
   GutMoodScoreCard,
   HorizontalInsightScroll,
   InsightFeed,
+  NutrientSpotlight,
   StreakHeroCard,
+  TrendCard,
   WeeklySnapshot,
 } from "@/components/food-mood";
 import { Screen } from "@/components/ui";
+import { colors } from "@/constants/theme";
 import { useAppStore, type AppState } from "@/store/useAppStore";
 import type { FoodLog } from "@/types/models";
 
@@ -49,17 +54,56 @@ export default function FoodMoodScreen() {
 
   return (
     <Screen scroll>
-      <FoodMoodGate />
-      <StreakHeroCard />
-      {hasEnoughData ? (
-        <>
-          <GutMoodScoreCard />
-          <DailyReadCard />
-          <HorizontalInsightScroll />
-          <WeeklySnapshot />
-          <InsightFeed />
-        </>
-      ) : null}
+      <View style={styles.screenStack}>
+        <View style={styles.header}>
+          <Text style={styles.eyebrow}>FOOD-MOOD</Text>
+          <Text style={styles.title}>Your gut-brain picture</Text>
+          <Text style={styles.subtitle}>{format(new Date(), "EEEE, MMMM d")}</Text>
+        </View>
+        {!hasEnoughData ? (
+          <>
+            <FoodMoodGate />
+            <StreakHeroCard />
+          </>
+        ) : (
+          <>
+            <GutMoodScoreCard />
+            <StreakHeroCard />
+            <DailyReadCard />
+            <TrendCard />
+            <NutrientSpotlight />
+            <HorizontalInsightScroll />
+            <WeeklySnapshot />
+            <InsightFeed />
+          </>
+        )}
+      </View>
     </Screen>
   );
 }
+
+const styles = StyleSheet.create({
+  screenStack: {
+    gap: 20,
+    marginHorizontal: -4,
+  },
+  header: {
+    gap: 6,
+  },
+  eyebrow: {
+    color: colors.accentPrimary,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 2,
+    textTransform: "uppercase",
+  },
+  title: {
+    color: colors.textPrimary,
+    fontSize: 26,
+    fontWeight: "700",
+  },
+  subtitle: {
+    color: colors.textSecondary,
+    fontSize: 14,
+  },
+});
