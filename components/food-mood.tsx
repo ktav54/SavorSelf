@@ -211,6 +211,9 @@ function SurfaceCard({ children, style }: { children: ReactNode; style?: object 
 }
 
 function PreGatePreview({ pairedDays }: { pairedDays: number }) {
+  const insights = useAppStore((state: AppState) => state.insights);
+  const teaserInsight = insights[0]?.insightBody?.trim() ?? "";
+
   return (
     <View style={styles.preGateWrap}>
       <View style={styles.preGateHero}>
@@ -245,11 +248,17 @@ function PreGatePreview({ pairedDays }: { pairedDays: number }) {
           </SurfaceCard>
           <SurfaceCard style={styles.lockedPreviewCard}>
             <Text style={styles.lockedPreviewLock}>🔒</Text>
-            <View style={styles.lockedLines}>
-              <View style={[styles.lockedLine, styles.lockedLineLong]} />
-              <View style={[styles.lockedLine, styles.lockedLineMedium]} />
-              <View style={[styles.lockedLine, styles.lockedLineShort]} />
-            </View>
+            {teaserInsight ? (
+              <Text style={styles.lockedPreviewTeaser} numberOfLines={2}>
+                {teaserInsight}
+              </Text>
+            ) : (
+              <View style={styles.lockedLines}>
+                <View style={[styles.lockedLine, styles.lockedLineLong]} />
+                <View style={[styles.lockedLine, styles.lockedLineMedium]} />
+                <View style={[styles.lockedLine, styles.lockedLineShort]} />
+              </View>
+            )}
             <Text style={styles.lockedPreviewLabel}>Your first insight</Text>
           </SurfaceCard>
           <SurfaceCard style={styles.lockedPreviewCard}>
@@ -1107,6 +1116,12 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 15,
     fontWeight: "500",
+  },
+  lockedPreviewTeaser: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    opacity: 0.35,
+    lineHeight: 20,
   },
   lockedPreviewFlame: {
     fontSize: 48,
