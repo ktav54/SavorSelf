@@ -1173,7 +1173,7 @@ export function MacroSummaryBar() {
           onPress={() => setSelectedMacro("calories")}
         />
         <MacroVisualCard
-          label="Pro"
+          label="Protein"
           value={totals.protein}
           goal={Math.round(profile?.dailyProteinGoal ?? 0)}
           unit="g"
@@ -2418,7 +2418,7 @@ function MacroVisualCard({
   return (
     <Pressable style={({ pressed }) => [styles.macroCard, pressed && styles.pressableFeedback]} onPress={onPress}>
       <View style={styles.macroPillHeader}>
-        <Text style={styles.macroLabel} numberOfLines={1}>
+        <Text style={styles.macroLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
           {label}
         </Text>
       </View>
@@ -2434,11 +2434,11 @@ function MacroVisualCard({
         <View style={[styles.macroUnderlineFill, { width: fillWidth }]} />
       </View>
       {goal > 0 ? (
-        <Text style={styles.macroGoalText} numberOfLines={1}>
+        <Text style={styles.macroGoalText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>
           Goal {goal}
         </Text>
       ) : (
-        <Text style={styles.macroGoalText} numberOfLines={1}>
+        <Text style={styles.macroGoalText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>
           No goal
         </Text>
       )}
@@ -2813,10 +2813,10 @@ const styles = StyleSheet.create({
   },
   macroLabel: {
     color: colors.textSecondary,
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: "700",
     textTransform: "uppercase",
-    letterSpacing: 0.8,
+    letterSpacing: 0.45,
   },
   macroValueRow: {
     flexDirection: "row",
@@ -2836,7 +2836,9 @@ const styles = StyleSheet.create({
   },
   macroGoalText: {
     color: colors.textSecondary,
-    fontSize: 11,
+    fontSize: 10,
+    fontWeight: "600",
+    fontVariant: ["tabular-nums"],
   },
   macroUnderlineTrack: {
     height: 3,

@@ -74,7 +74,13 @@ export default function RootLayout() {
   return (
     <>
       <StatusBar style="dark" />
-      <Stack screenOptions={{ headerShown: false }} />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          animation: "fade_from_bottom",
+          animationDuration: 200,
+        }}
+      />
     </>
   );
 }

@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "skills": {
+    "building-native-ui": {
+      "source": "expo/skills",
+      "sourceType": "github",
+      "computedHash": "a0316d2ce842d2dd8067a144e339cf502329dc7701f9f5122268fdb3d4c980f7"
+    },
+    "native-data-fetching": {
+      "source": "expo/skills",
+      "sourceType": "github",
+      "computedHash": "1127a1ab326935169ecf92ffda2d9fc04dc1450a7eecfbafd5157fa9c0126d31"
+    },
+    "supabase": {
+      "source": "supabase/agent-skills",
+      "sourceType": "github",
+      "computedHash": "3bc4f56943a13f4fe355742a4b3b30c56008e6d265ae71f19c592410b5f5a01f"
+    },
+    "supabase-postgres-best-practices": {
+      "source": "supabase/agent-skills",
+      "sourceType": "github",
+      "computedHash": "8e41c7417894e6f394614ee7ca3ee5322b1e58d890255d441f42dea98732597f"
+    }
+  }
+}

@@ -9,6 +9,7 @@ export default function TabsLayout() {
   return (
     <Tabs
       screenOptions={{
+        animation: "fade",
         headerStyle: {
           backgroundColor: colors.background,
         },
@@ -36,25 +37,34 @@ export default function TabsLayout() {
           backgroundColor: colors.background,
         },
         tabBarStyle: {
-          backgroundColor: colors.accentPrimary,
-          borderTopColor: "transparent",
-          height: 88,
+          backgroundColor: colors.white,
+          borderTopWidth: 1,
+          borderTopColor: colors.border,
+          height: 84,
           paddingTop: 8,
-          paddingBottom: 14,
+          paddingBottom: 28,
         },
-        tabBarActiveTintColor: colors.white,
-        tabBarInactiveTintColor: "rgba(255,255,255,0.72)",
+        tabBarActiveTintColor: colors.accentPrimary,
+        tabBarInactiveTintColor: "#C4A882",
         tabBarLabelStyle: {
+          fontSize: 11,
           fontWeight: "600",
+          letterSpacing: 0.3,
         },
       }}
     >
-      <Tabs.Screen name="log" options={{ title: "Log", tabBarIcon: ({ color }) => <Text style={{ color }}>*</Text> }} />
+      <Tabs.Screen
+        name="log"
+        options={{ title: "Log", tabBarIcon: ({ color }) => <Text style={{ fontSize: 20, color }}>⊕</Text> }}
+      />
       <Tabs.Screen
         name="food-mood"
-        options={{ title: "Food-Mood", tabBarIcon: ({ color }) => <Text style={{ color }}>*</Text> }}
+        options={{ title: "Food-Mood", tabBarIcon: ({ color }) => <Text style={{ fontSize: 20, color }}>◈</Text> }}
       />
-      <Tabs.Screen name="coach" options={{ title: "Coach", tabBarIcon: ({ color }) => <Text style={{ color }}>*</Text> }} />
+      <Tabs.Screen
+        name="coach"
+        options={{ title: "Coach", tabBarIcon: ({ color }) => <Text style={{ fontSize: 20, color }}>◉</Text> }}
+      />
     </Tabs>
   );
 }

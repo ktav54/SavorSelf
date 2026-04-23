@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -14,7 +15,6 @@ import {
 } from "react-native";
 import { GutScoreModal, type GutScoreData } from "@/components/GutScoreModal";
 import { colors, radii, spacing } from "@/constants/theme";
-import { Card, PrimaryButton } from "@/components/ui";
 import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase";
 import { formatFoodName } from "@/lib/utils";
 import { parseFoodMessage, sendCoachMessage } from "@/services/coach";
@@ -296,6 +296,7 @@ export function CoachChat() {
   const [adjustModalVisible, setAdjustModalVisible] = useState(false);
   const [adjustDraftItems, setAdjustDraftItems] = useState<AdjustDraftItem[]>([]);
   const scrollRef = useRef<ScrollView>(null);
+  const thinkingDotsOpacity = useRef(new Animated.Value(0.3)).current;
   const coachUnitOptions = useMemo(
     () => getCoachUnitOptions(profile?.preferredUnits),
     [profile?.preferredUnits]
@@ -310,7 +311,36 @@ export function CoachChat() {
 
   useEffect(() => {
     scrollRef.current?.scrollToEnd({ animated: true });
-  }, [conversation.length]);
+  }, [conversation.length, sending]);
+
+  useEffect(() => {
+    if (!sending) {
+      thinkingDotsOpacity.stopAnimation();
+      thinkingDotsOpacity.setValue(0.3);
+      return;
+    }
+
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(thinkingDotsOpacity, {
+          toValue: 1,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+        Animated.timing(thinkingDotsOpacity, {
+          toValue: 0.3,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    loop.start();
+
+    return () => {
+      loop.stop();
+    };
+  }, [sending, thinkingDotsOpacity]);
 
   const hasStartedConversation = conversation.length > 0;
   const displayConversation = useMemo<Array<AiConversationMessage & { id?: string; createdAt?: string }>>(
@@ -499,7 +529,6 @@ export function CoachChat() {
       kind: "text",
     });
   };
-
   const openFoodLogging = () => {
     addCoachMessage({
       role: "assistant",
@@ -859,61 +888,100 @@ export function CoachChat() {
       >
         {displayConversation.map((message, index) => (
           <View key={`${message.timestamp}-${index}`} style={styles.messageWrap}>
-            <View style={[styles.bubble, message.role === "user" ? styles.userBubble : styles.assistantBubble]}>
+            <View
+              style={[
+                styles.bubble,
+                message.role === "user" ? styles.userBubble : styles.assistantBubble,
+                message.id === "welcome" && styles.welcomeBubble,
+              ]}
+            >
+              {message.id === "welcome" ? (
+                <Text style={styles.welcomeCoachLabel}>✦ SavorSelf Coach</Text>
+              ) : null}
               <Text style={[styles.bubbleText, message.role === "user" && styles.userBubbleText]}>
                 {extractReply(message.content)}
               </Text>
             </View>
 
             {message.role === "assistant" && message.foodProposal ? (
-              <Card>
-                <Text style={styles.summaryLabel}>{message.foodProposal.mealType}</Text>
-                {(pendingProposal && message.foodProposal.sourceMessage === pendingProposal.sourceMessage ? pendingProposal.items : message.foodProposal.items).map((item) => {
-                  return (
-                    <View key={`${message.timestamp}-${item.name}`} style={styles.summaryRow}>
-                      <View style={styles.summaryCopy}>
-                        <View style={styles.summaryTitleRow}>
-                          <Text style={styles.summaryName}>{formatFoodName(item.name)}</Text>
-                          {(message.foodProposal?.items.length ?? 0) > 1 ? (
-                            <Pressable onPress={() => openAdjustModal()}>
-                              <Text style={styles.editLink}>Edit</Text>
-                            </Pressable>
-                          ) : null}
-                        </View>
-                        <Pressable onPress={() => void openGutFeedback(item)}>
-                          <Text style={styles.gutAnalysisLink}>See gut health analysis →</Text>
-                        </Pressable>
-                        {item.foodSource === "ai_estimate" ? (
-                          <Text style={styles.estimateTag}>AI estimate</Text>
-                        ) : null}
-                        <Text style={styles.summaryMeta}>{item.portion}</Text>
-                      </View>
-                      <View style={styles.summaryCopy}>
-                        <Text style={styles.summaryMacro}>{Math.round(item.calories)} cal</Text>
-                        <Text style={styles.summaryMeta}>
-                          {Math.round(item.protein)}p | {Math.round(item.carbs)}c | {Math.round(item.fat)}f
-                        </Text>
-                      </View>
-                    </View>
-                  );
-                })}
+              <View style={styles.proposalBubble}>
+                <Text style={styles.proposalEyebrow}>Food proposal</Text>
+                {(pendingProposal && message.foodProposal.sourceMessage === pendingProposal.sourceMessage
+                  ? pendingProposal.items
+                  : message.foodProposal.items
+                ).map((item) => (
+                  <View key={`${message.timestamp}-${item.name}`} style={styles.proposalItemWrap}>
+                    <Pressable
+                      onPress={() => void openGutFeedback(item)}
+                      style={({ pressed }) => [styles.proposalItemRow, pressed && styles.promptPressed]}
+                    >
+                      <Text style={styles.proposalItemText}>
+                        • {formatFoodName(item.name)}  {Math.round(item.calories)} cal
+                      </Text>
+                    </Pressable>
+                    {item.foodSource === "ai_estimate" ? (
+                      <Text style={styles.proposalMetaText}>AI estimate</Text>
+                    ) : null}
+                  </View>
+                ))}
+                <View style={styles.proposalDivider} />
+                <Text style={styles.proposalTotalText}>
+                  Total:{" "}
+                  {Math.round(
+                    (pendingProposal && message.foodProposal.sourceMessage === pendingProposal.sourceMessage
+                      ? pendingProposal.items
+                      : message.foodProposal.items
+                    ).reduce((sum, item) => sum + item.calories, 0)
+                  )}{" "}
+                  cal ·{" "}
+                  {Math.round(
+                    (pendingProposal && message.foodProposal.sourceMessage === pendingProposal.sourceMessage
+                      ? pendingProposal.items
+                      : message.foodProposal.items
+                    ).reduce((sum, item) => sum + item.protein, 0)
+                  )}g protein
+                </Text>
                 {pendingProposal && message.foodProposal.sourceMessage === pendingProposal.sourceMessage ? (
-                  <View style={styles.actionRow}>
-                    <PrimaryButton
-                      label={confirming ? "Saving..." : "Confirm and log"}
+                  <View style={styles.proposalActionRow}>
+                    <Pressable
                       onPress={() => void confirmProposal()}
-                    />
-                    <PrimaryButton
-                      label="Adjust"
-                      secondary
+                      style={({ pressed }) => [
+                        styles.proposalActionButton,
+                        styles.proposalConfirmButton,
+                        pressed && styles.promptPressed,
+                      ]}
+                    >
+                      {confirming ? (
+                        <ActivityIndicator size="small" color={colors.white} />
+                      ) : (
+                        <Text style={[styles.proposalActionText, styles.proposalConfirmText]}>Log it ✓</Text>
+                      )}
+                    </Pressable>
+                    <Pressable
                       onPress={() => openAdjustModal()}
-                    />
+                      style={({ pressed }) => [
+                        styles.proposalActionButton,
+                        styles.proposalSecondaryButton,
+                        pressed && styles.promptPressed,
+                      ]}
+                    >
+                      <Text style={[styles.proposalActionText, styles.proposalSecondaryText]}>Not quite</Text>
+                    </Pressable>
                   </View>
                 ) : null}
-              </Card>
+              </View>
             ) : null}
           </View>
         ))}
+
+        {sending ? (
+          <View style={styles.messageWrap}>
+            <View style={[styles.bubble, styles.assistantBubble, styles.thinkingBubble]}>
+              <Animated.Text style={[styles.thinkingDots, { opacity: thinkingDotsOpacity }]}>···</Animated.Text>
+              <Text style={styles.thinkingText}>thinking...</Text>
+            </View>
+          </View>
+        ) : null}
 
         {!hasStartedConversation ? (
           <View style={styles.promptRow}>
@@ -947,7 +1015,7 @@ export function CoachChat() {
                     setDraft(item.prompt);
                     void handleSend(item.prompt);
                   }}
-                  style={styles.starterCard}
+                  style={({ pressed }) => [styles.starterCard, pressed && styles.promptPressed]}
                 >
                   <Text style={styles.starterCardTitle}>{item.title}</Text>
                   <Text style={styles.starterCardSubtitle}>{item.subtitle}</Text>
@@ -975,16 +1043,6 @@ export function CoachChat() {
             <Text style={styles.inputHelperText}>
               Message is getting long - consider sending in shorter messages for best results.
             </Text>
-          ) : null}
-          {sending ? (
-            <View style={styles.loadingRow}>
-              <ActivityIndicator color={colors.accentPrimary} />
-              <Text style={styles.loadingText}>
-                {pendingProposal
-                  ? "Updating your food log..."
-                  : "Listening and thinking..."}
-              </Text>
-            </View>
           ) : null}
         </View>
         <Pressable
@@ -1070,6 +1128,17 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderBottomLeftRadius: 4,
   },
+  welcomeBubble: {
+    backgroundColor: "#F6EDE4",
+    borderColor: "#E8C9AE",
+  },
+  welcomeCoachLabel: {
+    fontSize: 11,
+    color: colors.accentPrimary,
+    fontWeight: "600",
+    letterSpacing: 0.5,
+    marginBottom: 6,
+  },
   bubbleText: { color: colors.textPrimary, fontSize: 16, lineHeight: 24 },
   userBubbleText: { color: colors.white },
   promptRow: { gap: spacing.sm, marginTop: spacing.sm },
@@ -1082,6 +1151,10 @@ const styles = StyleSheet.create({
   starterCards: {
     gap: 10,
     marginTop: 8,
+  },
+  promptPressed: {
+    opacity: 0.8,
+    transform: [{ scale: 0.97 }],
   },
   starterCard: {
     backgroundColor: colors.white,
@@ -1112,57 +1185,96 @@ const styles = StyleSheet.create({
   },
   optionTitle: { color: colors.textPrimary, fontSize: 17, fontWeight: "600" },
   optionBody: { color: colors.textSecondary, fontSize: 15, lineHeight: 24 },
-  summaryLabel: {
-    color: colors.textSecondary,
-    fontSize: 12,
+  proposalBubble: {
+    alignSelf: "flex-start",
+    backgroundColor: "#F6EDE4",
+    borderRadius: 18,
+    borderBottomLeftRadius: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    maxWidth: "88%",
+    borderWidth: 1,
+    borderColor: "#E8C9AE",
+    gap: 8,
+  },
+  proposalEyebrow: {
+    color: colors.accentPrimary,
+    fontSize: 11,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 1,
+    marginBottom: 8,
+    fontWeight: "600",
   },
-  summaryRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-    paddingVertical: 6,
+  proposalItemWrap: {
+    gap: 3,
   },
-  summaryCopy: { gap: 4, flexShrink: 1 },
-  summaryTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    flexWrap: "wrap",
+  proposalItemRow: {
+    alignSelf: "flex-start",
+    borderRadius: 12,
   },
-  summaryName: {
+  proposalItemText: {
     color: colors.textPrimary,
     fontSize: 15,
-    fontWeight: "600",
-    maxWidth: 180,
+    paddingVertical: 3,
   },
-  editLink: {
-    color: colors.accentPrimary,
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  gutAnalysisLink: {
-    color: colors.accentPrimary,
-    fontSize: 12,
-    fontWeight: "600",
-    marginTop: 2,
-  },
-  summaryMeta: { color: colors.textSecondary, fontSize: 13 },
-  estimateTag: {
+  proposalMetaText: {
     color: colors.textSecondary,
     fontSize: 11,
   },
-  summaryMacro: {
-    color: colors.textPrimary,
-    fontSize: 15,
-    fontWeight: "600",
-    textAlign: "right",
+  proposalDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: 8,
   },
-  actionRow: { gap: spacing.sm, marginTop: spacing.sm },
-  loadingRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  loadingText: { color: colors.textSecondary, fontSize: 14 },
+  proposalTotalText: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  proposalActionRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 8,
+  },
+  proposalActionButton: {
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    minHeight: 36,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  proposalConfirmButton: {
+    backgroundColor: colors.accentPrimary,
+  },
+  proposalSecondaryButton: {
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.accentPrimary,
+  },
+  proposalActionText: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  proposalConfirmText: {
+    color: colors.white,
+  },
+  proposalSecondaryText: {
+    color: colors.accentPrimary,
+  },
+  thinkingBubble: {
+    gap: 4,
+  },
+  thinkingDots: {
+    color: colors.textPrimary,
+    fontSize: 24,
+    lineHeight: 24,
+  },
+  thinkingText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    opacity: 0.6,
+  },
   modalFeedbackCard: {
     backgroundColor: colors.surface,
     borderWidth: 1,
