@@ -1021,7 +1021,9 @@ export function GraceModeCard() {
         <Text style={styles.graceModeTitle}>Having a hard day?</Text>
         <Text style={styles.graceModeSubtitle}>You can keep this simple. One tap is still showing up.</Text>
       </View>
-      <PrimaryButton label="Open Grace Mode" secondary />
+      <Pressable style={({ pressed }) => [styles.graceModeButton, pressed && styles.pressableFeedback]}>
+        <Text style={styles.graceModeButtonText}>Open Grace Mode</Text>
+      </Pressable>
       <Text style={styles.graceText}>That's enough. You showed up today.</Text>
     </View>
   );
@@ -3260,8 +3262,8 @@ const styles = StyleSheet.create({
   },
   graceText: {
     color: colors.textSecondary,
-    fontSize: 16,
-    lineHeight: 26,
+    fontSize: 14,
+    lineHeight: 22,
   },
   savedMoodWrap: {
     gap: spacing.sm,
@@ -3296,20 +3298,18 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   graceModeCard: {
-    backgroundColor: "#F3EDF8",
-    borderRadius: 24,
-    paddingHorizontal: 20,
-    paddingVertical: 20,
+    backgroundColor: "#F6EDE4",
+    borderRadius: 16,
+    padding: 20,
     gap: 16,
     borderWidth: 1,
-    borderColor: "rgba(155, 132, 197, 0.28)",
-    borderStyle: "dashed",
+    borderColor: "#E8C9AE",
   },
   graceModeHeader: {
     gap: 6,
   },
   graceModeEyebrow: {
-    color: "#856AA9",
+    color: colors.accentPrimary,
     fontSize: 12,
     fontWeight: "700",
     letterSpacing: 0.8,
@@ -3324,6 +3324,20 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 14,
     lineHeight: 22,
+  },
+  graceModeButton: {
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  graceModeButtonText: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: "600",
   },
   errorText: {
     color: colors.accentPrimary,

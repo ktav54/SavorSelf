@@ -216,13 +216,6 @@ function PreGatePreview({ pairedDays }: { pairedDays: number }) {
 
   return (
     <View style={styles.preGateWrap}>
-      <View style={styles.preGateHero}>
-        <Text style={styles.foodMoodHeaderEyebrow}>FOOD-MOOD</Text>
-        <Text style={styles.preGateTitle}>Your gut-brain story is just beginning.</Text>
-        <Text style={styles.preGateSubtitle}>
-          A few more days of logging and we'll start finding patterns between what you eat and how you feel.
-        </Text>
-      </View>
       <View style={styles.preGateProgressSection}>
         <Text style={styles.preGateProgressValue}>Day {pairedDays} of 3</Text>
         <View style={styles.preGateSegments}>

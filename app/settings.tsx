@@ -205,7 +205,9 @@ export default function SettingsScreen() {
               </View>
               <View style={styles.profileCopy}>
                 <Text style={styles.profileName}>{profile?.name || "Add your name"}</Text>
-                <Text style={styles.profileEmail}>{profile?.email || "No email yet"}</Text>
+                <Text style={styles.profileEmail} numberOfLines={1} ellipsizeMode="tail">
+                  {profile?.email || "No email yet"}
+                </Text>
               </View>
               <Text style={styles.chevron}>›</Text>
             </Pressable>
@@ -555,6 +557,7 @@ const styles = StyleSheet.create({
   profileCopy: {
     flex: 1,
     gap: 4,
+    minWidth: 0,
   },
   profileName: {
     color: colors.textPrimary,
