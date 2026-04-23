@@ -23,6 +23,7 @@ import { GutScoreModal, type GutScoreData } from "@/components/GutScoreModal";
 import { Card, Chip, Field, PrimaryButton, SectionTitle } from "@/components/ui";
 import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase";
 import { formatFoodName } from "@/lib/utils";
+import { sendCoachMessage } from "@/services/coach";
 import { fetchBarcodeProduct } from "@/services/openFoodFacts";
 import { searchFoodCatalog, type FoodSearchResult } from "@/services/usda";
 import { useAppStore, type AppState } from "@/store/useAppStore";
@@ -67,6 +68,8 @@ const mentalOptions: MentalState[] = [
 ];
 
 const mealOptions: MealType[] = ["breakfast", "lunch", "dinner", "snack"];
+const DETAILED_GUT_ANALYSIS_PROMPT =
+  "Give me a detailed but warm daily gut-brain analysis. Cover: how today's specific foods affect my gut-brain axis, what my mood and energy scores suggest about my current state, any nutrient gaps worth noting, and 2-3 specific actionable suggestions for the rest of the day. Be personal and specific to the actual foods listed. 4-6 sentences, no bullet points, flowing paragraph style.";
 
 function estimateMicronutrients(foodName: string) {
   const name = foodName.toLowerCase();
@@ -1013,19 +1016,221 @@ export function QuickLogStrip() {
   );
 }
 
-export function GraceModeCard() {
+function DailyGutAnalysisCard({
+  averageScore,
+  label,
+  notes,
+}: {
+  averageScore: number;
+  label: string;
+  notes: string[];
+}) {
+  const profile = useAppStore((state: AppState) => state.profile);
+  const foodLogs = useAppStore((state: AppState) => state.foodLogs);
+  const moodLogs = useAppStore((state: AppState) => state.moodLogs);
+  const quickLogs = useAppStore((state: AppState) => state.quickLogs);
+  const [expanded, setExpanded] = useState(false);
+  const [analysis, setAnalysis] = useState("");
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [analysisError, setAnalysisError] = useState("");
+  const thinkingDotsOpacity = useRef(new Animated.Value(0.3)).current;
+  const todayMood = moodLogs[0] ?? null;
+  const todayQuickLog = quickLogs[0] ?? null;
+
+  const totalCalories = useMemo(
+    () => foodLogs.reduce((sum: number, food: FoodLog) => sum + food.calories, 0),
+    [foodLogs]
+  );
+  const totalProtein = useMemo(
+    () => foodLogs.reduce((sum: number, food: FoodLog) => sum + food.proteinG, 0),
+    [foodLogs]
+  );
+  const totalFiber = useMemo(
+    () => foodLogs.reduce((sum: number, food: FoodLog) => sum + food.fiberG, 0),
+    [foodLogs]
+  );
+  const allGutTags = useMemo(
+    () => Array.from(new Set(foodLogs.flatMap((food: FoodLog) => food.gutHealthTags))),
+    [foodLogs]
+  );
+  const foodDetails = useMemo(
+    () =>
+      foodLogs.map((food: FoodLog) => ({
+        name: food.foodName,
+        calories: food.calories,
+        protein: food.proteinG,
+        fiber: food.fiberG,
+        gutHealthTags: food.gutHealthTags,
+      })),
+    [foodLogs]
+  );
+  const analysisContext = useMemo(
+    () => ({
+      moodLogs: moodLogs.slice(0, 1),
+      foodSummary: {
+        averageCalories: totalCalories,
+        averageProtein: totalProtein,
+        averageFiber: totalFiber,
+        tags: allGutTags,
+        todaysFoods: foodLogs.map((food: FoodLog) => food.foodName).join(", "),
+        foodDetails,
+        waterOz: todayQuickLog?.waterOz ?? 0,
+        sleepHours: todayQuickLog?.sleepHours ?? 0,
+        caffeineMg: todayQuickLog?.caffeineMg ?? 0,
+        calorieGoal: profile?.dailyCalorieGoal ?? null,
+        proteinGoal: profile?.dailyProteinGoal ?? null,
+        userName: profile?.name ?? "",
+      },
+      insights: [],
+      quickLogs: quickLogs.slice(0, 1),
+    }),
+    [
+      allGutTags,
+      foodDetails,
+      foodLogs,
+      moodLogs,
+      profile?.dailyCalorieGoal,
+      profile?.dailyProteinGoal,
+      profile?.name,
+      quickLogs,
+      todayQuickLog?.caffeineMg,
+      todayQuickLog?.sleepHours,
+      todayQuickLog?.waterOz,
+      totalCalories,
+      totalFiber,
+      totalProtein,
+    ]
+  );
+
+  useEffect(() => {
+    if (!analysisLoading) {
+      thinkingDotsOpacity.stopAnimation();
+      thinkingDotsOpacity.setValue(0.3);
+      return;
+    }
+
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(thinkingDotsOpacity, {
+          toValue: 1,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+        Animated.timing(thinkingDotsOpacity, {
+          toValue: 0.3,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    loop.start();
+
+    return () => {
+      loop.stop();
+    };
+  }, [analysisLoading, thinkingDotsOpacity]);
+
+  const fetchAnalysis = async (force = false) => {
+    if (analysisLoading || (!force && analysis)) {
+      return;
+    }
+
+    setAnalysisLoading(true);
+    setAnalysisError("");
+    if (force) {
+      setAnalysis("");
+    }
+
+    try {
+      const result = await sendCoachMessage(DETAILED_GUT_ANALYSIS_PROMPT, analysisContext);
+      const nextReply = typeof result.reply === "string" ? result.reply.trim() : "";
+
+      if (!nextReply) {
+        throw new Error("Missing AI reply");
+      }
+
+      setAnalysis(nextReply);
+    } catch {
+      setAnalysisError("Couldn't generate your daily read right now. Try again later.");
+    } finally {
+      setAnalysisLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (expanded && !analysis && !analysisLoading) {
+      void fetchAnalysis();
+    }
+  }, [analysis, analysisLoading, expanded]);
+
   return (
-    <View style={styles.graceModeCard}>
-      <View style={styles.graceModeHeader}>
-        <Text style={styles.graceModeEyebrow}>Grace Mode</Text>
-        <Text style={styles.graceModeTitle}>Having a hard day?</Text>
-        <Text style={styles.graceModeSubtitle}>You can keep this simple. One tap is still showing up.</Text>
-      </View>
-      <Pressable style={({ pressed }) => [styles.graceModeButton, pressed && styles.pressableFeedback]}>
-        <Text style={styles.graceModeButtonText}>Open Grace Mode</Text>
+    <>
+      <Pressable
+        style={({ pressed }) => [styles.dailyGutPanel, pressed && styles.pressableFeedback]}
+        onPress={() => setExpanded(true)}
+      >
+        <View style={styles.dailyGutHeader}>
+          <View style={styles.dailyGutHeaderCopy}>
+            <Text style={styles.dailyGutEyebrow}>Daily Gut Analysis</Text>
+            <Text style={styles.dailyGutTitle}>{label}</Text>
+          </View>
+          <GutScoreBadge score={averageScore} />
+        </View>
+        <View style={styles.dailyGutList}>
+          {notes.map((note, index) => (
+            <View key={`daily-gut-note-${index}`} style={styles.dailyGutBulletRow}>
+              <View style={styles.dailyGutBullet} />
+              <Text style={styles.dailyGutBody}>{note}</Text>
+            </View>
+          ))}
+        </View>
+        <Text style={styles.dailyGutTapHint}>Tap for full analysis →</Text>
       </Pressable>
-      <Text style={styles.graceText}>That's enough. You showed up today.</Text>
-    </View>
+
+      <Modal visible={expanded} animationType="slide" transparent onRequestClose={() => setExpanded(false)}>
+        <Pressable style={styles.analysisBackdrop} onPress={() => setExpanded(false)}>
+          <Pressable style={styles.analysisSheet} onPress={() => {}}>
+            <View style={styles.analysisHandle} />
+            <View style={styles.analysisHeaderRow}>
+              <View style={styles.analysisHeaderCopy}>
+                <Text style={styles.analysisEyebrow}>DAILY ANALYSIS</Text>
+                <Text style={styles.analysisTitle}>Your full read</Text>
+              </View>
+              <GutScoreBadge score={averageScore} />
+            </View>
+
+            {analysisLoading ? (
+              <View style={styles.analysisThinkingWrap}>
+                <Animated.Text style={[styles.analysisThinkingDots, { opacity: thinkingDotsOpacity }]}>···</Animated.Text>
+                <Text style={styles.analysisThinkingText}>thinking...</Text>
+              </View>
+            ) : analysisError ? (
+              <Text style={styles.analysisError}>{analysisError}</Text>
+            ) : analysis ? (
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.analysisScrollContent}>
+                <View style={styles.analysisBodyRow}>
+                  <View style={styles.analysisAccentBar} />
+                  <Text style={styles.analysisBody}>{analysis}</Text>
+                </View>
+              </ScrollView>
+            ) : null}
+
+            <Pressable
+              style={({ pressed }) => [styles.analysisCloseButton, pressed && styles.pressableFeedback]}
+              onPress={() => setExpanded(false)}
+            >
+              <Text style={styles.analysisCloseText}>Close</Text>
+            </Pressable>
+            {analysis ? (
+              <Pressable onPress={() => void fetchAnalysis(true)} style={({ pressed }) => pressed && styles.pressableFeedback}>
+                <Text style={styles.analysisRefreshLink}>Refresh analysis</Text>
+              </Pressable>
+            ) : null}
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </>
   );
 }
 
@@ -1149,23 +1354,11 @@ export function MacroSummaryBar() {
   return (
     <>
       <View style={styles.gracefulCard}>
-        <View style={styles.dailyGutPanel}>
-          <View style={styles.dailyGutHeader}>
-            <View style={styles.dailyGutHeaderCopy}>
-              <Text style={styles.dailyGutEyebrow}>Daily Gut Analysis</Text>
-              <Text style={styles.dailyGutTitle}>{dailyGutAnalysis.label}</Text>
-            </View>
-            <GutScoreBadge score={dailyGutAnalysis.averageScore} />
-          </View>
-          <View style={styles.dailyGutList}>
-            {dailyGutAnalysis.notes.map((note, index) => (
-              <View key={`daily-gut-note-${index}`} style={styles.dailyGutBulletRow}>
-                <View style={styles.dailyGutBullet} />
-                <Text style={styles.dailyGutBody}>{note}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
+        <DailyGutAnalysisCard
+          averageScore={dailyGutAnalysis.averageScore}
+          label={dailyGutAnalysis.label}
+          notes={dailyGutAnalysis.notes}
+        />
         <View style={styles.macroPillRow}>
         <MacroVisualCard
           label="Cal"
@@ -2787,6 +2980,13 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginTop: 0,
   },
+  dailyGutTapHint: {
+    color: colors.accentPrimary,
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: 8,
+    textAlign: "right",
+  },
   dailyGutBulletRow: {
     alignItems: "flex-start",
     flexDirection: "row",
@@ -2798,6 +2998,113 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: colors.accentPrimary,
     marginTop: 7,
+  },
+  analysisBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
+    justifyContent: "flex-end",
+  },
+  analysisSheet: {
+    backgroundColor: colors.background,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    maxHeight: "85%",
+  },
+  analysisHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+    alignSelf: "center",
+    marginBottom: 20,
+  },
+  analysisHeaderRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 16,
+    marginBottom: 20,
+  },
+  analysisHeaderCopy: {
+    flex: 1,
+    gap: 6,
+  },
+  analysisEyebrow: {
+    color: colors.accentPrimary,
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 1,
+  },
+  analysisTitle: {
+    color: colors.textPrimary,
+    fontSize: 24,
+    fontWeight: "700",
+    letterSpacing: -0.4,
+  },
+  analysisThinkingWrap: {
+    alignItems: "flex-start",
+    backgroundColor: colors.white,
+    borderRadius: 18,
+    borderBottomLeftRadius: 4,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  analysisThinkingDots: {
+    color: colors.textPrimary,
+    fontSize: 24,
+    lineHeight: 24,
+  },
+  analysisThinkingText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    opacity: 0.6,
+  },
+  analysisError: {
+    color: colors.textSecondary,
+    fontSize: 15,
+    lineHeight: 24,
+  },
+  analysisScrollContent: {
+    paddingBottom: 8,
+  },
+  analysisBodyRow: {
+    flexDirection: "row",
+    alignItems: "stretch",
+    gap: 12,
+  },
+  analysisAccentBar: {
+    width: 3,
+    borderRadius: 2,
+    backgroundColor: colors.accentPrimary,
+  },
+  analysisBody: {
+    flex: 1,
+    color: colors.textPrimary,
+    fontSize: 17,
+    lineHeight: 28,
+  },
+  analysisCloseButton: {
+    alignSelf: "center",
+    backgroundColor: "#F6EDE4",
+    borderRadius: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    marginTop: 20,
+  },
+  analysisCloseText: {
+    color: colors.accentPrimary,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  analysisRefreshLink: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    textAlign: "center",
+    marginTop: 8,
   },
   macroCard: {
     flex: 1,
@@ -3260,11 +3567,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: -4,
   },
-  graceText: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    lineHeight: 22,
-  },
   savedMoodWrap: {
     gap: spacing.sm,
   },
@@ -3293,48 +3595,6 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   savedMoodText: {
-    color: colors.textPrimary,
-    fontSize: 15,
-    fontWeight: "600",
-  },
-  graceModeCard: {
-    backgroundColor: "#F6EDE4",
-    borderRadius: 16,
-    padding: 20,
-    gap: 16,
-    borderWidth: 1,
-    borderColor: "#E8C9AE",
-  },
-  graceModeHeader: {
-    gap: 6,
-  },
-  graceModeEyebrow: {
-    color: colors.accentPrimary,
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 0.8,
-    textTransform: "uppercase",
-  },
-  graceModeTitle: {
-    color: colors.textPrimary,
-    fontSize: 24,
-    fontWeight: "700",
-  },
-  graceModeSubtitle: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    lineHeight: 22,
-  },
-  graceModeButton: {
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  graceModeButtonText: {
     color: colors.textPrimary,
     fontSize: 15,
     fontWeight: "600",

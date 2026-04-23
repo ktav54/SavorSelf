@@ -904,31 +904,69 @@ export function InsightFeed() {
 
 export function TrendCard() {
   const trend = useAppStore((state: AppState) => state.foodMoodTrend);
-  const points = trend.slice(-7);
+  const moodLogs = useAppStore((state: AppState) => state.moodLogs);
+  const moodByDate = useMemo(() => buildMoodByDate(moodLogs), [moodLogs]);
+  const trendByDate = useMemo(
+    () => new Map(trend.map((point: FoodMoodTrendPoint) => [point.date.slice(0, 10), point])),
+    [trend]
+  );
+  const points = useMemo(
+    () =>
+      getLastNDates(7).map((date) => {
+        const key = toDateKey(date);
+        const trendPoint = trendByDate.get(key);
+        const moodValue = moodByDate.get(key);
+        const moodScore =
+          typeof trendPoint?.moodScore === "number"
+            ? trendPoint.moodScore
+            : typeof moodValue === "number"
+              ? Math.round(moodValue)
+              : null;
+
+        return {
+          key,
+          label: format(date, "EEE"),
+          moodScore,
+          isToday: key === toDateKey(new Date()),
+        };
+      }),
+    [moodByDate, trendByDate]
+  );
+  const allEmpty = points.every((point) => !point.moodScore);
 
   return (
     <SurfaceCard>
-      <SectionTitle eyebrow="7-DAY MOOD" title="Your week at a glance" />
-      {points.length ? (
-        <View style={styles.trendBarsRow}>
-          {points.map((point) => (
-            <View key={point.date} style={styles.trendBarColumn}>
-              <View
-                style={[
-                  styles.trendBar,
-                  {
-                    height: point.moodScore ? point.moodScore * 20 : 4,
-                    backgroundColor: point.moodScore ? colors.accentPrimary : colors.border,
-                  },
-                ]}
-              />
-              <Text style={styles.trendDayLabel}>{format(new Date(point.date), "EEE")}</Text>
-            </View>
-          ))}
+      <SectionTitle
+        eyebrow="7-DAY MOOD"
+        title="Your week at a glance"
+        subtitle={allEmpty ? "Log your mood daily to see your trend build" : undefined}
+      />
+      <View style={styles.trendBarsRow}>
+        {points.map((point) => (
+          <View key={point.key} style={styles.trendBarColumn}>
+            <View
+              style={[
+                styles.trendBar,
+                {
+                  height: point.moodScore ? point.moodScore * 20 : 4,
+                  backgroundColor: point.moodScore ? colors.accentPrimary : colors.border,
+                },
+              ]}
+            />
+            <Text style={[styles.trendDayLabel, point.isToday && styles.trendDayLabelToday]}>{point.label}</Text>
+          </View>
+        ))}
+      </View>
+      <View style={styles.trendLegendRow}>
+        <View style={styles.trendLegendItem}>
+          <View style={[styles.trendLegendDot, styles.trendLegendDotFilled]} />
+          <Text style={styles.trendLegendText}>Mood logged</Text>
         </View>
-      ) : (
-        <Text style={styles.note}>A few more check-ins will give this graph something real to show.</Text>
-      )}
+        <View style={styles.trendLegendItem}>
+          <View style={styles.trendLegendDot} />
+          <Text style={styles.trendLegendText}>No log</Text>
+        </View>
+      </View>
     </SurfaceCard>
   );
 }
@@ -1768,20 +1806,47 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-end",
-    minHeight: 132,
-    gap: 10,
+    height: 120,
+    marginVertical: 16,
   },
   trendBarColumn: {
     flex: 1,
     alignItems: "center",
     justifyContent: "flex-end",
-    gap: 10,
+    gap: 6,
   },
   trendBar: {
-    width: 24,
-    borderRadius: 4,
+    width: 28,
+    borderRadius: 6,
   },
   trendDayLabel: {
+    color: colors.textSecondary,
+    fontSize: 11,
+  },
+  trendDayLabelToday: {
+    color: colors.accentPrimary,
+    fontWeight: "600",
+  },
+  trendLegendRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16,
+  },
+  trendLegendItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  trendLegendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: colors.border,
+  },
+  trendLegendDotFilled: {
+    backgroundColor: colors.accentPrimary,
+  },
+  trendLegendText: {
     color: colors.textSecondary,
     fontSize: 11,
   },

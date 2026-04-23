@@ -17,7 +17,6 @@ import {
   FoodLogSection,
   FoodSearchCard,
   FoodSearchLauncher,
-  GraceModeCard,
   HydrationSummaryCard,
   MacroSummaryBar,
   MoodCheckInStrip,
@@ -282,7 +281,6 @@ export default function LogScreen() {
           {!isSelectedDateToday ? <MacroSummaryBar /> : null}
           <HydrationSummaryCard />
           <QuickLogStrip />
-          <GraceModeCard />
         </View>
       </Screen>
 
