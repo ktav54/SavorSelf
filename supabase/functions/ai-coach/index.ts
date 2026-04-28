@@ -1,7 +1,6 @@
 // supabase/functions/ai-coach/index.ts
 // Unified coach — handles food logging, macro edits, and general chat in one AI call.
 
-const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const USDA_API_URL = "https://api.nal.usda.gov/fdc/v1/foods/search";
 const OPEN_FOOD_FACTS_URL = "https://world.openfoodfacts.org/cgi/search.pl";
 const JSON_HEADERS = { "Content-Type": "application/json" };
@@ -70,7 +69,7 @@ interface RequestPayload {
   } | null;
 }
 
-interface GroqMessage {
+interface CoachMessage {
   role: "system" | "user" | "assistant";
   content: string;
 }
@@ -87,16 +86,28 @@ function roundNutrition(value: number) {
   return Math.round(Number(value ?? 0));
 }
 
-async function callGroq(messages: GroqMessage[], apiKey: string, temperature = 0.3) {
-  return fetch(GROQ_API_URL, {
+async function callAzureOpenAI(messages: CoachMessage[], apiKey: string, temperature = 0.7) {
+  const azureEndpoint =
+    Deno.env.get("AZURE_OPENAI_ENDPOINT") ??
+    "https://kevin-mof0qwxf-eastus2.cognitiveservices.azure.com";
+  const deploymentName = "gpt-4.1-mini";
+  const apiVersion = "2024-12-01-preview";
+
+  return fetch(
+    `${azureEndpoint}/openai/deployments/${deploymentName}/chat/completions?api-version=${apiVersion}`,
+    {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      headers: {
+        "Content-Type": "application/json",
+        "api-key": apiKey,
+      },
     body: JSON.stringify({
-      model: "llama-3.3-70b-versatile",
       temperature,
+        max_tokens: 1000,
       messages,
     }),
-  });
+    }
+  );
 }
 
 function resolveMealType(raw: string | undefined): MealType {
@@ -183,19 +194,15 @@ async function searchOFF(name: string) {
   return withData ?? products[0] ?? null;
 }
 
-async function estimateWithGroq(name: string, portion: string, apiKey: string) {
-  const res = await fetch(GROQ_API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: "llama-3.3-70b-versatile",
-      temperature: 0.1,
-      messages: [
-        { role: "system", content: "Return valid JSON only. No markdown. No explanation." },
-        { role: "user", content: `Give accurate nutrition for ${name} (${portion}) as typically prepared and consumed. Black coffee = ~2 cal. Scrambled eggs = ~70 cal each. Be precise. Return only: {"calories":number,"protein_g":number,"carbs_g":number,"fat_g":number}` },
-      ],
-    }),
-  });
+async function estimateWithAzureOpenAI(name: string, portion: string, apiKey: string) {
+  const res = await callAzureOpenAI(
+    [
+      { role: "system", content: "Return valid JSON only. No markdown. No explanation." },
+      { role: "user", content: `Give accurate nutrition for ${name} (${portion}) as typically prepared and consumed. Black coffee = ~2 cal. Scrambled eggs = ~70 cal each. Be precise. Return only: {"calories":number,"protein_g":number,"carbs_g":number,"fat_g":number}` },
+    ],
+    apiKey,
+    0.1
+  );
   const data = await res.json();
   const content = data?.choices?.[0]?.message?.content ?? "{}";
   return JSON.parse(cleanJson(content)) as { calories: number; protein_g: number; carbs_g: number; fat_g: number };
@@ -204,11 +211,11 @@ async function estimateWithGroq(name: string, portion: string, apiKey: string) {
 async function enrichFoodItem(
   item: { name: string; portion: string; quantity: number; unit: string },
   usdaApiKey: string,
-  groqApiKey: string
+  azureOpenAiKey: string
 ): Promise<FoodItem> {
   const unit = normalizeUnit(item.unit);
   const quantity = item.quantity > 0 ? item.quantity : 1;
-  const est = await estimateWithGroq(item.name, item.portion || `${quantity} ${unit}`, groqApiKey);
+  const est = await estimateWithAzureOpenAI(item.name, item.portion || `${quantity} ${unit}`, azureOpenAiKey);
 
   return {
     name: item.name,
@@ -293,11 +300,11 @@ Deno.serve(async (request: Request) => {
     }
 
     const payload = (await request.json()) as RequestPayload;
-    const groqApiKey = Deno.env.get("GROQ_API_KEY");
+    const azureOpenAiKey = Deno.env.get("AZURE_OPENAI_KEY") ?? "";
     const usdaApiKey = Deno.env.get("USDA_API_KEY") ?? Deno.env.get("EXPO_PUBLIC_USDA_API_KEY") ?? "";
 
-    if (!groqApiKey) {
-      return jsonResponse({ intent: "chat", reply: "GROQ_API_KEY is not configured." });
+    if (!azureOpenAiKey) {
+      return jsonResponse({ intent: "chat", reply: "AZURE_OPENAI_KEY is not configured." });
     }
 
     if (payload.mode === "nutrition_lookup") {
@@ -314,7 +321,7 @@ Deno.serve(async (request: Request) => {
           unit: "serving",
         },
         usdaApiKey,
-        groqApiKey
+        azureOpenAiKey
       );
 
       return jsonResponse({
@@ -328,7 +335,7 @@ Deno.serve(async (request: Request) => {
     if (payload.mode === "gut_score") {
       const foodName = payload.message.replace(/^gut_score:\s*/i, "").trim();
 
-      const gutRes = await callGroq(
+      const gutRes = await callAzureOpenAI(
         [
           {
             role: "system",
@@ -359,13 +366,13 @@ Return ONLY valid JSON, no markdown, no explanation:
           },
           { role: "user", content: `Food: ${foodName}` },
         ],
-        groqApiKey,
+        azureOpenAiKey,
         0.3
       );
 
       if (!gutRes.ok) {
         const err = await gutRes.text();
-        console.log("[ai-coach] gut_score groq error", err);
+        console.log("[ai-coach] gut_score azure error", err);
         return jsonResponse({ intent: "gut_score", error: "Could not generate gut score." }, 500);
       }
 
@@ -398,7 +405,7 @@ Return ONLY valid JSON, no markdown, no explanation:
           : [],
       };
 
-      const chatRes = await callGroq(
+      const chatRes = await callAzureOpenAI(
         [
           {
             role: "system",
@@ -415,7 +422,7 @@ Return ONLY valid JSON, no markdown, no explanation:
           })),
           { role: "user", content: payload.message },
         ],
-        groqApiKey,
+        azureOpenAiKey,
         0.5
       );
 
@@ -458,7 +465,7 @@ Return ONLY valid JSON, no markdown, no explanation:
         : [],
     };
 
-    const systemMessages: GroqMessage[] = [
+    const systemMessages: CoachMessage[] = [
       { role: "system", content: SYSTEM_PROMPT },
       {
         role: "system",
@@ -477,37 +484,37 @@ Return ONLY valid JSON, no markdown, no explanation:
       .filter((m) => m.content.length < 240)
       .slice(-6);
 
-    const messages: GroqMessage[] = [
+    const messages: CoachMessage[] = [
       ...systemMessages,
       ...filteredHistory.map((m) => ({ role: m.role, content: m.content })),
       { role: "user", content: payload.message },
     ];
 
-    console.log("[ai-coach] calling Groq, history:", filteredHistory.length);
+    console.log("[ai-coach] calling Azure OpenAI, history:", filteredHistory.length);
 
-    let groqRes = await callGroq(messages, groqApiKey, 0.3);
+    let azureRes = await callAzureOpenAI(messages, azureOpenAiKey, 0.3);
 
-    if (!groqRes.ok) {
-      const err = await groqRes.text();
-      console.log("[ai-coach] Groq error", err);
-      groqRes = await callGroq(
+    if (!azureRes.ok) {
+      const err = await azureRes.text();
+      console.log("[ai-coach] Azure OpenAI error", err);
+      azureRes = await callAzureOpenAI(
         [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: payload.message },
         ],
-        groqApiKey,
+        azureOpenAiKey,
         0.3
       );
 
-      if (!groqRes.ok) {
-        const retryErr = await groqRes.text();
-        console.log("[ai-coach] Groq retry error", retryErr);
+      if (!azureRes.ok) {
+        const retryErr = await azureRes.text();
+        console.log("[ai-coach] Azure OpenAI retry error", retryErr);
         return jsonResponse({ intent: "chat", reply: "I hit a snag, but I'm still here. Try sending that one more time." });
       }
     }
 
-    const groqData = await groqRes.json();
-    const raw = groqData?.choices?.[0]?.message?.content ?? "";
+    const azureData = await azureRes.json();
+    const raw = azureData?.choices?.[0]?.message?.content ?? "";
     console.log("[ai-coach] raw response", raw);
 
     let parsed: UnifiedResponse;
@@ -520,7 +527,7 @@ Return ONLY valid JSON, no markdown, no explanation:
     // Handle food_log
     if (parsed.intent === "food_log" && parsed.foodItems?.length) {
       const enrichedItems = await Promise.all(
-        parsed.foodItems.map((item) => enrichFoodItem(item, usdaApiKey, groqApiKey))
+        parsed.foodItems.map((item) => enrichFoodItem(item, usdaApiKey, azureOpenAiKey))
       );
       return jsonResponse({
         intent: "food_log",
