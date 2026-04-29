@@ -123,12 +123,8 @@ function MessageBubble({
   const proposalMealType = proposalIsActive
     ? pendingProposal?.mealType
     : message.foodProposal?.mealType;
-  const extractedReply = extractReply(message.content).trim();
-  const fallbackReply = extractedReply || message.content.trim() || "Something went wrong. Try again.";
-  const parsedResponseParts = parseCoachResponse(extractedReply);
-  const responseParts = parsedResponseParts.length
-    ? parsedResponseParts
-    : [{ type: "paragraph" as const, content: fallbackReply }];
+  const assistantText = extractReply(message.content).trim() || message.content.trim() || "Something went wrong. Try again.";
+  const responseParts = parseCoachResponse(assistantText);
 
   return (
     <View style={styles.messageWrap}>
@@ -142,25 +138,38 @@ function MessageBubble({
         {message.id === "welcome" ? (
           <Text style={styles.welcomeCoachLabel}>✦ SavorSelf Coach</Text>
         ) : null}
-        {responseParts.map((part, index) => (
-          <View
-            key={`${message.id}-part-${index}`}
-            style={[styles.responsePart, index === responseParts.length - 1 && styles.responsePartLast]}
-          >
-            {part.type === "numbered" ? (
-              <View style={styles.numberCircle}>
-                <Text style={styles.numberText}>{part.number}</Text>
-              </View>
-            ) : null}
-            {part.type === "bullet" ? <View style={styles.bulletDot} /> : null}
-            <Text
-              selectable={message.role === "assistant"}
-              style={[styles.responseText, message.role === "user" && styles.userResponseText]}
-            >
-              {part.content}
+        {message.role === "user" ? (
+          <View style={styles.bubbleContent}>
+            <Text style={[styles.responseText, styles.userResponseText]}>{message.content}</Text>
+          </View>
+        ) : responseParts.length > 0 ? (
+          <View style={styles.bubbleContent}>
+            <View style={styles.responseTextWrap}>
+              {responseParts.map((part, index) => (
+                <View
+                  key={`${message.id}-part-${index}`}
+                  style={[styles.responsePart, index === responseParts.length - 1 && styles.responsePartLast]}
+                >
+                  {part.type === "numbered" ? (
+                    <View style={styles.numberCircle}>
+                      <Text style={styles.numberText}>{part.number}</Text>
+                    </View>
+                  ) : null}
+                  {part.type === "bullet" ? <View style={styles.bulletDot} /> : null}
+                  <Text selectable style={styles.responseText}>
+                    {part.content}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : (
+          <View style={styles.bubbleContent}>
+            <Text selectable style={styles.responseText}>
+              {assistantText}
             </Text>
           </View>
-        ))}
+        )}
       </View>
       <Text style={[styles.messageTime, message.role === "user" ? styles.messageTimeUser : styles.messageTimeAssistant]}>
         {format(new Date(message.timestamp), "h:mm a")}
@@ -253,10 +262,18 @@ function extractReply(content: string): string {
 }
 
 function parseCoachResponse(text: string): CoachResponsePart[] {
-  const lines = text.split("\n").filter((line) => line.trim());
-  const parts = lines.map((line) => {
-    const trimmed = line.trim();
-    const numberedMatch = trimmed.match(/^(\d+)\.\s+(.+)/);
+  if (!text || text.trim() === "") {
+    return [];
+  }
+
+  const lines = text.split("\n").filter((line) => line.trim().length > 0);
+
+  if (lines.length === 0) {
+    return [{ type: "paragraph", content: text }];
+  }
+
+  return lines.map((line) => {
+    const numberedMatch = line.match(/^(\d+)\.\s+(.+)/);
     if (numberedMatch) {
       return {
         type: "numbered" as const,
@@ -264,19 +281,17 @@ function parseCoachResponse(text: string): CoachResponsePart[] {
         number: Number.parseInt(numberedMatch[1], 10),
       };
     }
-    if (trimmed.startsWith("- ") || trimmed.startsWith("• ")) {
+    if (line.startsWith("- ") || line.startsWith("• ")) {
       return {
         type: "bullet" as const,
-        content: trimmed.replace(/^[-•]\s+/, ""),
+        content: line.replace(/^[-•]\s+/, ""),
       };
     }
     return {
       type: "paragraph" as const,
-      content: trimmed,
+      content: line,
     };
   });
-
-  return parts.filter((part) => part.content.trim().length > 0);
 }
 
 function buildConfirmationMessage(proposal: CoachFoodProposal): string {
@@ -1356,7 +1371,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 18,
-    maxWidth: "80%",
+    maxWidth: "88%",
   },
   userBubble: {
     alignSelf: "flex-end",
@@ -1373,6 +1388,8 @@ const styles = StyleSheet.create({
   welcomeBubble: {
     backgroundColor: "#F6EDE4",
     borderColor: "#E8C9AE",
+    maxWidth: "88%",
+    paddingHorizontal: 14,
   },
   welcomeCoachLabel: {
     fontSize: 11,
@@ -1402,6 +1419,12 @@ const styles = StyleSheet.create({
   },
   bubbleText: { color: colors.textPrimary, fontSize: 16, lineHeight: 24 },
   userBubbleText: { color: colors.white },
+  bubbleContent: {
+    flexDirection: "row",
+  },
+  responseTextWrap: {
+    flex: 1,
+  },
   responsePart: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -1439,6 +1462,7 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     color: colors.textPrimary,
     flex: 1,
+    flexShrink: 1,
   },
   userResponseText: {
     color: colors.white,
