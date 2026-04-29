@@ -519,6 +519,8 @@ export function CoachChat() {
   const coachContext = useMemo(
     () => ({
       profileName: profile?.name ?? "",
+      onboardingGoal: profile?.onboardingGoal ?? "",
+      onboardingChallenge: profile?.onboardingChallenge ?? "",
       moodLogs: moodLogs.slice(-7),
       todaysMood: moodLogs[0]
         ? {
@@ -544,7 +546,7 @@ export function CoachChat() {
       quickLogs: quickLogs.slice(-7),
       insights: insights.slice(0, 3),
     }),
-    [foodLogs, insights, moodLogs, profile?.name, quickLogs]
+    [foodLogs, insights, moodLogs, profile?.name, profile?.onboardingChallenge, profile?.onboardingGoal, quickLogs]
   );
 
   const updateProposalMealType = (meal: MealType) => {

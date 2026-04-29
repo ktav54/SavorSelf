@@ -19,6 +19,9 @@ create table if not exists public.users (
 
 alter table public.users add column if not exists daily_carbs_goal numeric;
 alter table public.users add column if not exists daily_fat_goal numeric;
+alter table public.users add column if not exists coach_conversation jsonb;
+alter table public.users add column if not exists onboarding_goal text;
+alter table public.users add column if not exists onboarding_challenge text;
 
 create table if not exists public.mood_logs (
   id uuid primary key default gen_random_uuid(),
@@ -129,3 +132,26 @@ alter table public.food_logs drop constraint if exists food_logs_food_source_che
 alter table public.food_logs
 add constraint food_logs_food_source_check
 check (food_source in ('usda', 'open_food_facts', 'ai_estimate', 'custom'));
+
+alter table public.quick_logs enable row level security;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'quick_logs'
+      and policyname in (
+        'users can manage own quick logs',
+        'Users can manage their own quick logs'
+      )
+  ) then
+    create policy "Users can manage their own quick logs"
+      on public.quick_logs
+      for all
+      using (auth.uid() = user_id)
+      with check (auth.uid() = user_id);
+  end if;
+end
+$$;

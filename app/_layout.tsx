@@ -3,7 +3,7 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as Notifications from "expo-notifications";
 import * as SplashScreen from "expo-splash-screen";
-import { Text, View } from "react-native";
+import { AppState as RNAppState, Text, View } from "react-native";
 import { colors } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
 import {
@@ -65,6 +65,39 @@ export default function RootLayout() {
         await scheduleWeeklyReport();
       }
     })();
+  }, []);
+
+  useEffect(() => {
+    const subscription = RNAppState.addEventListener("change", (nextState) => {
+      if (nextState !== "active") {
+        return;
+      }
+
+      const store = useAppStore.getState();
+      if (!store.isAuthenticated || !store.profile) {
+        return;
+      }
+
+      const todayDate = new Date();
+      todayDate.setHours(0, 0, 0, 0);
+      const shouldResetToToday =
+        store.selectedDate instanceof Date &&
+        store.selectedDate.getTime() !== todayDate.getTime();
+      const targetDate = shouldResetToToday ? todayDate : store.selectedDate;
+
+      void (async () => {
+        if (shouldResetToToday) {
+          await store.setSelectedDate(todayDate);
+        }
+        await store.loadTodayMoodLog(targetDate);
+        await store.loadTodayFoodLogs(targetDate);
+        await store.loadTodayQuickLog(targetDate);
+      })();
+    });
+
+    return () => {
+      subscription.remove();
+    };
   }, []);
 
   if (!appReady) {

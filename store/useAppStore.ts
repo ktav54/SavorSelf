@@ -246,6 +246,8 @@ function mapProfile(row: any): UserProfile {
     dailyCarbsGoal: row.daily_carbs_goal ?? undefined,
     dailyFatGoal: row.daily_fat_goal ?? undefined,
     dailyWaterGoal: row.daily_water_goal ?? undefined,
+    onboardingGoal: row.onboarding_goal ?? undefined,
+    onboardingChallenge: row.onboarding_challenge ?? undefined,
     timezone: row.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
   };
 }
@@ -345,7 +347,9 @@ function roundNutrition(value: number) {
 }
 
 function getMissingUsersColumns(message?: string | null) {
-  const missing: Array<"daily_carbs_goal" | "daily_fat_goal"> = [];
+  const missing: Array<
+    "daily_carbs_goal" | "daily_fat_goal" | "onboarding_goal" | "onboarding_challenge"
+  > = [];
 
   if (!message) {
     return missing;
@@ -357,6 +361,14 @@ function getMissingUsersColumns(message?: string | null) {
 
   if (message.includes("daily_fat_goal")) {
     missing.push("daily_fat_goal");
+  }
+
+  if (message.includes("onboarding_goal")) {
+    missing.push("onboarding_goal");
+  }
+
+  if (message.includes("onboarding_challenge")) {
+    missing.push("onboarding_challenge");
   }
 
   return missing;
@@ -575,6 +587,8 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
       daily_carbs_goal: nextProfile.dailyCarbsGoal ?? null,
       daily_fat_goal: nextProfile.dailyFatGoal ?? null,
       daily_water_goal: nextProfile.dailyWaterGoal ?? null,
+      onboarding_goal: nextProfile.onboardingGoal ?? null,
+      onboarding_challenge: nextProfile.onboardingChallenge ?? null,
     };
 
     const { data, error, missingColumns } = await updateUsersRowWithFallback(profile.id, payload);
@@ -592,7 +606,7 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
 
     if (missingColumns.length > 0) {
       return {
-        error: "Your profile saved, but carbs and fat goals need a quick Supabase table update before they can be stored.",
+        error: "Your profile saved, but some onboarding and goal fields need a quick Supabase table update before they can be stored.",
       };
     }
 
@@ -1303,20 +1317,28 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
       return;
     }
 
-    const { error } = await supabase
-      .from("users")
-      .update({ coach_conversation: JSON.stringify(conversation) })
-      .eq("id", profile.id);
+    try {
+      const { error } = await supabase
+        .from("users")
+        .update({ coach_conversation: JSON.stringify(conversation) })
+        .eq("id", profile.id);
 
-    if (error) {
-      const message = error.message.toLowerCase();
-      if (
-        message.includes("coach_conversation") ||
-        message.includes("column") ||
-        message.includes("schema cache")
-      ) {
-        return;
+      if (error) {
+        console.log("[store] saveConversation skipped", error.message);
+        const message = error.message.toLowerCase();
+        if (
+          message.includes("coach_conversation") ||
+          message.includes("column") ||
+          message.includes("schema cache")
+        ) {
+          return;
+        }
       }
+    } catch (error) {
+      console.log(
+        "[store] saveConversation failed",
+        error instanceof Error ? error.message : String(error)
+      );
     }
   },
   loadConversation: async () => {
@@ -1325,29 +1347,41 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
       return;
     }
 
-    const { data, error } = await supabase
-      .from("users")
-      .select("coach_conversation")
-      .eq("id", profile.id)
-      .maybeSingle();
+    try {
+      const { data, error } = await supabase
+        .from("users")
+        .select("coach_conversation")
+        .eq("id", profile.id)
+        .maybeSingle();
 
-    if (error) {
-      const message = error.message.toLowerCase();
-      if (
-        message.includes("coach_conversation") ||
-        message.includes("column") ||
-        message.includes("schema cache")
-      ) {
+      if (error) {
+        console.log("[store] loadConversation skipped", error.message);
+        const message = error.message.toLowerCase();
+        if (
+          message.includes("coach_conversation") ||
+          message.includes("column") ||
+          message.includes("schema cache")
+        ) {
+          return;
+        }
         return;
       }
-      return;
-    }
 
-    const parsed = parseCoachConversation(data?.coach_conversation);
-    if (parsed) {
-      set({
-        conversation: parsed,
-      });
+      if (!data?.coach_conversation) {
+        return;
+      }
+
+      const parsed = parseCoachConversation(data.coach_conversation);
+      if (parsed) {
+        set({
+          conversation: parsed,
+        });
+      }
+    } catch (error) {
+      console.log(
+        "[store] loadConversation failed",
+        error instanceof Error ? error.message : String(error)
+      );
     }
   },
   getFrequentFoods: (mealType, limit = 3) => {

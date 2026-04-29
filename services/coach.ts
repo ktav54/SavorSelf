@@ -21,11 +21,25 @@ function buildCoachPromptContext(context: Record<string, unknown>) {
           note?: string;
         })
       : null;
+  const onboardingGoal =
+    typeof context.onboardingGoal === "string" && context.onboardingGoal.trim()
+      ? context.onboardingGoal.trim()
+      : "";
+  const onboardingChallenge =
+    typeof context.onboardingChallenge === "string" && context.onboardingChallenge.trim()
+      ? context.onboardingChallenge.trim()
+      : "";
 
   const coachIdentityPrompt = [
     `You are talking to ${name}.`,
     `The user's name is ${name}. Use their name occasionally but not in every message — only when it feels natural.`,
   ].join(" ");
+  const coachGoalPrompt = onboardingGoal
+    ? `The user's primary goal is: ${onboardingGoal}. Keep this in mind when giving suggestions and insights.`
+    : "";
+  const coachChallengePrompt = onboardingChallenge
+    ? `Their biggest challenge is: ${onboardingChallenge}. Be sensitive to this and offer relevant support.`
+    : "";
 
   const coachTodaysMoodPrompt = todaysMood
     ? `Today's mood check-in: mood ${todaysMood.score ?? "?"}/5, energy ${todaysMood.energy ?? "?"}/5. Physical: ${todaysMood.physicalStates?.join(", ") || "none noted"}. Mental: ${todaysMood.mentalStates?.join(", ") || "none noted"}.${todaysMood.note ? ` Note: "${todaysMood.note}"` : ""}`
@@ -34,8 +48,10 @@ function buildCoachPromptContext(context: Record<string, unknown>) {
   return {
     ...context,
     coachIdentityPrompt,
+    coachGoalPrompt,
+    coachChallengePrompt,
     coachTodaysMoodPrompt,
-    coachSystemPromptAddendum: [coachIdentityPrompt, coachTodaysMoodPrompt, COACH_RESPONSE_STYLE_INSTRUCTIONS]
+    coachSystemPromptAddendum: [coachIdentityPrompt, coachGoalPrompt, coachChallengePrompt, coachTodaysMoodPrompt, COACH_RESPONSE_STYLE_INSTRUCTIONS]
       .filter(Boolean)
       .join(" "),
   };

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { format } from "date-fns";
@@ -37,6 +37,7 @@ export default function FoodMoodScreen() {
   ).current;
   const gateAnim = useRef(new Animated.Value(0)).current;
   const skeletonAnim = useRef(new Animated.Value(0.4)).current;
+  const [screenError, setScreenError] = useState<string | null>(null);
 
   const hasEnoughData = useMemo(() => {
     const cutoff = new Date();
@@ -63,7 +64,24 @@ export default function FoodMoodScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      void loadFoodMoodInsights();
+      let active = true;
+
+      void (async () => {
+        try {
+          await loadFoodMoodInsights();
+          if (active) {
+            setScreenError(null);
+          }
+        } catch {
+          if (active) {
+            setScreenError("Something went wrong loading your Food-Mood data.");
+          }
+        }
+      })();
+
+      return () => {
+        active = false;
+      };
     }, [loadFoodMoodInsights])
   );
 
@@ -156,19 +174,41 @@ export default function FoodMoodScreen() {
           <Text style={styles.title}>Your gut-brain picture</Text>
           <Text style={styles.subtitle}>{format(new Date(), "EEEE, MMMM d")}</Text>
         </View>
-        {shouldShowLoadingState ? (
+        {screenError ? (
+          <View style={styles.screenError}>
+            <Text style={styles.screenErrorEmoji}>🌥️</Text>
+            <Text style={styles.screenErrorTitle}>Something went wrong</Text>
+            <Text style={styles.screenErrorSub}>{screenError}</Text>
+            <Pressable
+              style={({ pressed }) => [styles.screenErrorRetry, pressed && { opacity: 0.8 }]}
+              onPress={() => {
+                setScreenError(null);
+                void (async () => {
+                  try {
+                    await loadFoodMoodInsights();
+                  } catch {
+                    setScreenError("Something went wrong loading your Food-Mood data.");
+                  }
+                })();
+              }}
+            >
+              <Text style={styles.screenErrorRetryText}>Try again</Text>
+            </Pressable>
+          </View>
+        ) : null}
+        {!screenError && shouldShowLoadingState ? (
           <>
             {[1, 2, 3].map((item) => (
               <Animated.View key={item} style={[styles.skeletonCard, { opacity: skeletonAnim }]} />
             ))}
           </>
         ) : null}
-        {!shouldShowLoadingState && !hasEnoughData ? (
+        {!screenError && !shouldShowLoadingState && !hasEnoughData ? (
           <Animated.View style={{ opacity: gateAnim, flex: 1 }}>
             <FoodMoodGate />
             <StreakHeroCard />
           </Animated.View>
-        ) : !shouldShowLoadingState ? (
+        ) : !screenError && !shouldShowLoadingState ? (
           <>
             <Animated.View
               style={{
@@ -251,5 +291,39 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: colors.border,
     marginBottom: 16,
+  },
+  screenError: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 32,
+  },
+  screenErrorEmoji: {
+    fontSize: 48,
+    marginBottom: 16,
+  },
+  screenErrorTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: colors.textPrimary,
+    marginBottom: 8,
+  },
+  screenErrorSub: {
+    fontSize: 15,
+    color: colors.textSecondary,
+    textAlign: "center",
+    lineHeight: 24,
+    marginBottom: 24,
+  },
+  screenErrorRetry: {
+    backgroundColor: "#F6EDE4",
+    borderRadius: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+  },
+  screenErrorRetryText: {
+    fontSize: 15,
+    color: colors.accentPrimary,
+    fontWeight: "600",
   },
 });

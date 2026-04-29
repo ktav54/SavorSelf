@@ -181,6 +181,8 @@ export default function OnboardingScreen() {
       name: userName.trim() || "",
       preferredUnits: units,
       dailyCalorieGoal: calorieGoal,
+      onboardingGoal: primaryGoal,
+      onboardingChallenge: challenge,
       ...(primaryGoal ? ({ goals: [primaryGoal] } as any) : {}),
     } as any);
     const elapsed = Date.now() - startedAt;

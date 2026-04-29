@@ -390,6 +390,10 @@ Return ONLY valid JSON, no markdown, no explanation:
     }
 
     if (payload.mode === "simple_chat") {
+      const coachSystemPromptAddendum =
+        typeof payload.context?.coachSystemPromptAddendum === "string"
+          ? payload.context.coachSystemPromptAddendum
+          : "";
       const simpleContext = {
         recentMood: Array.isArray(payload.context?.moodLogs)
           ? (payload.context.moodLogs as Array<any>).slice(-3).map((entry) => ({
@@ -412,6 +416,9 @@ Return ONLY valid JSON, no markdown, no explanation:
             content:
               "You are the SavorSelf Coach, a calm warm wellness companion. Respond in plain human language, 2-4 short sentences, supportive and specific, never judgmental. You are chatting normally, not returning JSON.",
           },
+          ...(coachSystemPromptAddendum
+            ? [{ role: "system" as const, content: coachSystemPromptAddendum }]
+            : []),
           {
             role: "system",
             content: `Helpful context: ${JSON.stringify(simpleContext)}`,
@@ -464,9 +471,16 @@ Return ONLY valid JSON, no markdown, no explanation:
         ? (payload.context.insights as Array<any>).slice(0, 2).map((entry) => entry?.insightBody ?? entry?.title ?? "")
         : [],
     };
+    const coachSystemPromptAddendum =
+      typeof payload.context?.coachSystemPromptAddendum === "string"
+        ? payload.context.coachSystemPromptAddendum
+        : "";
 
     const systemMessages: CoachMessage[] = [
       { role: "system", content: SYSTEM_PROMPT },
+      ...(coachSystemPromptAddendum
+        ? [{ role: "system" as const, content: coachSystemPromptAddendum }]
+        : []),
       {
         role: "system",
         content: `User context: ${JSON.stringify(summarizedContext)}`,
@@ -500,6 +514,9 @@ Return ONLY valid JSON, no markdown, no explanation:
       azureRes = await callAzureOpenAI(
         [
           { role: "system", content: SYSTEM_PROMPT },
+          ...(coachSystemPromptAddendum
+            ? [{ role: "system" as const, content: coachSystemPromptAddendum }]
+            : []),
           { role: "user", content: payload.message },
         ],
         azureOpenAiKey,
