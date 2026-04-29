@@ -1,6 +1,7 @@
 import { Link, router } from "expo-router";
 import { useEffect } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { useRef } from "react";
+import { Animated, StyleSheet, Text, View } from "react-native";
 import { colors, spacing } from "@/constants/theme";
 import { Card, PrimaryButton, Screen } from "@/components/ui";
 import { useAppStore, type AppState } from "@/store/useAppStore";
@@ -9,6 +10,8 @@ export default function WelcomeScreen() {
   const sessionReady = useAppStore((state: AppState) => state.sessionReady);
   const isAuthenticated = useAppStore((state: AppState) => state.isAuthenticated);
   const profile = useAppStore((state: AppState) => state.profile);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(24)).current;
 
   useEffect(() => {
     if (!sessionReady || !isAuthenticated) {
@@ -17,6 +20,21 @@ export default function WelcomeScreen() {
 
     router.replace(profile?.onboardingComplete ? "/(tabs)/log" : "/onboarding");
   }, [isAuthenticated, profile?.onboardingComplete, sessionReady]);
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [fadeAnim, slideAnim]);
 
   if (!sessionReady) {
     return (
@@ -41,7 +59,15 @@ export default function WelcomeScreen() {
   return (
     <Screen>
       <View style={styles.screen}>
-        <View style={styles.hero}>
+        <Animated.View
+          style={[
+            styles.hero,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            },
+          ]}
+        >
           <Text style={styles.logo}>SavorSelf</Text>
           <Text style={styles.tagline}>Food. Mood. You.</Text>
           <View style={styles.copyBlock}>
@@ -50,7 +76,7 @@ export default function WelcomeScreen() {
               A mood-first food and wellness journal designed around grace, pattern-finding, and the gut-brain connection.
             </Text>
           </View>
-        </View>
+        </Animated.View>
         <View style={styles.bottomCardWrap}>
           <Card>
             <PrimaryButton label="Let's begin" onPress={() => router.push("/sign-up")} />

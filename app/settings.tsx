@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "expo-router";
+import * as Haptics from "expo-haptics";
 import * as Notifications from "expo-notifications";
 import { Alert, Modal, Pressable, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -189,8 +190,14 @@ export default function SettingsScreen() {
     <Screen scroll>
       <View style={styles.page}>
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}>
-            <Ionicons name="close" size={18} color={colors.accentPrimary} />
+          <Pressable
+            onPress={() => {
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.back();
+            }}
+            style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}
+          >
+            <Text style={styles.closeButtonText}>×</Text>
           </Pressable>
           <Text style={styles.headerTitle}>Settings</Text>
           <View style={styles.headerSpacer} />
@@ -504,6 +511,12 @@ const styles = StyleSheet.create({
     borderColor: "rgba(196, 98, 45, 0.18)",
     alignItems: "center",
     justifyContent: "center",
+    padding: 8,
+  },
+  closeButtonText: {
+    fontSize: 22,
+    color: colors.textSecondary,
+    fontWeight: "300",
   },
   headerTitle: {
     color: colors.textPrimary,

@@ -1490,6 +1490,12 @@ export function FoodLogSection({ mealType, logs, onAddFood }: { mealType: FoodLo
   const mealProtein = logs.reduce((sum, item) => sum + item.proteinG, 0);
   const mealCarbs = logs.reduce((sum, item) => sum + item.carbsG, 0);
   const mealFat = logs.reduce((sum, item) => sum + item.fatG, 0);
+  const mealEmoji: Record<FoodLog["mealType"], string> = {
+    breakfast: "🍳",
+    lunch: "🥗",
+    dinner: "🍽️",
+    snack: "🍎",
+  };
   const mealPrompt =
     mealType === "snack"
       ? "Nothing here yet. Tap below to add a snack."
@@ -1585,6 +1591,7 @@ export function FoodLogSection({ mealType, logs, onAddFood }: { mealType: FoodLo
           ))
         ) : (
           <View style={styles.mealEmptyState}>
+            <Text style={styles.mealEmptyEmoji}>{mealEmoji[mealType]}</Text>
             <Text style={styles.mealEmptyText}>{mealPrompt}</Text>
           </View>
         )}
@@ -3192,6 +3199,11 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderWidth: 1,
     borderColor: "rgba(196, 98, 45, 0.08)",
+  },
+  mealEmptyEmoji: {
+    fontSize: 28,
+    textAlign: "center",
+    marginBottom: 8,
   },
   mealEmptyText: {
     color: colors.textSecondary,

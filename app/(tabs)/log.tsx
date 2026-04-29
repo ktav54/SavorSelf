@@ -28,6 +28,14 @@ import type { FoodLog, MealType } from "@/types/models";
 
 type EntryStep = "hidden" | "welcome";
 
+const dailySubtitles = [
+  "Small choices compound. Today is a good day to notice one.",
+  "Check in, add what you ate, and let the patterns build.",
+  "Your gut-brain story gets richer every time you log.",
+  "One honest check-in is worth more than perfection.",
+  "What you eat today shapes how you feel tomorrow.",
+] as const;
+
 export default function LogScreen() {
   const profile = useAppStore((state: AppState) => state.profile);
   const foodLogs = useAppStore((state: AppState) => state.foodLogs);
@@ -160,6 +168,7 @@ export default function LogScreen() {
 
   const todaysMood = moodLogs[0] ?? null;
   const logHeaderDate = format(selectedDate, "EEE MMM d yyyy").toUpperCase();
+  const todaySubtitle = dailySubtitles[new Date().getDay() % dailySubtitles.length];
   const generalFoodTitle = mealContext
     ? `What did you eat for ${mealContext}?`
     : isSelectedDateToday
@@ -259,7 +268,7 @@ export default function LogScreen() {
             <Text style={styles.logHeaderTitle}>{`Hi${profile?.name ? `, ${profile.name}` : ""}`}</Text>
             <Text style={styles.logHeaderSubtitle}>
               {isSelectedDateToday
-                ? "Today stays simple: check in, add what you ate, and let the patterns build gently."
+                ? todaySubtitle
                 : `Looking back at ${format(selectedDate, "MMMM d")}. Food comes first here, with your saved mood note tucked above.`}
             </Text>
           </View>

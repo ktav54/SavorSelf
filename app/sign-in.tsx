@@ -1,7 +1,8 @@
 import { Link, router } from "expo-router";
-import { StyleSheet, Text } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { useEffect, useState } from "react";
 import { Card, Field, PrimaryButton, Screen, SectionTitle } from "@/components/ui";
+import { colors } from "@/constants/theme";
 import { useAppStore, type AppState } from "@/store/useAppStore";
 
 export default function SignInScreen() {
@@ -48,15 +49,22 @@ export default function SignInScreen() {
       <Card>
         <Field label="Email" value={email} onChangeText={setEmail} placeholder="you@example.com" />
         <Field label="Password" value={password} onChangeText={setPassword} placeholder="password" />
-        <PrimaryButton
-          label={authLoading ? "Signing in..." : "Sign in"}
-          onPress={async () => {
-            const result = await signIn(email.trim(), password);
-            if (!result.error) {
-              router.replace("/");
-            }
-          }}
-        />
+        {authLoading ? (
+          <View style={styles.loadingButton}>
+            <ActivityIndicator size="small" color={colors.white} />
+            <Text style={styles.loadingButtonText}>Signing in...</Text>
+          </View>
+        ) : (
+          <PrimaryButton
+            label="Sign in"
+            onPress={async () => {
+              const result = await signIn(email.trim(), password);
+              if (!result.error) {
+                router.replace("/");
+              }
+            }}
+          />
+        )}
         {authError ? <Text style={styles.error}>{authError}</Text> : null}
         <Link href="/forgot-password" style={styles.link}>
           Forgot password?
@@ -77,5 +85,20 @@ const styles = StyleSheet.create({
   error: {
     color: "#C4622D",
     fontSize: 14,
+  },
+  loadingButton: {
+    backgroundColor: colors.accentPrimary,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 10,
+  },
+  loadingButtonText: {
+    color: colors.white,
+    fontSize: 16,
+    fontWeight: "600",
   },
 });

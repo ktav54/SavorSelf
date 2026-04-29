@@ -2,6 +2,7 @@ import { useLayoutEffect } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { Pressable, View } from "react-native";
 import { useNavigation } from "expo-router";
+import * as Haptics from "expo-haptics";
 import { CoachChat } from "@/components/coach";
 import { colors } from "@/constants/theme";
 import { useAppStore, type AppState } from "@/store/useAppStore";
@@ -12,9 +13,18 @@ export default function CoachScreen() {
 
   useLayoutEffect(() => {
     navigation.setOptions({
+      headerTitle: "✦ Coach",
+      headerTitleStyle: {
+        fontSize: 17,
+        fontWeight: "700",
+        color: colors.textPrimary,
+      },
       headerRight: () => (
         <Pressable
-          onPress={clearConversation}
+          onPress={() => {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            clearConversation();
+          }}
           style={({ pressed }) => ({
             marginRight: 14,
             marginTop: -2,
