@@ -1,10 +1,23 @@
-import type { CoachFoodProposal } from "@/types/models";
 import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase";
+import type { CoachFoodProposal } from "@/types/models";
 
 type CoachHistoryMessage = { role: "user" | "assistant"; content: string };
 
-const COACH_RESPONSE_STYLE_INSTRUCTIONS =
-  "Never offer unsolicited emotional commentary after logging food. When food is logged, confirm briefly and move on. Never say things like 'getting this logged matters' or 'showing up counts' unless the user explicitly asks for encouragement. Keep responses concise — 1-3 sentences for most replies. Never use filler phrases like 'Absolutely!', 'Great question!', 'Of course!', 'Certainly!', or 'Sure thing!'.";
+const COACH_RESPONSE_STYLE_INSTRUCTIONS = [
+  "Never offer unsolicited emotional commentary after logging food.",
+  "When food is logged, confirm briefly and move on.",
+  "Never say things like 'getting this logged matters' or 'showing up counts' unless the user explicitly asks for encouragement.",
+  "Keep responses concise - 1-3 sentences for most replies.",
+  "Never use filler phrases like 'Absolutely!', 'Great question!', 'Of course!', 'Certainly!', or 'Sure thing!'.",
+  "Format your responses clearly:",
+  "- Use numbered lists when giving step-by-step advice.",
+  "- Use bullet points for listing multiple options.",
+  "- Keep responses under 150 words unless the user asks for more detail.",
+  "- Never start a response with 'I' - vary your sentence openers.",
+  "- Never use em dashes in responses.",
+  "- When logging food, confirm briefly then stop.",
+  "- When the user asks a question, answer it directly in the first sentence.",
+].join(" ");
 
 function buildCoachPromptContext(context: Record<string, unknown>) {
   const name =
@@ -32,7 +45,7 @@ function buildCoachPromptContext(context: Record<string, unknown>) {
 
   const coachIdentityPrompt = [
     `You are talking to ${name}.`,
-    `The user's name is ${name}. Use their name occasionally but not in every message — only when it feels natural.`,
+    `The user's name is ${name}. Use their name occasionally but not in every message - only when it feels natural.`,
   ].join(" ");
   const coachGoalPrompt = onboardingGoal
     ? `The user's primary goal is: ${onboardingGoal}. Keep this in mind when giving suggestions and insights.`
@@ -51,7 +64,13 @@ function buildCoachPromptContext(context: Record<string, unknown>) {
     coachGoalPrompt,
     coachChallengePrompt,
     coachTodaysMoodPrompt,
-    coachSystemPromptAddendum: [coachIdentityPrompt, coachGoalPrompt, coachChallengePrompt, coachTodaysMoodPrompt, COACH_RESPONSE_STYLE_INSTRUCTIONS]
+    coachSystemPromptAddendum: [
+      coachIdentityPrompt,
+      coachGoalPrompt,
+      coachChallengePrompt,
+      coachTodaysMoodPrompt,
+      COACH_RESPONSE_STYLE_INSTRUCTIONS,
+    ]
       .filter(Boolean)
       .join(" "),
   };

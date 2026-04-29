@@ -42,6 +42,17 @@ type AdjustDraftItem = {
 };
 
 type CoachDisplayMessage = AiConversationMessage & { id: string };
+type CoachResponsePart = {
+  type: "paragraph" | "bullet" | "numbered";
+  content: string;
+  number?: number;
+};
+type CoachStarter = {
+  emoji: string;
+  title: string;
+  subtitle: string;
+  prompt: string;
+};
 
 function MessageBubble({
   message,
@@ -67,6 +78,7 @@ function MessageBubble({
   const proposalMealType = proposalIsActive
     ? pendingProposal?.mealType
     : message.foodProposal?.mealType;
+  const responseParts = parseCoachResponse(extractReply(message.content));
 
   return (
     <View style={styles.messageWrap}>
@@ -80,12 +92,25 @@ function MessageBubble({
         {message.id === "welcome" ? (
           <Text style={styles.welcomeCoachLabel}>✦ SavorSelf Coach</Text>
         ) : null}
-        <Text
-          selectable={message.role === "assistant"}
-          style={[styles.bubbleText, message.role === "user" && styles.userBubbleText]}
-        >
-          {extractReply(message.content)}
-        </Text>
+        {responseParts.map((part, index) => (
+          <View
+            key={`${message.id}-part-${index}`}
+            style={[styles.responsePart, index === responseParts.length - 1 && styles.responsePartLast]}
+          >
+            {part.type === "numbered" ? (
+              <View style={styles.numberCircle}>
+                <Text style={styles.numberText}>{part.number}</Text>
+              </View>
+            ) : null}
+            {part.type === "bullet" ? <View style={styles.bulletDot} /> : null}
+            <Text
+              selectable={message.role === "assistant"}
+              style={[styles.responseText, message.role === "user" && styles.userResponseText]}
+            >
+              {part.content}
+            </Text>
+          </View>
+        ))}
       </View>
       <Text style={[styles.messageTime, message.role === "user" ? styles.messageTimeUser : styles.messageTimeAssistant]}>
         {format(new Date(message.timestamp), "h:mm a")}
@@ -189,6 +214,50 @@ function extractReply(content: string): string {
     return "";
   }
   return content;
+}
+
+function parseCoachResponse(text: string): CoachResponsePart[] {
+  const lines = text.split("\n").filter((line) => line.trim());
+  const parts = lines.map((line) => {
+    const trimmed = line.trim();
+    const numberedMatch = trimmed.match(/^(\d+)\.\s+(.+)/);
+    if (numberedMatch) {
+      return {
+        type: "numbered" as const,
+        content: numberedMatch[2],
+        number: Number.parseInt(numberedMatch[1], 10),
+      };
+    }
+    if (trimmed.startsWith("- ") || trimmed.startsWith("• ")) {
+      return {
+        type: "bullet" as const,
+        content: trimmed.replace(/^[-•]\s+/, ""),
+      };
+    }
+    return {
+      type: "paragraph" as const,
+      content: trimmed,
+    };
+  });
+
+  return parts.length
+    ? parts
+    : [
+        {
+          type: "paragraph",
+          content: text.trim(),
+        },
+      ];
+}
+
+function buildConfirmationMessage(proposal: CoachFoodProposal): string {
+  const items = proposal.items
+    .map((item) => `• ${formatFoodName(item.name)}`)
+    .join("\n");
+  const totalCal = proposal.items.reduce((sum, item) => sum + (item.calories ?? 0), 0);
+  const totalProtein = proposal.items.reduce((sum, item) => sum + (item.protein ?? 0), 0);
+
+  return `Logged to ${proposal.mealType} ✓\n\n${items}\n\n${Math.round(totalCal)} cal · ${Math.round(totalProtein)}g protein`;
 }
 
 const quantityWholeOptions = Array.from({ length: 13 }, (_, index) => String(index));
@@ -489,13 +558,60 @@ export function CoachChat() {
   }, [sending, thinkingDotsOpacity]);
 
   const hasStartedConversation = conversation.length > 0;
+  const todayKey = format(new Date(), "yyyy-MM-dd");
   const moodLogged =
     moodLogs.length > 0 &&
-    moodLogs[0]?.loggedAt?.slice(0, 10) === format(new Date(), "yyyy-MM-dd");
+    moodLogs[0]?.loggedAt?.slice(0, 10) === todayKey;
+  const hasFoodToday = foodLogs.some((food) => food.loggedAt.slice(0, 10) === todayKey);
+  const hasMoodToday = moodLogs.length > 0 && moodLogs[0].loggedAt.slice(0, 10) === todayKey;
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Hey" : "Good evening";
   const welcomeText = moodLogged
     ? `${greeting}${profile?.name ? `, ${profile.name}` : ""}! I can see you've already checked in today — feeling ${moodLabels[(moodLogs[0]?.moodScore ?? 3) - 1]?.toLowerCase() ?? "it"}. What's on your mind?`
     : `${greeting}${profile?.name ? `, ${profile.name}` : ""}! I'm your SavorSelf coach. I can log your food, pull up your patterns, or just talk. What do you need today?`;
+  const starters = useMemo<CoachStarter[]>(
+    () =>
+      [
+        {
+          emoji: "🍳",
+          title: hour < 11 ? "Log breakfast" : hour < 15 ? "Log lunch" : "Log dinner",
+          subtitle: "Describe what you had and I'll find the nutrition",
+          prompt: hour < 11 ? "I want to log breakfast" : hour < 15 ? "I want to log lunch" : "I want to log dinner",
+        },
+        !hasMoodToday
+          ? {
+              emoji: "💭",
+              title: "How am I feeling?",
+              subtitle: "Tell me and I'll help make sense of it",
+              prompt: "I want to talk about how I'm feeling today",
+            }
+          : {
+              emoji: "📊",
+              title: "How's my mood been?",
+              subtitle: "I'll pull your recent patterns and give you a read",
+              prompt: "How has my mood been lately?",
+            },
+        hasFoodToday
+          ? {
+              emoji: "🥗",
+              title: "What should I eat next?",
+              subtitle: "Based on what you've had so far today",
+              prompt: "What should I eat next based on what I've logged today?",
+            }
+          : {
+              emoji: "🌱",
+              title: "What should I eat today?",
+              subtitle: "Get a suggestion based on your gut-brain goals",
+              prompt: "What should I eat to support my mood today?",
+            },
+        {
+          emoji: "💬",
+          title: "Just talk",
+          subtitle: "No food stuff — a supportive space to think out loud",
+          prompt: "I just need to talk through something",
+        },
+      ].filter((item): item is CoachStarter => Boolean(item)),
+    [hasFoodToday, hasMoodToday, hour]
+  );
   const displayConversation = useMemo<CoachDisplayMessage[]>(
     () =>
       conversation.length === 0
@@ -689,7 +805,7 @@ export function CoachChat() {
       proposalToSave.mealType,
       proposalToSave.items.reduce((sum, item) => sum + (item.calories ?? 0), 0)
     );
-    appendAssistant(`Logged to your ${proposalToSave.mealType}. ✓`, "status");
+    appendAssistant(buildConfirmationMessage(proposalToSave), "status");
     setPendingProposal(null);
     if (suggestion) {
       setTimeout(() => {
@@ -1088,6 +1204,7 @@ export function CoachChat() {
             {sending ? (
               <View style={styles.messageWrap}>
                 <View style={[styles.bubble, styles.assistantBubble, styles.thinkingBubble]}>
+                  <Text style={styles.coachLabel}>✦ SavorSelf Coach</Text>
                   <Animated.Text style={[styles.thinkingDots, { opacity: thinkingDotsOpacity }]}>···</Animated.Text>
                   <Text style={styles.thinkingText}>thinking...</Text>
                 </View>
@@ -1098,28 +1215,7 @@ export function CoachChat() {
               <View style={styles.promptRow}>
                 <Text style={styles.promptTitle}>What I can help with</Text>
                 <View style={styles.starterCards}>
-                  {[
-                    {
-                      title: "🍳  Log what I ate",
-                      subtitle: "Just describe it naturally — I'll find the nutrition and add it to your log",
-                      prompt: "I want to log what I ate",
-                    },
-                    {
-                      title: "📊  How's my mood been?",
-                      subtitle: "I'll pull your recent patterns and give you a personal read",
-                      prompt: "How has my mood been lately?",
-                    },
-                    {
-                      title: "🥗  What should I eat?",
-                      subtitle: "Get a suggestion based on your gut-brain goals and recent logs",
-                      prompt: "What should I eat to support my mood today?",
-                    },
-                    {
-                      title: "💬  Just talk",
-                      subtitle: "No food stuff required — a supportive space to think out loud",
-                      prompt: "I just need to talk through something",
-                    },
-                  ].map((item) => (
+                  {starters.map((item) => (
                     <Pressable
                       key={item.prompt}
                       onPress={() => {
@@ -1128,7 +1224,9 @@ export function CoachChat() {
                       }}
                       style={({ pressed }) => [styles.starterCard, pressed && styles.promptPressed]}
                     >
-                      <Text style={styles.starterCardTitle}>{item.title}</Text>
+                      <Text style={styles.starterCardTitle}>
+                        {item.emoji}  {item.title}
+                      </Text>
                       <Text style={styles.starterCardSubtitle}>{item.subtitle}</Text>
                     </Pressable>
                   ))}
@@ -1253,6 +1351,13 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 6,
   },
+  coachLabel: {
+    fontSize: 11,
+    color: colors.accentPrimary,
+    fontWeight: "600",
+    letterSpacing: 0.5,
+    marginBottom: 6,
+  },
   messageTime: {
     fontSize: 11,
     color: colors.textSecondary,
@@ -1267,6 +1372,47 @@ const styles = StyleSheet.create({
   },
   bubbleText: { color: colors.textPrimary, fontSize: 16, lineHeight: 24 },
   userBubbleText: { color: colors.white },
+  responsePart: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    marginBottom: 4,
+  },
+  responsePartLast: {
+    marginBottom: 0,
+  },
+  numberCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: colors.accentPrimary,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 2,
+    flexShrink: 0,
+  },
+  numberText: {
+    fontSize: 11,
+    color: colors.white,
+    fontWeight: "700",
+  },
+  bulletDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.accentPrimary,
+    marginTop: 8,
+    flexShrink: 0,
+  },
+  responseText: {
+    fontSize: 16,
+    lineHeight: 24,
+    color: colors.textPrimary,
+    flex: 1,
+  },
+  userResponseText: {
+    color: colors.white,
+  },
   promptRow: { gap: spacing.sm, marginTop: spacing.sm },
   promptTitle: {
     color: colors.textSecondary,
