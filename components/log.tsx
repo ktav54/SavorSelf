@@ -741,7 +741,8 @@ export function MoodCheckInStrip({ compact = false }: { compact?: boolean } = {}
       </View>
     ) : step === 3 ? (
       <View style={styles.moodStepWrap}>
-        <Text style={styles.moodStepQuestion}>How do you feel physically and mentally?</Text>
+        <Text style={styles.moodStepQuestion}>How do you feel?</Text>
+        <Text style={styles.moodStepSubtext}>Pick anything that applies.</Text>
         <View style={styles.moodMultiGroup}>
           <Text style={styles.moodMiniHeading}>Physical</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.moodChipRow}>
@@ -788,7 +789,7 @@ export function MoodCheckInStrip({ compact = false }: { compact?: boolean } = {}
         <TextInput
           value={note}
           onChangeText={setNote}
-          placeholder="A quick note for today"
+          placeholder="Anything on your mind? (optional)"
           placeholderTextColor={colors.textSecondary}
           style={styles.moodNoteInput}
           returnKeyType="done"
@@ -2705,6 +2706,12 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     textAlign: "center",
     lineHeight: 32,
+  },
+  moodStepSubtext: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    marginBottom: 12,
+    textAlign: "center",
   },
   moodEmojiRow: {
     flexDirection: "row",
