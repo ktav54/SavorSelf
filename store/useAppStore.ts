@@ -124,6 +124,69 @@ function getDayWindow(date?: Date) {
   };
 }
 
+function toDateKey(value: string | Date) {
+  return typeof value === "string" ? value.slice(0, 10) : value.toISOString().slice(0, 10);
+}
+
+function roundOne(value: number) {
+  return Math.round(value * 10) / 10;
+}
+
+function average(values: number[]) {
+  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+}
+
+function getRecentDateKeys(count: number, offset = 0) {
+  return Array.from({ length: count }, (_, index) => {
+    const date = new Date();
+    date.setHours(12, 0, 0, 0);
+    date.setDate(date.getDate() - (count - 1 - index + offset));
+    return toDateKey(date);
+  });
+}
+
+function buildFoodMoodSnapshot(moodLogs: MoodLog[], foodLogs: FoodLog[]): FoodMoodSnapshot {
+  const moodByDate = new Map<string, number[]>();
+  moodLogs.forEach((log) => {
+    const key = toDateKey(log.loggedAt);
+    moodByDate.set(key, [...(moodByDate.get(key) ?? []), log.moodScore]);
+  });
+
+  const averagedMoodByDate = new Map<string, number>(
+    Array.from(moodByDate.entries()).map(([key, values]) => [key, values.reduce((sum, value) => sum + value, 0) / values.length])
+  );
+
+  const thisWeekKeys = getRecentDateKeys(7);
+  const lastWeekKeys = getRecentDateKeys(7, 7);
+  const thisWeekMoodScores = thisWeekKeys
+    .map((key) => averagedMoodByDate.get(key) ?? null)
+    .filter((value): value is number => value !== null);
+  const lastWeekMoodScores = lastWeekKeys
+    .map((key) => averagedMoodByDate.get(key) ?? null)
+    .filter((value): value is number => value !== null);
+
+  const thisWeekFoodLogs = foodLogs.filter((log) => thisWeekKeys.includes(toDateKey(log.loggedAt)));
+  const tagCounts = new Map<string, number>();
+  thisWeekFoodLogs.forEach((log) => {
+    log.gutHealthTags.forEach((tag) => {
+      tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1);
+    });
+  });
+
+  const topTagEntry = Array.from(tagCounts.entries()).sort((left, right) => right[1] - left[1])[0] ?? null;
+  const avgMoodThisWeek = average(thisWeekMoodScores);
+  const avgMoodLastWeek = average(lastWeekMoodScores);
+  const daysLoggedThisWeek = new Set(thisWeekFoodLogs.map((log) => toDateKey(log.loggedAt))).size;
+
+  return {
+    averageMoodThisWeek: avgMoodThisWeek != null ? roundOne(avgMoodThisWeek) : null,
+    averageMoodLastWeek: avgMoodLastWeek != null ? roundOne(avgMoodLastWeek) : null,
+    moodDelta: avgMoodThisWeek != null && avgMoodLastWeek != null ? roundOne(avgMoodThisWeek - avgMoodLastWeek) : null,
+    topTag: topTagEntry?.[0] ?? null,
+    daysLoggedThisWeek,
+  };
+}
+
 function getLoggedAtForDate(date?: Date) {
   const target = normalizeSelectedDate(date);
   const now = new Date();
@@ -809,12 +872,13 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
       foodLogs,
       quickLogs,
     });
+    const snapshot = buildFoodMoodSnapshot(moodLogs, foodLogs);
 
     set({
       moodLogs,
       foodLogs,
       insights: analysis.insights,
-      foodMoodSnapshot: analysis.snapshot,
+      foodMoodSnapshot: snapshot,
       foodMoodTrend: analysis.trend,
       insightsLoading: false,
       insightsError: null,
@@ -823,7 +887,7 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
     try {
       const aiNarrative = await generateAiNarrative({
         insights: analysis.insights,
-        snapshot: analysis.snapshot,
+        snapshot,
         trend: analysis.trend,
         moodLogs,
         foodLogs,

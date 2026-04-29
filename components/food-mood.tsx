@@ -272,7 +272,9 @@ export function GutMoodScoreCard() {
   const snapshot = useAppStore((state: AppState) => state.foodMoodSnapshot);
   const score = useMemo(() => getGutMoodScore(moodLogs, foodLogs), [foodLogs, moodLogs]);
   const tone = getGutMoodTone(score);
-  const topTag = formatTag(snapshot?.topTag) ?? "Building";
+  const moodAverage = snapshot?.averageMoodThisWeek != null ? `${snapshot.averageMoodThisWeek.toFixed(1)} / 5` : "—";
+  const topTag = formatTag(snapshot?.topTag) ?? "—";
+  const daysLogged = snapshot ? `${snapshot.daysLoggedThisWeek} of 7` : "—";
 
   return (
     <SurfaceCard style={styles.gutMoodHeroCard}>
@@ -283,19 +285,17 @@ export function GutMoodScoreCard() {
       <View style={styles.gutMoodHeroStats}>
         <View style={styles.gutMoodHeroStat}>
           <Text style={styles.gutMoodHeroStatLabel}>Mood avg</Text>
-          <Text style={styles.gutMoodHeroStatValue}>
-            {snapshot?.averageMoodThisWeek != null ? snapshot.averageMoodThisWeek.toFixed(1) : "--"}
-          </Text>
+          <Text style={styles.gutMoodHeroStatValue}>{moodAverage}</Text>
         </View>
         <View style={styles.gutMoodHeroStat}>
-          <Text style={styles.gutMoodHeroStatLabel}>Top food tag</Text>
+          <Text style={styles.gutMoodHeroStatLabel}>Top tag</Text>
           <Text style={styles.gutMoodHeroStatValue} numberOfLines={1}>
             {topTag}
           </Text>
         </View>
         <View style={styles.gutMoodHeroStat}>
           <Text style={styles.gutMoodHeroStatLabel}>Days logged</Text>
-          <Text style={styles.gutMoodHeroStatValue}>{snapshot?.daysLoggedThisWeek ?? 0}</Text>
+          <Text style={styles.gutMoodHeroStatValue}>{daysLogged}</Text>
         </View>
       </View>
     </SurfaceCard>
@@ -808,6 +808,12 @@ export function WeeklySnapshot() {
   const insights = useAppStore((state: AppState) => state.insights);
   const weeklyLead = insights[0]?.insightBody;
   const isBuilding = snapshot?.moodDelta == null;
+  const moodDeltaLabel =
+    snapshot?.moodDelta == null
+      ? "—"
+      : `${snapshot.moodDelta > 0 ? "+" : ""}${snapshot.moodDelta.toFixed(1)}`;
+  const topTagLabel = formatTag(snapshot?.topTag) ?? "—";
+  const daysLoggedLabel = snapshot ? `${snapshot.daysLoggedThisWeek} of 7` : "—";
 
   return (
     <SurfaceCard>
@@ -822,6 +828,11 @@ export function WeeklySnapshot() {
           }
         />
         {isBuilding ? <EmptyPatternDots /> : null}
+        <View style={styles.snapshotRow}>
+          <SnapshotStat label="Mood vs last week" value={moodDeltaLabel} />
+          <SnapshotStat label="Top tag" value={topTagLabel} />
+          <SnapshotStat label="Days logged" value={daysLoggedLabel} />
+        </View>
         {weeklyLead ? <Text style={styles.note}>{weeklyLead}</Text> : null}
       </View>
     </SurfaceCard>
@@ -1007,26 +1018,16 @@ export function TrendCard() {
 export function NutrientSpotlight() {
   const profile = useAppStore((state: AppState) => state.profile);
   const foodLogs = useAppStore((state: AppState) => state.foodLogs);
-  const totalFiber = useMemo(() => foodLogs.reduce((sum, item) => sum + item.fiberG, 0), [foodLogs]);
-  const totalProtein = useMemo(() => foodLogs.reduce((sum, item) => sum + item.proteinG, 0), [foodLogs]);
-  const topTag = useMemo(() => {
-    const counts = new Map<string, number>();
-    foodLogs.forEach((item) => {
-      item.gutHealthTags.forEach((tag) => {
-        counts.set(tag, (counts.get(tag) ?? 0) + 1);
-      });
-    });
-    return Array.from(counts.entries()).sort((left, right) => right[1] - left[1])[0] ?? null;
-  }, [foodLogs]);
+  const totalFiber = useMemo(() => foodLogs.reduce((sum, f) => sum + (f.fiberG ?? 0), 0), [foodLogs]);
+  const totalProtein = useMemo(() => foodLogs.reduce((sum, f) => sum + (f.proteinG ?? 0), 0), [foodLogs]);
+  const totalCalories = useMemo(() => foodLogs.reduce((sum, f) => sum + (f.calories ?? 0), 0), [foodLogs]);
+  const fiberGoal = 25;
   const proteinGoal = profile?.dailyProteinGoal ?? 50;
+  const calorieGoal = profile?.dailyCalorieGoal ?? 2000;
   const nutrientRows = [
-    { label: "Fiber", value: `${Math.round(totalFiber)}g`, progress: Math.min(totalFiber / 25, 1) },
-    { label: "Protein", value: `${Math.round(totalProtein)}g`, progress: Math.min(totalProtein / proteinGoal, 1) },
-    {
-      label: topTag ? formatTag(topTag[0]) ?? "Gut tag" : "Gut tag",
-      value: topTag ? `${topTag[1]} hits` : "--",
-      progress: topTag ? Math.min(topTag[1] / 3, 1) : 0,
-    },
+    { name: "Fiber", current: totalFiber, goal: fiberGoal, unit: "g" },
+    { name: "Protein", current: totalProtein, goal: proteinGoal, unit: "g" },
+    { name: "Calories", current: totalCalories, goal: calorieGoal, unit: "cal" },
   ];
 
   return (
@@ -1034,18 +1035,27 @@ export function NutrientSpotlight() {
       <SectionTitle eyebrow="NUTRIENTS" title="Today's gut-health fuel" />
       {foodLogs.length ? (
         <View style={styles.nutrientList}>
-          {nutrientRows.map((row) => (
-            <View key={row.label} style={styles.nutrientRow}>
-              <Text style={styles.nutrientLabel}>{row.label}</Text>
-              <View style={styles.nutrientTrack}>
-                <View style={[styles.nutrientFill, { width: `${row.progress * 100}%` }]} />
+          {nutrientRows.map((nutrient) => {
+            const pct = Math.min(1, nutrient.current / nutrient.goal);
+            return (
+              <View key={nutrient.name} style={styles.nutrientRow}>
+                <View style={styles.nutrientLeft}>
+                  <Text style={styles.nutrientName}>{nutrient.name}</Text>
+                  <Text style={styles.nutrientSub}>
+                    {Math.round(nutrient.current)}/{nutrient.goal}
+                    {nutrient.unit}
+                  </Text>
+                </View>
+                <View style={styles.nutrientBarBg}>
+                  <View style={[styles.nutrientBarFill, { width: `${pct * 100}%` as any }]} />
+                </View>
+                <Text style={styles.nutrientPct}>{Math.round(pct * 100)}%</Text>
               </View>
-              <Text style={styles.nutrientValue}>{row.value}</Text>
-            </View>
-          ))}
+            );
+          })}
         </View>
       ) : (
-        <Text style={styles.note}>Log some food to see your nutrient breakdown</Text>
+        <Text style={styles.note}>Log some food to see your nutrient breakdown.</Text>
       )}
     </SurfaceCard>
   );
@@ -1065,7 +1075,12 @@ function formatTag(tag?: string | null) {
     return null;
   }
 
-  return tag.replace(/_/g, " ");
+  return tag
+    .replace(/_/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 }
 
 function getInsightTrendKey(insightType: string) {
@@ -1882,31 +1897,37 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
+    marginBottom: 12,
   },
-  nutrientLabel: {
+  nutrientLeft: {
     width: 72,
+  },
+  nutrientName: {
     color: colors.textPrimary,
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: "600",
   },
-  nutrientTrack: {
+  nutrientSub: {
+    fontSize: 11,
+    color: colors.textSecondary,
+  },
+  nutrientBarBg: {
     flex: 1,
     height: 6,
     borderRadius: 3,
     backgroundColor: colors.border,
     overflow: "hidden",
   },
-  nutrientFill: {
-    height: "100%",
+  nutrientBarFill: {
+    height: 6,
     borderRadius: 3,
     backgroundColor: colors.accentPrimary,
   },
-  nutrientValue: {
-    width: 64,
+  nutrientPct: {
+    fontSize: 12,
     textAlign: "right",
     color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: "600",
+    width: 36,
   },
   sparkline: {
     height: 80,
