@@ -10,7 +10,7 @@ import type { FoodLog, FoodMoodInsight, FoodMoodTrendPoint, MoodLog, QuickLog } 
 
 const PATTERN_WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const DAILY_READ_PROMPT =
-  "Generate a short, warm, personalized daily gut-brain analysis for today. Use only the data provided in context — do not make up foods or moods. Cover: how today's food choices may be affecting mood and energy through the gut-brain axis, any standout nutrients or gaps, and one gentle actionable suggestion. Keep it to 3-4 sentences. Do not use bullet points. Speak directly to the user in second person, warm and non-judgmental tone.";
+  "Give me a 2-sentence daily gut-brain read based on today's data. First sentence: one specific observation about today's food or mood. Second sentence: one gentle, specific suggestion. No preamble, no sign-off, speak directly to the user.";
 
 function toDateKey(value: Date | string) {
   return typeof value === "string" ? value.slice(0, 10) : value.toISOString().slice(0, 10);
@@ -362,7 +362,6 @@ export function DailyReadCard() {
   const [reply, setReply] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
-  const [refreshCount, setRefreshCount] = useState(0);
   const todayMood = moodLogs[0] ?? null;
   const todayQuickLog = quickLogs[0] ?? null;
   const hasAnyTodayData = foodLogs.length > 0 || Boolean(todayMood);
@@ -464,6 +463,15 @@ export function DailyReadCard() {
       todayQuickLog,
     ]
   );
+  const readSentences = useMemo(
+    () =>
+      reply
+        .split(/(?<=[.!?])\s+/)
+        .map((sentence) => sentence.trim())
+        .filter(Boolean)
+        .slice(0, 2),
+    [reply]
+  );
 
   useEffect(() => {
     if (!hasAnyTodayData) {
@@ -507,7 +515,7 @@ export function DailyReadCard() {
     return () => {
       cancelled = true;
     };
-  }, [hasAnyTodayData, readContext, readSignature, refreshCount]);
+  }, [hasAnyTodayData, readContext, readSignature]);
 
   return (
     <SurfaceCard>
@@ -525,27 +533,15 @@ export function DailyReadCard() {
       ) : errorMessage ? (
         <Text style={styles.note}>{errorMessage}</Text>
       ) : (
-        <View style={styles.dailyReadAccentRow}>
-          <View style={styles.dailyReadAccentBar} />
-          <View style={styles.dailyReadBlock}>
-            <Text style={styles.dailyRead}>{reply}</Text>
-          </View>
+        <View style={styles.dailyReadList}>
+          {(readSentences.length ? readSentences : [reply]).map((sentence, index) => (
+            <View key={`daily-read-${index}`} style={styles.dailyReadRow}>
+              <View style={styles.dailyReadDot} />
+              <Text style={styles.dailyReadSentence}>{sentence}</Text>
+            </View>
+          ))}
         </View>
       )}
-      {hasAnyTodayData ? (
-        <View style={styles.dailyReadFooter}>
-          <Pressable
-            disabled={loading}
-            style={({ pressed }) => [styles.dailyReadRefreshPill, pressed && styles.cardPressFeedback]}
-            onPress={() => {
-              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setRefreshCount((current) => current + 1);
-            }}
-          >
-            <Text style={styles.dailyReadRefreshLink}>↻ Refresh</Text>
-          </Pressable>
-        </View>
-      ) : null}
     </SurfaceCard>
   );
 }
@@ -1412,43 +1408,26 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 1,
   },
-  dailyRead: {
-    fontSize: 17,
-    lineHeight: 28,
-    color: colors.textPrimary,
+  dailyReadList: {
+    gap: 8,
   },
-  dailyReadAccentRow: {
+  dailyReadRow: {
     flexDirection: "row",
-    alignItems: "stretch",
-    gap: 12,
+    gap: 10,
+    marginBottom: 8,
   },
-  dailyReadAccentBar: {
-    width: 3,
-    borderRadius: 2,
+  dailyReadDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
     backgroundColor: colors.accentPrimary,
-    alignSelf: "stretch",
+    marginTop: 8,
   },
-  dailyReadBlock: {
+  dailyReadSentence: {
     flex: 1,
-    backgroundColor: "#FBF7F1",
-    borderWidth: 1,
-    borderColor: "rgba(44, 26, 14, 0.08)",
-    borderRadius: 16,
-    padding: 18,
-  },
-  dailyReadFooter: {
-    alignItems: "flex-end",
-  },
-  dailyReadRefreshPill: {
-    backgroundColor: "#F6EDE4",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  dailyReadRefreshLink: {
-    color: colors.accentPrimary,
-    fontSize: 14,
-    fontWeight: "600",
+    fontSize: 16,
+    lineHeight: 26,
+    color: colors.textPrimary,
   },
   heroBadgeRow: {
     alignItems: "flex-start",

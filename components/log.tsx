@@ -2394,20 +2394,10 @@ function SwipeableFoodRow({
   onDelete: () => Promise<void>;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const [gutFeedbackVisible, setGutFeedbackVisible] = useState(false);
   const scale = useRef(new Animated.Value(1)).current;
   const translateY = useRef(new Animated.Value(0)).current;
   const actionsOpacity = useRef(new Animated.Value(0)).current;
   const actionsHeight = useRef(new Animated.Value(0)).current;
-  const gutScore = computeGutScore({
-    foodName: item.foodName,
-    fiberG: item.fiberG,
-    proteinG: item.proteinG,
-    fatG: item.fatG,
-    carbsG: item.carbsG,
-    calories: item.calories,
-    gutHealthTags: item.gutHealthTags,
-  });
 
   const animateExpanded = (next: boolean) => {
     setExpanded(next);
@@ -2437,10 +2427,6 @@ function SwipeableFoodRow({
     ]).start();
   };
 
-  const openGutFeedback = () => {
-    setGutFeedbackVisible(true);
-  };
-
   return (
     <View style={styles.longPressContainer}>
       <Animated.View
@@ -2460,16 +2446,13 @@ function SwipeableFoodRow({
             void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             if (expanded) {
               animateExpanded(false);
-              return;
             }
-            openGutFeedback();
           }}
         >
           <View style={[styles.foodDot, { backgroundColor: pickFoodColor(item.gutHealthTags[0]) }]} />
           <View style={styles.foodCopy}>
             <View style={styles.foodTitleRow}>
               <Text style={styles.foodName}>{formatFoodName(item.foodName)}</Text>
-              <GutScoreBadge score={gutScore} onPress={() => void openGutFeedback()} />
             </View>
             <Text style={styles.foodMeta}>
               {Math.round(item.quantity)} {item.unit} | {Math.round(item.calories)} cal | {Math.round(item.proteinG)}g protein
@@ -2477,57 +2460,6 @@ function SwipeableFoodRow({
           </View>
         </Pressable>
       </Animated.View>
-      <GutScoreModal
-        visible={gutFeedbackVisible}
-        data={{
-          foodName: formatFoodName(item.foodName),
-          score: gutScore,
-          tags: buildGutTags(item.foodName, gutScore, {
-            fiberG: item.fiberG,
-            proteinG: item.proteinG,
-            fatG: item.fatG,
-            carbsG: item.carbsG,
-            calories: item.calories,
-            }),
-            summary: buildGutSummary(item.foodName, gutScore),
-            insights: [
-              {
-                category: "Energy",
-                body:
-                  buildGutSections(item.foodName, gutScore, {
-                    fiberG: item.fiberG,
-                    proteinG: item.proteinG,
-                    fatG: item.fatG,
-                    carbsG: item.carbsG,
-                    calories: item.calories,
-                  })[0]?.body ?? "",
-              },
-              {
-                category: "Mood",
-                body:
-                  buildGutSections(item.foodName, gutScore, {
-                    fiberG: item.fiberG,
-                    proteinG: item.proteinG,
-                    fatG: item.fatG,
-                    carbsG: item.carbsG,
-                    calories: item.calories,
-                  })[1]?.body ?? "",
-              },
-              {
-                category: "Digestion",
-                body:
-                  buildGutSections(item.foodName, gutScore, {
-                    fiberG: item.fiberG,
-                    proteinG: item.proteinG,
-                    fatG: item.fatG,
-                    carbsG: item.carbsG,
-                    calories: item.calories,
-                  })[2]?.body ?? "",
-              },
-            ],
-          }}
-        onClose={() => setGutFeedbackVisible(false)}
-      />
       <Animated.View
         style={[
           styles.rowActionsWrap,

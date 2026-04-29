@@ -201,27 +201,6 @@ function scaleDraftFromServing(item: AdjustDraftItem) {
   };
 }
 
-function buildLoggedFollowUp(mealType: string, items: CoachFoodItem[]) {
-  const names = items.map((item) => formatFoodName(item.name).toLowerCase());
-
-  if (names.some((name) => /salmon|sardine|mackerel|walnut|flax/.test(name))) {
-    return `That ${mealType} has something going for it. Foods like that are rich in omega-3s, which can support mood and focus by calming inflammation in the brain.`;
-  }
-  if (names.some((name) => /yogurt|kefir|kimchi|sauerkraut|kombucha/.test(name))) {
-    return `There is something strong in that ${mealType}. Fermented foods support gut diversity, which can help energy and mood feel steadier over time.`;
-  }
-  if (names.some((name) => /oat|bean|lentil|apple|berry|broccoli/.test(name))) {
-    return `That ${mealType} brings in fiber, which matters more than it gets credit for. It can help with steadier energy, digestion, and a more even mood.`;
-  }
-  if (names.some((name) => /egg|chicken|turkey|tofu|greek yogurt|cottage cheese/.test(name))) {
-    return `That ${mealType} has a solid protein base, which can help with steadier energy, focus, and fewer crashy feelings later on.`;
-  }
-  if (names.some((name) => /avocado|olive|nut|seed|peanut butter|almond butter/.test(name))) {
-    return `There is some satisfying fuel in that ${mealType}. Healthy fats like those can help with fullness, focus, and more grounded energy.`;
-  }
-  return `There is still something good in that ${mealType}. Getting the meal logged at all gives us something real to learn from, and that matters.`;
-}
-
 function buildLocalGutFeedback(item: CoachFoodItem, score: number) {
   const name = formatFoodName(item.name);
   if (score >= 75) {
@@ -487,23 +466,23 @@ export function CoachChat() {
 
     setConfirming(true);
     const proposalToSave = pendingProposal;
+    const mappedItems = proposalToSave.items.map((item) => ({
+      foodName: item.name,
+      foodSource: item.foodSource,
+      externalFoodId: item.externalFoodId,
+      mealType: proposalToSave.mealType,
+      quantity: item.quantity ?? 0,
+      unit: item.unit,
+      calories: item.calories ?? 0,
+      proteinG: item.protein ?? 0,
+      carbsG: item.carbs ?? 0,
+      fatG: item.fat ?? 0,
+      fiberG: item.fiber ?? 0,
+      sugarG: item.sugar ?? 0,
+    }));
+    console.log("[coach] saveMultipleFoodLogs payload", mappedItems);
 
-    const result = await saveMultipleFoodLogs(
-      proposalToSave.items.map((item) => ({
-        foodName: item.name,
-        foodSource: item.foodSource,
-        externalFoodId: item.externalFoodId,
-        mealType: proposalToSave.mealType,
-        quantity: item.quantity,
-        unit: item.unit,
-        calories: item.calories,
-        proteinG: item.protein,
-        carbsG: item.carbs,
-        fatG: item.fat,
-        fiberG: item.fiber,
-        sugarG: item.sugar,
-      }))
-    );
+    const result = await saveMultipleFoodLogs(mappedItems);
 
     setConfirming(false);
 
@@ -512,7 +491,7 @@ export function CoachChat() {
       return;
     }
 
-    appendAssistant(buildLoggedFollowUp(proposalToSave.mealType, proposalToSave.items), "text");
+    appendAssistant(`Logged to your ${proposalToSave.mealType}. ✓`, "status");
     setPendingProposal(null);
   };
 
