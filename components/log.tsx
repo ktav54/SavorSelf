@@ -452,6 +452,19 @@ function getPreferredUnitOptions(preferredUnits?: "imperial" | "metric"): FoodUn
   return ["oz", "fl_oz", "cup", "serving", "piece", "tbsp", "tsp"];
 }
 type MacroKey = "calories" | "protein" | "carbs" | "fat";
+type MacroWarningState = "normal" | "warning" | "over";
+
+function getMacroWarningColor(state: MacroWarningState) {
+  if (state === "over") {
+    return "#C4622D";
+  }
+
+  if (state === "warning") {
+    return "#E8A838";
+  }
+
+  return colors.accentPrimary;
+}
 
 const macroDetails: Record<
   MacroKey,
@@ -870,7 +883,9 @@ export function HydrationSummaryCard() {
   const isMetric = profile?.preferredUnits === "metric";
   const waterUnit = isMetric ? "ml" : "oz";
   const todayValue = Math.round(isMetric ? waterOz * 29.5735 : waterOz);
-  const goalValue = Math.round(isMetric ? (profile?.dailyWaterGoal ?? 0) * 29.5735 : profile?.dailyWaterGoal ?? 0);
+  const goalValue = Math.round(
+    isMetric ? (profile?.dailyWaterGoal ?? 64) * 29.5735 : profile?.dailyWaterGoal ?? 64
+  );
   const progress = goalValue > 0 ? Math.min(todayValue / goalValue, 1) : 0;
 
   return (
@@ -932,6 +947,47 @@ export function QuickLogStrip() {
     { icon: "moon-outline" as const, label: "Sleep", value: `${today?.sleepHours ?? 0} hr`, field: "sleepHours" as const, unitHint: "hours" },
   ];
 
+  function QuickLogTile({
+    item,
+    onPress,
+  }: {
+    item: (typeof items)[number];
+    onPress: (nextItem: (typeof items)[number]) => void;
+  }) {
+    const scaleAnim = useRef(new Animated.Value(1)).current;
+
+    return (
+      <Pressable
+        key={item.label}
+        onPressIn={() =>
+          Animated.spring(scaleAnim, {
+            toValue: 0.94,
+            useNativeDriver: true,
+            friction: 8,
+          }).start()
+        }
+        onPressOut={() =>
+          Animated.spring(scaleAnim, {
+            toValue: 1,
+            useNativeDriver: true,
+            friction: 8,
+          }).start()
+        }
+        onPress={() => onPress(item)}
+      >
+        <Animated.View style={[styles.quickTile, { transform: [{ scale: scaleAnim }] }]}>
+          <View style={styles.quickTileIconWrap}>
+            <Ionicons name={item.icon} size={18} color={colors.textSecondary} />
+          </View>
+          <View style={styles.quickTileCenter}>
+            <Text style={styles.quickValue}>{item.value}</Text>
+            <Text style={styles.quickLabel}>{item.label}</Text>
+          </View>
+        </Animated.View>
+      </Pressable>
+    );
+  }
+
   const closeModal = () => {
     setSelectedTile(null);
     setInputValue("");
@@ -992,15 +1048,7 @@ export function QuickLogStrip() {
         </View>
         <View style={styles.quickGrid}>
           {items.map((item) => (
-            <Pressable key={item.label} style={({ pressed }) => [styles.quickTile, pressed && styles.pressableFeedback]} onPress={() => openModal(item)}>
-              <View style={styles.quickTileIconWrap}>
-                <Ionicons name={item.icon} size={18} color={colors.textSecondary} />
-              </View>
-              <View style={styles.quickTileCenter}>
-                <Text style={styles.quickValue}>{item.value}</Text>
-                <Text style={styles.quickLabel}>{item.label}</Text>
-              </View>
-            </Pressable>
+            <QuickLogTile key={item.label} item={item} onPress={openModal} />
           ))}
         </View>
       </View>
@@ -1270,6 +1318,21 @@ export function MacroSummaryBar() {
     };
   }, [foodLogs]);
 
+  const calorieWarningGoal = profile?.dailyCalorieGoal ?? 2000;
+  const proteinWarningGoal = profile?.dailyProteinGoal ?? 175;
+  const calorieWarningState: MacroWarningState =
+    totals.calories > calorieWarningGoal
+      ? "over"
+      : totals.calories >= calorieWarningGoal * 0.9
+        ? "warning"
+        : "normal";
+  const proteinWarningState: MacroWarningState =
+    totals.protein > proteinWarningGoal
+      ? "over"
+      : totals.protein >= proteinWarningGoal * 0.9
+        ? "warning"
+        : "normal";
+
   const macroBreakdown = useMemo(() => {
     const buildRows = (macro: MacroKey) => {
       const getValue = (item: FoodLog) => {
@@ -1382,6 +1445,8 @@ export function MacroSummaryBar() {
           value={totals.calories}
           goal={Math.round(profile?.dailyCalorieGoal ?? 0)}
           unit="cal"
+          warningState={calorieWarningState}
+          showWarningIndicator={calorieWarningState === "over"}
           onPress={() => setSelectedMacro("calories")}
         />
         <MacroVisualCard
@@ -1389,6 +1454,8 @@ export function MacroSummaryBar() {
           value={totals.protein}
           goal={Math.round(profile?.dailyProteinGoal ?? 0)}
           unit="g"
+          warningState={proteinWarningState}
+          showWarningIndicator={proteinWarningState === "over"}
           onPress={() => setSelectedMacro("protein")}
         />
         <MacroVisualCard
@@ -1501,6 +1568,9 @@ export function FoodLogSection({ mealType, logs, onAddFood }: { mealType: FoodLo
   const getFrequentFoods = useAppStore((state: AppState) => state.getFrequentFoods);
   const profile = useAppStore((state: AppState) => state.profile);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deletedItem, setDeletedItem] = useState<FoodLog | null>(null);
+  const [undoVisible, setUndoVisible] = useState(false);
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [editingItem, setEditingItem] = useState<FoodLog | null>(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editQuantity, setEditQuantity] = useState("");
@@ -1522,10 +1592,14 @@ export function FoodLogSection({ mealType, logs, onAddFood }: { mealType: FoodLo
       ),
     [editingItem?.unit, unitOptions]
   );
-  const mealCalories = logs.reduce((sum, item) => sum + item.calories, 0);
-  const mealProtein = logs.reduce((sum, item) => sum + item.proteinG, 0);
-  const mealCarbs = logs.reduce((sum, item) => sum + item.carbsG, 0);
-  const mealFat = logs.reduce((sum, item) => sum + item.fatG, 0);
+  const visibleLogs = useMemo(
+    () => (deletedItem ? logs.filter((item) => item.id !== deletedItem.id) : logs),
+    [deletedItem, logs]
+  );
+  const mealCalories = visibleLogs.reduce((sum, item) => sum + item.calories, 0);
+  const mealProtein = visibleLogs.reduce((sum, item) => sum + item.proteinG, 0);
+  const mealCarbs = visibleLogs.reduce((sum, item) => sum + item.carbsG, 0);
+  const mealFat = visibleLogs.reduce((sum, item) => sum + item.fatG, 0);
   const mealEmoji: Record<FoodLog["mealType"], string> = {
     breakfast: "🍳",
     lunch: "🥗",
@@ -1540,6 +1614,14 @@ export function FoodLogSection({ mealType, logs, onAddFood }: { mealType: FoodLo
     () => getFrequentFoods(mealType, 3),
     [getFrequentFoods, mealType, logs]
   );
+
+  useEffect(() => {
+    return () => {
+      if (undoTimer.current) {
+        clearTimeout(undoTimer.current);
+      }
+    };
+  }, []);
 
   const editPreview = useMemo(() => {
     if (!editingItem) {
@@ -1622,6 +1704,42 @@ export function FoodLogSection({ mealType, logs, onAddFood }: { mealType: FoodLo
     });
   };
 
+  const handleDelete = async (item: FoodLog) => {
+    if (undoTimer.current) {
+      clearTimeout(undoTimer.current);
+      undoTimer.current = null;
+    }
+
+    if (deletedItem) {
+      setDeletingId(deletedItem.id);
+      await deleteFoodLog(deletedItem.id);
+      setDeletingId(null);
+    }
+
+    setDeletedItem(item);
+    setUndoVisible(true);
+
+    undoTimer.current = setTimeout(async () => {
+      setUndoVisible(false);
+      setDeletingId(item.id);
+      await deleteFoodLog(item.id);
+      setDeletingId(null);
+      setDeletedItem(null);
+      undoTimer.current = null;
+    }, 3000);
+  };
+
+  const handleUndo = () => {
+    if (undoTimer.current) {
+      clearTimeout(undoTimer.current);
+      undoTimer.current = null;
+    }
+
+    setUndoVisible(false);
+    setDeletedItem(null);
+    setDeletingId(null);
+  };
+
   return (
     <>
       <View style={styles.mealCard}>
@@ -1630,7 +1748,7 @@ export function FoodLogSection({ mealType, logs, onAddFood }: { mealType: FoodLo
             <Text style={styles.mealEmoji}>{mealEmoji[mealType]}</Text>
             <Text style={styles.mealTitle}>{mealType[0].toUpperCase() + mealType.slice(1)}</Text>
           </View>
-          {logs.length ? (
+          {visibleLogs.length ? (
             <View style={styles.mealTotalsWrap}>
               <Text style={styles.mealTotal}>{Math.round(mealCalories)} cal</Text>
               <Text style={styles.mealMacroSummary}>
@@ -1640,18 +1758,14 @@ export function FoodLogSection({ mealType, logs, onAddFood }: { mealType: FoodLo
           ) : null}
         </View>
         <View style={styles.sectionDivider} />
-        {logs.length ? (
-          logs.map((item, index) => (
-            <View key={item.id} style={index < logs.length - 1 ? styles.rowDivider : undefined}>
+        {visibleLogs.length ? (
+          visibleLogs.map((item, index) => (
+            <View key={item.id} style={index < visibleLogs.length - 1 ? styles.rowDivider : undefined}>
               <SwipeableFoodRow
                 item={item}
                 deleting={deletingId === item.id}
                 onEdit={() => openEditModal(item)}
-                onDelete={async () => {
-                  setDeletingId(item.id);
-                  await deleteFoodLog(item.id);
-                  setDeletingId(null);
-                }}
+                onDelete={() => handleDelete(item)}
               />
             </View>
           ))
@@ -1681,6 +1795,14 @@ export function FoodLogSection({ mealType, logs, onAddFood }: { mealType: FoodLo
         <Pressable style={({ pressed }) => [styles.addFoodButton, pressed && styles.pressableFeedback]} onPress={onAddFood}>
           <Text style={styles.addFoodText}>+ Add food</Text>
         </Pressable>
+        {undoVisible ? (
+          <View style={styles.undoToast}>
+            <Text style={styles.undoText}>Item removed</Text>
+            <Pressable onPress={handleUndo}>
+              <Text style={styles.undoAction}>Undo</Text>
+            </Pressable>
+          </View>
+        ) : null}
       </View>
       <Modal visible={editModalOpen && Boolean(editingItem)} animationType="slide" transparent onRequestClose={closeEditModal}>
         <View style={styles.modalBackdrop}>
@@ -2795,16 +2917,21 @@ function MacroVisualCard({
   value,
   goal,
   unit,
+  warningState = "normal",
+  showWarningIndicator = false,
   onPress,
 }: {
   label: string;
   value: number;
   goal: number;
   unit: string;
+  warningState?: MacroWarningState;
+  showWarningIndicator?: boolean;
   onPress?: () => void;
 }) {
   const progress = goal > 0 ? Math.min(value / goal, 1) : 0;
   const fillWidth = `${Math.max(progress * 100, 0)}%` as DimensionValue;
+  const fillColor = getMacroWarningColor(warningState);
 
   return (
     <Pressable style={({ pressed }) => [styles.macroCard, pressed && styles.pressableFeedback]} onPress={onPress}>
@@ -2813,16 +2940,23 @@ function MacroVisualCard({
           {label}
         </Text>
       </View>
-      <View style={styles.macroValueRow}>
-        <Text style={styles.macroValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
-          {value}
-        </Text>
-        <Text style={styles.macroUnit} numberOfLines={1}>
-          {unit}
-        </Text>
+      <View style={styles.macroValueColumn}>
+        {showWarningIndicator ? (
+          <View style={[styles.macroWarningIndicator, { backgroundColor: fillColor }]}>
+            <Text style={styles.macroWarningIndicatorText}>!</Text>
+          </View>
+        ) : null}
+        <View style={styles.macroValueRow}>
+          <Text style={styles.macroValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+            {value}
+          </Text>
+          <Text style={styles.macroUnit} numberOfLines={1}>
+            {unit}
+          </Text>
+        </View>
       </View>
       <View style={styles.macroUnderlineTrack}>
-        <View style={[styles.macroUnderlineFill, { width: fillWidth }]} />
+        <View style={[styles.macroUnderlineFill, { width: fillWidth, backgroundColor: fillColor }]} />
       </View>
       {goal > 0 ? (
         <Text style={styles.macroGoalText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>
@@ -3336,6 +3470,10 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
     gap: 4,
   },
+  macroValueColumn: {
+    alignItems: "flex-start",
+    gap: 4,
+  },
   macroValue: {
     color: colors.textPrimary,
     fontSize: 22,
@@ -3363,6 +3501,19 @@ const styles = StyleSheet.create({
     height: "100%",
     borderRadius: radii.round,
     backgroundColor: colors.accentPrimary,
+  },
+  macroWarningIndicator: {
+    minWidth: 12,
+    height: 12,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  macroWarningIndicatorText: {
+    color: colors.white,
+    fontSize: 9,
+    fontWeight: "700",
+    lineHeight: 10,
   },
   sectionRow: {
     flexDirection: "row",
@@ -4046,6 +4197,25 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 14,
     textAlign: "center",
+  },
+  undoToast: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: colors.textPrimary,
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginTop: 8,
+  },
+  undoText: {
+    fontSize: 14,
+    color: colors.white,
+  },
+  undoAction: {
+    fontSize: 14,
+    color: colors.accentSecondary,
+    fontWeight: "700",
   },
   searchLauncher: {
     backgroundColor: colors.white,

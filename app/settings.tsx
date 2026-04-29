@@ -52,7 +52,7 @@ export default function SettingsScreen() {
     setProteinGoal(profile?.dailyProteinGoal != null ? String(profile.dailyProteinGoal) : "");
     setCarbsGoal(profile?.dailyCarbsGoal != null ? String(profile.dailyCarbsGoal) : "");
     setFatGoal(profile?.dailyFatGoal != null ? String(profile.dailyFatGoal) : "");
-    setWaterGoal(profile?.dailyWaterGoal != null ? String(profile.dailyWaterGoal) : "");
+    setWaterGoal(profile?.dailyWaterGoal != null ? String(profile.dailyWaterGoal) : "64");
   }, [profile]);
 
   useEffect(() => {

@@ -48,6 +48,7 @@ const moodSummaryOptions = [
 ] as const;
 
 const energySummaryOptions = ["Drained", "Low", "Okay", "Good", "Wired"] as const;
+const mealCardOrder: MealType[] = ["breakfast", "lunch", "dinner", "snack"];
 
 export default function LogScreen() {
   const navigation = useNavigation();
@@ -77,6 +78,9 @@ export default function LogScreen() {
   const logoFloat = useRef(new Animated.Value(0)).current;
   const logoGlow = useRef(new Animated.Value(0)).current;
   const pillPulse = useRef(new Animated.Value(0)).current;
+  const mealAnims = useRef(
+    [0, 1, 2, 3].map(() => new Animated.Value(0))
+  ).current;
 
   useFocusEffect(
     useCallback(() => {
@@ -184,6 +188,20 @@ export default function LogScreen() {
     };
   }, [logoFloat, logoGlow, pillPulse]);
 
+  useEffect(() => {
+    mealAnims.forEach((anim) => anim.setValue(0));
+    Animated.stagger(
+      80,
+      mealAnims.map((anim) =>
+        Animated.timing(anim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        })
+      )
+    ).start();
+  }, [mealAnims]);
+
   const openFoodSearch = (mealType: MealType) => {
     setMealContext(mealType);
     setDefaultMealType(mealType);
@@ -203,10 +221,10 @@ export default function LogScreen() {
   const todaysMood = moodLogs[0] ?? null;
   const todaySubtitle = dailySubtitles[new Date().getDay() % dailySubtitles.length];
   const logHeaderDate = isSelectedDateToday
-    ? "Today"
+    ? `Today, ${format(new Date(), "MMMM d")}`
     : isYesterday(selectedDate)
-      ? "Yesterday"
-      : format(selectedDate, "EEE, MMM d");
+      ? `Yesterday, ${format(selectedDate, "MMMM d")}`
+      : format(selectedDate, "EEE, MMMM d");
   const pastDayMoodOption = moodSummaryOptions.find((option) => option.score === todaysMood?.moodScore);
   const pastDayEnergyLabel = todaysMood ? energySummaryOptions[(todaysMood.energyScore ?? 3) - 1] : "";
   const hasAnyFoodMoodHistory =
@@ -427,10 +445,28 @@ export default function LogScreen() {
               defaultMealType={defaultMealType}
               title={generalFoodTitle}
             />
-            <FoodLogSection mealType="breakfast" logs={foodLogs.filter((item: FoodLog) => item.mealType === "breakfast")} onAddFood={() => openFoodSearch("breakfast")} />
-            <FoodLogSection mealType="lunch" logs={foodLogs.filter((item: FoodLog) => item.mealType === "lunch")} onAddFood={() => openFoodSearch("lunch")} />
-            <FoodLogSection mealType="dinner" logs={foodLogs.filter((item: FoodLog) => item.mealType === "dinner")} onAddFood={() => openFoodSearch("dinner")} />
-            <FoodLogSection mealType="snack" logs={foodLogs.filter((item: FoodLog) => item.mealType === "snack")} onAddFood={() => openFoodSearch("snack")} />
+            {mealCardOrder.map((meal, index) => (
+              <Animated.View
+                key={meal}
+                style={{
+                  opacity: mealAnims[index],
+                  transform: [
+                    {
+                      translateY: mealAnims[index].interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [12, 0],
+                      }),
+                    },
+                  ],
+                }}
+              >
+                <FoodLogSection
+                  mealType={meal}
+                  logs={foodLogs.filter((item: FoodLog) => item.mealType === meal)}
+                  onAddFood={() => openFoodSearch(meal)}
+                />
+              </Animated.View>
+            ))}
             {!isSelectedDateToday ? <FoodSearchLauncher onPress={openGeneralFoodSearch} /> : null}
             <HydrationSummaryCard />
             <QuickLogStrip />

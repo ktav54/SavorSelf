@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
+import NetInfo from "@react-native-community/netinfo";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as Notifications from "expo-notifications";
 import * as SplashScreen from "expo-splash-screen";
-import { AppState as RNAppState, Text, View } from "react-native";
+import { AppState as RNAppState, StyleSheet, Text, View } from "react-native";
 import { colors } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
 import {
@@ -28,6 +29,7 @@ export default function RootLayout() {
   const handleSessionChange = useAppStore((state: AppState) => state.handleSessionChange);
   const sessionReady = useAppStore((state: AppState) => state.sessionReady);
   const [appReady, setAppReady] = useState(false);
+  const [isOffline, setIsOffline] = useState(false);
 
   useEffect(() => {
     void SplashScreen.preventAutoHideAsync()
@@ -100,6 +102,14 @@ export default function RootLayout() {
     };
   }, []);
 
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      setIsOffline(!state.isConnected);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   if (!appReady) {
     return null;
   }
@@ -123,8 +133,13 @@ export default function RootLayout() {
   }
 
   return (
-    <>
+    <View style={styles.root}>
       <StatusBar style="dark" />
+      {isOffline ? (
+        <View style={styles.offlineBanner}>
+          <Text style={styles.offlineText}>📡 No internet connection</Text>
+        </View>
+      ) : null}
       <Stack
         screenOptions={{
           headerShown: false,
@@ -132,6 +147,23 @@ export default function RootLayout() {
           animationDuration: 200,
         }}
       />
-    </>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
+  offlineBanner: {
+    backgroundColor: "#C4622D",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    alignItems: "center",
+  },
+  offlineText: {
+    color: colors.white,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+});

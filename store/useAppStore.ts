@@ -248,7 +248,7 @@ function mapProfile(row: any): UserProfile {
     dailyProteinGoal: row.daily_protein_goal ?? undefined,
     dailyCarbsGoal: row.daily_carbs_goal ?? undefined,
     dailyFatGoal: row.daily_fat_goal ?? undefined,
-    dailyWaterGoal: row.daily_water_goal ?? undefined,
+    dailyWaterGoal: row.daily_water_goal ?? 64,
     onboardingGoal: row.onboarding_goal ?? undefined,
     onboardingChallenge: row.onboarding_challenge ?? undefined,
     timezone: row.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -329,6 +329,7 @@ async function ensureProfileForSession(session: Session) {
     subscription_tier: "free",
     preferred_units: "imperial",
     onboarding_complete: false,
+    daily_water_goal: 64,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   };
 
