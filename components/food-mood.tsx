@@ -273,8 +273,10 @@ export function GutMoodScoreCard() {
   const score = useMemo(() => getGutMoodScore(moodLogs, foodLogs), [foodLogs, moodLogs]);
   const tone = getGutMoodTone(score);
   const moodAverage = snapshot?.averageMoodThisWeek != null ? `${snapshot.averageMoodThisWeek.toFixed(1)} / 5` : "—";
-  const topTag = formatTag(snapshot?.topTag) ?? "—";
-  const daysLogged = snapshot ? `${snapshot.daysLoggedThisWeek} of 7` : "—";
+  const topTag = snapshot?.topTag
+    ? snapshot.topTag.replace(/_/g, " ").replace(/^\w/, (char) => char.toUpperCase())
+    : "—";
+  const daysLogged = `${snapshot?.daysLoggedThisWeek ?? 0} of 7`;
 
   return (
     <SurfaceCard style={styles.gutMoodHeroCard}>
@@ -553,7 +555,7 @@ export function DailyReadCard() {
   return (
     <SurfaceCard>
       <SectionTitle
-        eyebrow="TODAY'S READ"
+        eyebrow="DAILY READ"
         title="Your daily read"
         subtitle="A warm, personalized gut-brain reflection based on what you've logged today."
       />
@@ -811,9 +813,21 @@ export function WeeklySnapshot() {
   const moodDeltaLabel =
     snapshot?.moodDelta == null
       ? "—"
-      : `${snapshot.moodDelta > 0 ? "+" : ""}${snapshot.moodDelta.toFixed(1)}`;
+      : snapshot.moodDelta > 0
+        ? `↑ +${snapshot.moodDelta.toFixed(1)}`
+        : snapshot.moodDelta < 0
+          ? `↓ ${snapshot.moodDelta.toFixed(1)}`
+          : "→ Steady";
+  const moodDeltaStyle =
+    snapshot?.moodDelta == null
+      ? styles.statValue
+      : snapshot.moodDelta > 0
+        ? styles.positiveDeltaValue
+        : snapshot.moodDelta < 0
+          ? styles.negativeDeltaValue
+          : styles.statValue;
   const topTagLabel = formatTag(snapshot?.topTag) ?? "—";
-  const daysLoggedLabel = snapshot ? `${snapshot.daysLoggedThisWeek} of 7` : "—";
+  const daysLoggedLabel = `${snapshot?.daysLoggedThisWeek ?? 0} of 7`;
 
   return (
     <SurfaceCard>
@@ -829,9 +843,9 @@ export function WeeklySnapshot() {
         />
         {isBuilding ? <EmptyPatternDots /> : null}
         <View style={styles.snapshotRow}>
-          <SnapshotStat label="Mood vs last week" value={moodDeltaLabel} />
+          <SnapshotStat label="Mood vs last week" value={moodDeltaLabel} valueStyle={moodDeltaStyle} />
           <SnapshotStat label="Top tag" value={topTagLabel} />
-          <SnapshotStat label="Days logged" value={daysLoggedLabel} />
+          <SnapshotStat label="Mood days" value={daysLoggedLabel} />
         </View>
         {weeklyLead ? <Text style={styles.note}>{weeklyLead}</Text> : null}
       </View>
@@ -981,8 +995,8 @@ export function TrendCard() {
   return (
     <SurfaceCard>
       <SectionTitle
-        eyebrow="7-DAY MOOD"
-        title="Your week at a glance"
+        eyebrow="MOOD TREND"
+        title="Your mood this week"
         subtitle={allEmpty ? "Log your mood daily to see your trend build" : undefined}
       />
       <View style={styles.trendBarsRow}>
@@ -1004,11 +1018,11 @@ export function TrendCard() {
       <View style={styles.trendLegendRow}>
         <View style={styles.trendLegendItem}>
           <View style={[styles.trendLegendDot, styles.trendLegendDotFilled]} />
-          <Text style={styles.trendLegendText}>Mood logged</Text>
+          <Text style={styles.trendLegendText}>Logged</Text>
         </View>
         <View style={styles.trendLegendItem}>
           <View style={styles.trendLegendDot} />
-          <Text style={styles.trendLegendText}>No log</Text>
+          <Text style={styles.trendLegendText}>No entry</Text>
         </View>
       </View>
     </SurfaceCard>
@@ -1018,9 +1032,14 @@ export function TrendCard() {
 export function NutrientSpotlight() {
   const profile = useAppStore((state: AppState) => state.profile);
   const foodLogs = useAppStore((state: AppState) => state.foodLogs);
-  const totalFiber = useMemo(() => foodLogs.reduce((sum, f) => sum + (f.fiberG ?? 0), 0), [foodLogs]);
-  const totalProtein = useMemo(() => foodLogs.reduce((sum, f) => sum + (f.proteinG ?? 0), 0), [foodLogs]);
-  const totalCalories = useMemo(() => foodLogs.reduce((sum, f) => sum + (f.calories ?? 0), 0), [foodLogs]);
+  const todayKey = format(new Date(), "yyyy-MM-dd");
+  const todayFoodLogs = useMemo(
+    () => foodLogs.filter((f: FoodLog) => f.loggedAt.slice(0, 10) === todayKey),
+    [foodLogs, todayKey]
+  );
+  const totalFiber = useMemo(() => todayFoodLogs.reduce((sum, f) => sum + (f.fiberG ?? 0), 0), [todayFoodLogs]);
+  const totalProtein = useMemo(() => todayFoodLogs.reduce((sum, f) => sum + (f.proteinG ?? 0), 0), [todayFoodLogs]);
+  const totalCalories = useMemo(() => todayFoodLogs.reduce((sum, f) => sum + (f.calories ?? 0), 0), [todayFoodLogs]);
   const fiberGoal = 25;
   const proteinGoal = profile?.dailyProteinGoal ?? 50;
   const calorieGoal = profile?.dailyCalorieGoal ?? 2000;
@@ -1033,7 +1052,7 @@ export function NutrientSpotlight() {
   return (
     <SurfaceCard>
       <SectionTitle eyebrow="NUTRIENTS" title="Today's gut-health fuel" />
-      {foodLogs.length ? (
+      {todayFoodLogs.length ? (
         <View style={styles.nutrientList}>
           {nutrientRows.map((nutrient) => {
             const pct = Math.min(1, nutrient.current / nutrient.goal);
@@ -1061,11 +1080,11 @@ export function NutrientSpotlight() {
   );
 }
 
-function SnapshotStat({ label, value }: { label: string; value: string }) {
+function SnapshotStat({ label, value, valueStyle }: { label: string; value: string; valueStyle?: object }) {
   return (
     <View style={styles.statBox}>
       <Text style={styles.statLabel}>{label}</Text>
-      <Text style={styles.statValue}>{value}</Text>
+      <Text style={[styles.statValue, valueStyle]}>{value}</Text>
     </View>
   );
 }
@@ -1827,6 +1846,12 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontSize: 18,
     fontWeight: "600",
+  },
+  positiveDeltaValue: {
+    color: "#5C9E6E",
+  },
+  negativeDeltaValue: {
+    color: "#C4622D",
   },
   note: {
     color: colors.textSecondary,

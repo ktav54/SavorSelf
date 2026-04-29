@@ -132,7 +132,7 @@ function buildCorrelationInsight(
   const ys = comparableDays.map((day) => day.moodScore as number);
   const correlation = pearsonCorrelation(xs, ys);
 
-  if (correlation === null || Math.abs(correlation) < 0.2) {
+  if (correlation === null || Math.abs(correlation) < 0.25 || comparableDays.length < 4) {
     return null;
   }
 
@@ -142,6 +142,10 @@ function buildCorrelationInsight(
   const highMean = average(highMood.map((day) => day[metric] as number));
   const lowMean = average(lowMood.map((day) => day[metric] as number));
   const difference = roundOne((highMean ?? meanMetric) - (lowMean ?? meanMetric));
+
+  if (Math.abs(difference) < 1) {
+    return null;
+  }
 
   return makeInsight(
     userId,
