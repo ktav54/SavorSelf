@@ -38,6 +38,7 @@ export default function FoodMoodScreen() {
   const gateAnim = useRef(new Animated.Value(0)).current;
   const skeletonAnim = useRef(new Animated.Value(0.4)).current;
   const [screenError, setScreenError] = useState<string | null>(null);
+  const todayFormatted = format(new Date(), "EEEE, MMMM d");
 
   const hasEnoughData = useMemo(() => {
     const cutoff = new Date();
@@ -172,7 +173,7 @@ export default function FoodMoodScreen() {
       <View style={styles.screenStack}>
         <View style={styles.header}>
           <Text style={styles.title}>Your gut-brain picture</Text>
-          <Text style={styles.subtitle}>{format(new Date(), "EEEE, MMMM d")}</Text>
+          <Text style={styles.subtitle}>{todayFormatted}</Text>
         </View>
         {screenError ? (
           <View style={styles.screenError}>

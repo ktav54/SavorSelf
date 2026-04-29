@@ -18,6 +18,7 @@ const MOOD_HISTORY_OPTIONS = [
 ] as const;
 const DAILY_READ_PROMPT =
   "Give me a 2-sentence daily gut-brain read based on today's data. First sentence: one specific observation about today's food or mood. Second sentence: one gentle, specific suggestion. No preamble, no sign-off, speak directly to the user.";
+const DAILY_READ_CACHE = new Map<string, string>();
 
 function toDateKey(value: Date | string) {
   return typeof value === "string" ? value.slice(0, 10) : value.toISOString().slice(0, 10);
@@ -150,6 +151,16 @@ function getWeeklySnapshotTitle(delta: number | null | undefined) {
   return "Holding steady this week";
 }
 
+function getDeltaContext(delta: number | null): string {
+  if (delta === null) return "";
+  if (Math.abs(delta) < 0.2) return "Your mood has been consistent";
+  if (delta > 0.5) return "Noticeably better than last week";
+  if (delta > 0.2) return "Slightly better than last week";
+  if (delta < -0.5) return "Noticeably lower than last week";
+  if (delta < -0.2) return "Slightly lower than last week";
+  return "About the same as last week";
+}
+
 function getInsightMetricValue(
   insightType: string,
   point: FoodMoodTrendPoint
@@ -220,6 +231,35 @@ function SurfaceCard({ children, style }: { children: ReactNode; style?: object 
 function PreGatePreview({ pairedDays }: { pairedDays: number }) {
   const insights = useAppStore((state: AppState) => state.insights);
   const teaserInsight = insights[0]?.insightBody?.trim() ?? "";
+  const shimmerAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(shimmerAnim, {
+          toValue: 1,
+          duration: 1200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(shimmerAnim, {
+          toValue: 0,
+          duration: 1200,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    loop.start();
+
+    return () => {
+      loop.stop();
+    };
+  }, [shimmerAnim]);
+
+  const shimmerOpacity = shimmerAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.5, 0.85],
+  });
 
   return (
     <View style={styles.preGateWrap}>
@@ -241,11 +281,14 @@ function PreGatePreview({ pairedDays }: { pairedDays: number }) {
       <View style={styles.lockedPreviewSection}>
         <Text style={styles.lockedPreviewHeading}>A preview of what's coming</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.lockedPreviewScroll}>
+          <Animated.View style={[styles.lockedPreviewCardWrap, { opacity: shimmerOpacity }]}>
           <SurfaceCard style={styles.lockedPreviewCard}>
             <Text style={styles.lockedPreviewLock}>🔒</Text>
             <Text style={styles.lockedPreviewScore}>??</Text>
             <Text style={styles.lockedPreviewLabel}>Gut-Mood Score</Text>
           </SurfaceCard>
+          </Animated.View>
+          <Animated.View style={[styles.lockedPreviewCardWrap, { opacity: shimmerOpacity }]}>
           <SurfaceCard style={styles.lockedPreviewCard}>
             <Text style={styles.lockedPreviewLock}>🔒</Text>
             {teaserInsight ? (
@@ -261,11 +304,14 @@ function PreGatePreview({ pairedDays }: { pairedDays: number }) {
             )}
             <Text style={styles.lockedPreviewLabel}>Your first insight</Text>
           </SurfaceCard>
+          </Animated.View>
+          <Animated.View style={[styles.lockedPreviewCardWrap, { opacity: shimmerOpacity }]}>
           <SurfaceCard style={styles.lockedPreviewCard}>
             <Text style={styles.lockedPreviewLock}>🔒</Text>
             <Text style={styles.lockedPreviewFlame}>🔥</Text>
             <Text style={styles.lockedPreviewLabel}>Streak tracker</Text>
           </SurfaceCard>
+          </Animated.View>
         </ScrollView>
       </View>
       <Text style={styles.preGateFooter}>Most people notice their first pattern within a week. 🌱</Text>
@@ -277,6 +323,7 @@ export const GutMoodScoreCard = React.memo(function GutMoodScoreCard() {
   const moodLogs = useAppStore((state: AppState) => state.moodLogs);
   const foodLogs = useAppStore((state: AppState) => state.foodLogs);
   const snapshot = useAppStore((state: AppState) => state.foodMoodSnapshot);
+  const [showScoreInfo, setShowScoreInfo] = useState(false);
   const score = useMemo(() => getGutMoodScore(moodLogs, foodLogs), [foodLogs, moodLogs]);
   const tone = getGutMoodTone(score);
   const moodAverage = snapshot?.averageMoodThisWeek != null ? `${snapshot.averageMoodThisWeek.toFixed(1)} / 5` : "—";
@@ -288,6 +335,12 @@ export const GutMoodScoreCard = React.memo(function GutMoodScoreCard() {
   return (
     <SurfaceCard style={styles.gutMoodHeroCard}>
       <Text style={styles.gutMoodHeroEyebrow}>DAILY GUT ANALYSIS</Text>
+      <View style={styles.gutMoodHeroLabelRow}>
+        <Text style={styles.gutMoodHeroLabel}>Gut-Mood Score</Text>
+        <Pressable onPress={() => setShowScoreInfo(true)} style={styles.infoButton}>
+          <Text style={styles.infoButtonText}>?</Text>
+        </Pressable>
+      </View>
       <Text style={styles.gutMoodHeroScore}>{score}</Text>
       <Text style={styles.gutMoodHeroBody}>{tone.body}</Text>
       <View style={styles.gutMoodHeroDivider} />
@@ -307,6 +360,23 @@ export const GutMoodScoreCard = React.memo(function GutMoodScoreCard() {
           <Text style={styles.gutMoodHeroStatValue}>{daysLogged}</Text>
         </View>
       </View>
+      <Modal visible={showScoreInfo} transparent animationType="fade" onRequestClose={() => setShowScoreInfo(false)}>
+        <Pressable style={styles.tooltipBackdrop} onPress={() => setShowScoreInfo(false)}>
+          <View style={styles.tooltipCard}>
+            <Text style={styles.tooltipTitle}>What is the Gut-Mood Score?</Text>
+            <Text style={styles.tooltipBody}>
+              Your Gut-Mood Score (0-100) reflects the connection between your recent food choices and how you've been
+              feeling.{"\n\n"}
+              It factors in your mood scores, fiber intake, fermented foods, and consistency over the last 7 days.
+              {"\n\n"}
+              The higher your score, the more your nutrition is supporting your gut-brain axis.
+            </Text>
+            <Pressable style={styles.tooltipClose} onPress={() => setShowScoreInfo(false)}>
+              <Text style={styles.tooltipCloseText}>Got it</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
     </SurfaceCard>
   );
 });
@@ -494,9 +564,16 @@ export function DailyReadCard() {
   const foodLogs = useAppStore((state: AppState) => state.foodLogs);
   const quickLogs = useAppStore((state: AppState) => state.quickLogs);
   const profile = useAppStore((state: AppState) => state.profile);
-  const [reply, setReply] = useState("");
+  const today = format(new Date(), "yyyy-MM-dd");
+  const cacheKey = `daily-read-${today}`;
+  const initialCachedRead = DAILY_READ_CACHE.get(cacheKey) ?? null;
+  const [analysis, setAnalysis] = useState(initialCachedRead ?? "");
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [cachedRead, setCachedRead] = useState<string | null>(initialCachedRead);
+  const [cacheDate, setCacheDate] = useState<string | null>(initialCachedRead ? today : null);
+  const [showRefresh, setShowRefresh] = useState(false);
+  const [refreshNonce, setRefreshNonce] = useState(0);
   const todayMood = moodLogs[0] ?? null;
   const todayQuickLog = quickLogs[0] ?? null;
   const hasAnyTodayData = foodLogs.length > 0 || Boolean(todayMood);
@@ -600,28 +677,59 @@ export function DailyReadCard() {
   );
   const readSentences = useMemo(
     () =>
-      reply
+      analysis
         .split(/(?<=[.!?])\s+/)
         .map((sentence) => sentence.trim())
         .filter(Boolean)
         .slice(0, 2),
-    [reply]
+    [analysis]
   );
 
   useEffect(() => {
+    const persistedRead = DAILY_READ_CACHE.get(cacheKey) ?? null;
+
+    setCachedRead(persistedRead);
+    setCacheDate(persistedRead ? today : null);
+
+    if (!persistedRead) {
+      setAnalysis("");
+    }
+  }, [cacheKey, today]);
+
+  useEffect(() => {
+    setShowRefresh(false);
+
+    if (!analysis) {
+      return;
+    }
+
+    const timer = setTimeout(() => setShowRefresh(true), 30000);
+    return () => clearTimeout(timer);
+  }, [analysis]);
+
+  useEffect(() => {
     if (!hasAnyTodayData) {
-      setReply("");
+      setAnalysis("");
       setErrorMessage("");
       setLoading(false);
+      setShowRefresh(false);
       return;
     }
 
     let cancelled = false;
 
     const generateRead = async () => {
+      if (cachedRead && cacheDate === today) {
+        setAnalysis(cachedRead);
+        setLoading(false);
+        setErrorMessage("");
+        return;
+      }
+
       setLoading(true);
-      setReply("");
+      setAnalysis("");
       setErrorMessage("");
+      setShowRefresh(false);
 
       try {
         const result = await sendCoachMessage(DAILY_READ_PROMPT, readContext);
@@ -632,7 +740,10 @@ export function DailyReadCard() {
         }
 
         if (!cancelled) {
-          setReply(nextReply);
+          DAILY_READ_CACHE.set(cacheKey, nextReply);
+          setAnalysis(nextReply);
+          setCachedRead(nextReply);
+          setCacheDate(today);
         }
       } catch {
         if (!cancelled) {
@@ -650,7 +761,7 @@ export function DailyReadCard() {
     return () => {
       cancelled = true;
     };
-  }, [hasAnyTodayData, readContext, readSignature]);
+  }, [cacheDate, cacheKey, cachedRead, hasAnyTodayData, readContext, readSignature, refreshNonce, today]);
 
   return (
     <SurfaceCard>
@@ -673,7 +784,7 @@ export function DailyReadCard() {
         </View>
       ) : (
         <View style={styles.dailyReadList}>
-          {(readSentences.length ? readSentences : [reply]).map((sentence, index) => (
+          {(readSentences.length ? readSentences : [analysis]).map((sentence, index) => (
             <View key={`daily-read-${index}`} style={styles.dailyReadRow}>
               <View style={styles.dailyReadDot} />
               <Text style={styles.dailyReadSentence}>{sentence}</Text>
@@ -681,6 +792,19 @@ export function DailyReadCard() {
           ))}
         </View>
       )}
+      {showRefresh ? (
+        <Pressable
+          onPress={() => {
+            DAILY_READ_CACHE.delete(cacheKey);
+            setCachedRead(null);
+            setCacheDate(null);
+            setShowRefresh(false);
+            setRefreshNonce((current) => current + 1);
+          }}
+        >
+          <Text style={styles.refreshLink}>{"\u21BB"} Refresh</Text>
+        </Pressable>
+      ) : null}
     </SurfaceCard>
   );
 }
@@ -932,6 +1056,7 @@ export function WeeklySnapshot() {
           : styles.statValue;
   const topTagLabel = formatTag(snapshot?.topTag) ?? "—";
   const daysLoggedLabel = `${snapshot?.daysLoggedThisWeek ?? 0} of 7`;
+  const moodDeltaContext = getDeltaContext(snapshot?.moodDelta ?? null);
 
   return (
     <SurfaceCard>
@@ -947,7 +1072,12 @@ export function WeeklySnapshot() {
         />
         {isBuilding ? <EmptyPatternDots /> : null}
         <View style={styles.snapshotRow}>
-          <SnapshotStat label="Mood vs last week" value={moodDeltaLabel} valueStyle={moodDeltaStyle} />
+          <SnapshotStat
+            label="Mood vs last week"
+            value={moodDeltaLabel}
+            valueStyle={moodDeltaStyle}
+            context={moodDeltaContext}
+          />
           <SnapshotStat label="Top tag" value={topTagLabel} />
           <SnapshotStat label="Mood days" value={daysLoggedLabel} />
         </View>
@@ -987,11 +1117,15 @@ export const InsightFeed = React.memo(function InsightFeed() {
   if (!insights.length) {
     return (
       <SurfaceCard>
-        <SectionTitle
-          eyebrow="INSIGHTS"
-          title="Your insights will land here soon"
-          subtitle="A few more food and mood check-ins will give this section something real to say."
-        />
+        <SectionTitle eyebrow="INSIGHTS" title="Your insight feed" subtitle="The patterns worth watching will show up here." />
+        <View style={styles.insightEmpty}>
+          <Text style={styles.insightEmptyEmoji}>{"\u{1F52D}"}</Text>
+          <Text style={styles.insightEmptyTitle}>Patterns are forming</Text>
+          <Text style={styles.insightEmptySub}>
+            Keep logging food and mood daily. Your first insight usually appears within 5-7 days of consistent
+            tracking.
+          </Text>
+        </View>
       </SurfaceCard>
     );
   }
@@ -1238,11 +1372,22 @@ export const NutrientSpotlight = React.memo(function NutrientSpotlight() {
   );
 });
 
-function SnapshotStat({ label, value, valueStyle }: { label: string; value: string; valueStyle?: object }) {
+function SnapshotStat({
+  label,
+  value,
+  valueStyle,
+  context,
+}: {
+  label: string;
+  value: string;
+  valueStyle?: object;
+  context?: string;
+}) {
   return (
     <View style={styles.statBox}>
       <Text style={styles.statLabel}>{label}</Text>
       <Text style={[styles.statValue, valueStyle]}>{value}</Text>
+      {context ? <Text style={styles.deltaContext}>{context}</Text> : null}
     </View>
   );
 }
@@ -1353,10 +1498,11 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingRight: 4,
   },
-  lockedPreviewCard: {
+  lockedPreviewCardWrap: {
     width: 220,
+  },
+  lockedPreviewCard: {
     minHeight: 180,
-    opacity: 0.7,
     justifyContent: "space-between",
   },
   lockedPreviewLock: {
@@ -1418,6 +1564,16 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.78)",
     fontWeight: "700",
   },
+  gutMoodHeroLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  gutMoodHeroLabel: {
+    fontSize: 15,
+    color: colors.white,
+    fontWeight: "600",
+  },
   gutMoodHeroScore: {
     fontSize: 72,
     fontWeight: "800",
@@ -1452,6 +1608,55 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: colors.white,
+  },
+  infoButton: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  infoButtonText: {
+    fontSize: 12,
+    color: colors.white,
+    fontWeight: "700",
+  },
+  tooltipBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 32,
+  },
+  tooltipCard: {
+    backgroundColor: colors.white,
+    borderRadius: 20,
+    padding: 24,
+    width: "100%",
+  },
+  tooltipTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: colors.textPrimary,
+    marginBottom: 12,
+  },
+  tooltipBody: {
+    fontSize: 15,
+    color: colors.textSecondary,
+    lineHeight: 24,
+    marginBottom: 20,
+  },
+  tooltipClose: {
+    backgroundColor: colors.accentPrimary,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  tooltipCloseText: {
+    fontSize: 15,
+    color: colors.white,
+    fontWeight: "600",
   },
   zeroStreakCard: {
     alignItems: "center",
@@ -1800,6 +2005,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 22,
     textAlign: "center",
+  },
+  refreshLink: {
+    marginTop: 12,
+    fontSize: 14,
+    color: colors.accentPrimary,
+    fontWeight: "600",
   },
   heroBadgeRow: {
     alignItems: "flex-start",
@@ -2160,6 +2371,11 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "600",
   },
+  deltaContext: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 4,
+  },
   positiveDeltaValue: {
     color: "#5C9E6E",
   },
@@ -2173,6 +2389,31 @@ const styles = StyleSheet.create({
   },
   feed: {
     gap: 20,
+  },
+  insightEmpty: {
+    alignItems: "center",
+    padding: 24,
+    backgroundColor: colors.white,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  insightEmptyEmoji: {
+    fontSize: 36,
+    marginBottom: 12,
+  },
+  insightEmptyTitle: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: colors.textPrimary,
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  insightEmptySub: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: "center",
+    lineHeight: 22,
   },
   weeklySnapshotCard: {
     backgroundColor: "rgba(232, 168, 56, 0.08)",
