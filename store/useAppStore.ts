@@ -46,7 +46,10 @@ export interface AppState {
   initializeAuth: () => Promise<void>;
   handleSessionChange: (session: Session | null) => Promise<void>;
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
-  signUp: (payload: { email: string; password: string; name?: string }) => Promise<{ error?: string }>;
+  signUp: (payload: { email: string; password: string; name?: string }) => Promise<{
+    data?: { user: User | null; session: Session | null };
+    error?: string;
+  }>;
   completeOnboarding: (details: Partial<UserProfile>) => Promise<{ error?: string }>;
   updateProfile: (updates: Partial<Pick<UserProfile, "name" | "preferredUnits" | "dailyCalorieGoal" | "dailyProteinGoal" | "dailyCarbsGoal" | "dailyFatGoal" | "dailyWaterGoal">>) => Promise<{ error?: string }>;
   updateEmail: (email: string) => Promise<{ error?: string }>;
@@ -534,25 +537,6 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
 
     if (!error && data.session) {
       await useAppStore.getState().handleSessionChange(data.session);
-    } else if (!error && data.user) {
-      await supabase.from("users").upsert({
-        id: data.user.id,
-        email: data.user.email ?? email,
-        name: name ?? "",
-        subscription_tier: "free",
-        preferred_units: "imperial",
-        onboarding_complete: false,
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      });
-
-      const signInResult = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (!signInResult.error && signInResult.data.session) {
-        await useAppStore.getState().handleSessionChange(signInResult.data.session);
-      }
     }
 
     set({
@@ -560,7 +544,7 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
       authError: error?.message ?? null,
     });
 
-    return error ? { error: error.message } : {};
+    return error ? { error: error.message } : { data };
   },
   completeOnboarding: async (details) => {
     const profile = useAppStore.getState().profile;

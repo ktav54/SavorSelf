@@ -12,7 +12,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { colors, spacing } from "@/constants/theme";
+import { colors } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
 import { useAppStore, type AppState } from "@/store/useAppStore";
 
@@ -101,6 +101,8 @@ export default function OnboardingScreen() {
   const stepOpacity = useRef(new Animated.Value(1)).current;
   const stepTranslateY = useRef(new Animated.Value(0)).current;
   const questionDots = useRef(Array.from({ length: 5 }, () => new Animated.Value(6))).current;
+  const bridgeScale = useRef(new Animated.Value(0.8)).current;
+  const displayName = userName.trim() || profile?.name?.trim() || "friend";
 
   useEffect(() => {
     let isMounted = true;
@@ -164,6 +166,25 @@ export default function OnboardingScreen() {
       }).start();
     });
   }, [questionDots, questionIndex, step]);
+
+  useEffect(() => {
+    if (step !== 4) {
+      return;
+    }
+
+    bridgeScale.setValue(0.8);
+    Animated.spring(bridgeScale, {
+      toValue: 1,
+      friction: 4,
+      useNativeDriver: true,
+    }).start();
+
+    const timeout = setTimeout(() => {
+      router.replace("/(tabs)/log");
+    }, 2500);
+
+    return () => clearTimeout(timeout);
+  }, [bridgeScale, step]);
 
   const advanceQuestion = (nextIndex: number) => {
     setTimeout(() => {
@@ -331,17 +352,51 @@ export default function OnboardingScreen() {
                       <Text style={styles.stepTitle}>What brings you to SavorSelf?</Text>
                     </View>
                     <View style={styles.cardStack}>
-                      {questionCards.map((option) => (
-                        <QuestionCard
+                      {[
+                        {
+                          emoji: "😤",
+                          title: "I feel like crap and don't know why",
+                          subtitle: "Low energy, mood swings, brain fog — let's find the pattern",
+                          value: "feel_better",
+                        },
+                        {
+                          emoji: "🔗",
+                          title: "I want to understand my body better",
+                          subtitle: "Connect the dots between food, mood, and how I actually feel",
+                          value: "understand_body",
+                        },
+                        {
+                          emoji: "🌱",
+                          title: "I want a healthier relationship with food",
+                          subtitle: "No obsessing, no guilt — just awareness and intention",
+                          value: "healthy_relationship",
+                        },
+                        {
+                          emoji: "📈",
+                          title: "I want to optimize my performance",
+                          subtitle: "Use nutrition data to fuel better focus, energy, and mood",
+                          value: "optimize",
+                        },
+                      ].map((option) => (
+                        <Pressable
                           key={option.value}
-                          title={option.title}
-                          subtitle={option.subtitle}
-                          selected={primaryGoal === option.value}
+                          style={({ pressed }) => [
+                            styles.goalCard,
+                            primaryGoal === option.value && styles.goalCardSelected,
+                            pressed && styles.pressed,
+                          ]}
                           onPress={() => {
                             setPrimaryGoal(option.value);
                             advanceQuestion(2);
                           }}
-                        />
+                        >
+                          <Text style={styles.goalCardEmoji}>{option.emoji}</Text>
+                          <View style={styles.goalCardText}>
+                            <Text style={styles.goalCardTitle}>{option.title}</Text>
+                            <Text style={styles.goalCardSubtitle}>{option.subtitle}</Text>
+                          </View>
+                          {primaryGoal === option.value ? <Text style={styles.goalCardCheck}>✓</Text> : null}
+                        </Pressable>
                       ))}
                     </View>
                   </View>
@@ -473,11 +528,25 @@ export default function OnboardingScreen() {
                 </View>
 
                 <View style={styles.stepFooter}>
-                  <Pressable onPress={() => router.replace("/(tabs)/log")} style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}>
+                  <Pressable onPress={() => setStep(4)} style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}>
                     <Text style={styles.primaryButtonText}>Start my first log</Text>
                   </Pressable>
                   {saveError ? <Text style={styles.errorText}>{saveError}</Text> : null}
                   <Text style={styles.termsText}>By continuing you agree to our terms.</Text>
+                </View>
+              </View>
+            ) : null}
+
+            {step === 4 ? (
+              <View style={styles.bridgeScreen}>
+                <Animated.Text style={[styles.bridgeEmoji, { transform: [{ scale: bridgeScale }] }]}>🌱</Animated.Text>
+                <Text style={styles.bridgeTitle}>You're all set, {displayName}!</Text>
+                <Text style={styles.bridgeSub}>
+                  Your gut-brain journal is ready.{"\n"}
+                  Start by logging how you feel today.
+                </Text>
+                <View style={styles.bridgeDots}>
+                  <ActivityIndicator color={colors.accentPrimary} />
                 </View>
               </View>
             ) : null}
@@ -673,6 +742,42 @@ const styles = StyleSheet.create({
   cardStack: {
     gap: 12,
   },
+  goalCard: {
+    backgroundColor: colors.white,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  goalCardSelected: {
+    borderColor: colors.accentPrimary,
+    backgroundColor: "#FFF8F4",
+  },
+  goalCardEmoji: {
+    fontSize: 28,
+  },
+  goalCardText: {
+    flex: 1,
+  },
+  goalCardTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: colors.textPrimary,
+    marginBottom: 3,
+  },
+  goalCardSubtitle: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 19,
+  },
+  goalCardCheck: {
+    fontSize: 16,
+    color: colors.accentPrimary,
+    fontWeight: "700",
+  },
   questionCard: {
     backgroundColor: colors.white,
     borderRadius: 16,
@@ -790,6 +895,34 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.textSecondary,
     textAlign: "center",
+    marginTop: 8,
+  },
+  bridgeScreen: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 32,
+  },
+  bridgeEmoji: {
+    fontSize: 72,
+    marginBottom: 24,
+  },
+  bridgeTitle: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: colors.textPrimary,
+    textAlign: "center",
+    letterSpacing: -0.5,
+    marginBottom: 12,
+  },
+  bridgeSub: {
+    fontSize: 17,
+    color: colors.textSecondary,
+    textAlign: "center",
+    lineHeight: 28,
+    marginBottom: 32,
+  },
+  bridgeDots: {
     marginTop: 8,
   },
 });

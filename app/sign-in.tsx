@@ -1,6 +1,15 @@
 import { Link, router } from "expo-router";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { Field, Screen } from "@/components/ui";
 import { colors } from "@/constants/theme";
 import { useAppStore, type AppState } from "@/store/useAppStore";
@@ -24,66 +33,84 @@ export default function SignInScreen() {
   }, [isAuthenticated, profile?.onboardingComplete, sessionReady]);
 
   if (!sessionReady) {
-    return <Screen><View style={styles.loadingWrap} /></Screen>;
+    return (
+      <Screen>
+        <View style={styles.loadingWrap} />
+      </Screen>
+    );
   }
 
   if (isAuthenticated) {
-    return <Screen><View style={styles.loadingWrap} /></Screen>;
+    return (
+      <Screen>
+        <View style={styles.loadingWrap} />
+      </Screen>
+    );
   }
 
   return (
     <Screen>
-      <View style={styles.screenWrap}>
-        <View style={styles.hero}>
-          <Text style={styles.wordmark}>SavorSelf</Text>
-          <Text style={styles.tagline}>FOOD · MOOD · YOU</Text>
-        </View>
-
-        <View style={styles.formWrap}>
-          <Text style={styles.title}>Welcome back</Text>
-          <Text style={styles.subtitle}>Sign in to pick up where you left off.</Text>
-
-          <Field label="Email" value={email} onChangeText={setEmail} placeholder="you@example.com" />
-          <Field label="Password" value={password} onChangeText={setPassword} placeholder="password" />
-
-          {authLoading ? (
-            <View style={styles.loadingButton}>
-              <ActivityIndicator size="small" color={colors.white} />
-              <Text style={styles.loadingButtonText}>Signing in...</Text>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.flex}>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scrollContent}>
+          <View style={styles.screenWrap}>
+            <View style={styles.hero}>
+              <Text style={styles.wordmark}>SavorSelf</Text>
+              <Text style={styles.tagline}>FOOD · MOOD · YOU</Text>
             </View>
-          ) : (
-            <Pressable
-              style={({ pressed }) => [styles.primaryButton, pressed && styles.primaryButtonPressed]}
-              onPress={async () => {
-                const result = await signIn(email.trim(), password);
-                if (!result.error) {
-                  router.replace("/");
-                }
-              }}
-            >
-              <Text style={styles.primaryButtonText}>Sign in</Text>
-            </Pressable>
-          )}
 
-          {authError ? <Text style={styles.error}>{authError}</Text> : null}
+            <View style={styles.formWrap}>
+              <Text style={styles.title}>Welcome back</Text>
+              <Text style={styles.subtitle}>Sign in to pick up where you left off.</Text>
 
-          <Link href="/forgot-password" style={styles.forgotLink}>
-            Forgot password?
-          </Link>
+              <Field label="Email" value={email} onChangeText={setEmail} placeholder="you@example.com" />
+              <Field label="Password" value={password} onChangeText={setPassword} placeholder="password" />
 
-          <Text style={styles.footerText}>
-            Don&apos;t have an account?{" "}
-            <Link href="/sign-up" style={styles.footerAccent}>
-              Sign up
-            </Link>
-          </Text>
-        </View>
-      </View>
+              {authLoading ? (
+                <View style={styles.loadingButton}>
+                  <ActivityIndicator size="small" color={colors.white} />
+                  <Text style={styles.loadingButtonText}>Signing in...</Text>
+                </View>
+              ) : (
+                <Pressable
+                  style={({ pressed }) => [styles.primaryButton, pressed && styles.primaryButtonPressed]}
+                  onPress={async () => {
+                    const result = await signIn(email.trim(), password);
+                    if (!result.error) {
+                      router.replace("/");
+                    }
+                  }}
+                >
+                  <Text style={styles.primaryButtonText}>Sign in</Text>
+                </Pressable>
+              )}
+
+              {authError ? <Text style={styles.error}>{authError}</Text> : null}
+
+              <Link href="/forgot-password" style={styles.forgotLink}>
+                Forgot password?
+              </Link>
+
+              <Text style={styles.footerText}>
+                Don&apos;t have an account?{" "}
+                <Link href="/sign-up" style={styles.footerAccent}>
+                  Sign up
+                </Link>
+              </Text>
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+  },
   screenWrap: {
     flex: 1,
     paddingHorizontal: 24,
