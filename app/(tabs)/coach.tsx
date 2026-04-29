@@ -1,7 +1,7 @@
 import { useLayoutEffect } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { Alert, Pressable, View } from "react-native";
-import { useNavigation } from "expo-router";
+import { router, useNavigation } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { CoachChat } from "@/components/coach";
 import { colors } from "@/constants/theme";
@@ -34,6 +34,20 @@ export default function CoachScreen() {
         fontWeight: "700",
         color: colors.textPrimary,
       },
+      headerLeft: () => (
+        <Pressable
+          onPress={() => router.push("/settings")}
+          accessibilityLabel="Open settings"
+          accessibilityRole="button"
+          style={({ pressed }) => ({
+            marginLeft: 14,
+            paddingHorizontal: 2,
+            opacity: pressed ? 0.72 : 1,
+          })}
+        >
+          <Ionicons name="settings-outline" size={24} color={colors.textPrimary} />
+        </Pressable>
+      ),
       headerRight: () => (
         <Pressable
           onPress={() => {

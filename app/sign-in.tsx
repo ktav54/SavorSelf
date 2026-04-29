@@ -1,7 +1,7 @@
 import { Link, router } from "expo-router";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { useEffect, useState } from "react";
-import { Card, Field, PrimaryButton, Screen, SectionTitle } from "@/components/ui";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { Field, Screen } from "@/components/ui";
 import { colors } from "@/constants/theme";
 import { useAppStore, type AppState } from "@/store/useAppStore";
 
@@ -24,73 +24,118 @@ export default function SignInScreen() {
   }, [isAuthenticated, profile?.onboardingComplete, sessionReady]);
 
   if (!sessionReady) {
-    return (
-      <Screen>
-        <SectionTitle title="Loading SavorSelf..." subtitle="Restoring your session." />
-      </Screen>
-    );
+    return <Screen><View style={styles.loadingWrap} /></Screen>;
   }
 
   if (isAuthenticated) {
-    return (
-      <Screen>
-        <SectionTitle title="Welcome back..." subtitle="Taking you to your log." />
-      </Screen>
-    );
+    return <Screen><View style={styles.loadingWrap} /></Screen>;
   }
 
   return (
     <Screen>
-      <SectionTitle
-        eyebrow="Auth"
-        title="Welcome back"
-        subtitle="Sign in with your SavorSelf account and pick up where you left off."
-      />
-      <Card>
-        <Field label="Email" value={email} onChangeText={setEmail} placeholder="you@example.com" />
-        <Field label="Password" value={password} onChangeText={setPassword} placeholder="password" />
-        {authLoading ? (
-          <View style={styles.loadingButton}>
-            <ActivityIndicator size="small" color={colors.white} />
-            <Text style={styles.loadingButtonText}>Signing in...</Text>
-          </View>
-        ) : (
-          <PrimaryButton
-            label="Sign in"
-            onPress={async () => {
-              const result = await signIn(email.trim(), password);
-              if (!result.error) {
-                router.replace("/");
-              }
-            }}
-          />
-        )}
-        {authError ? <Text style={styles.error}>{authError}</Text> : null}
-        <Link href="/forgot-password" style={styles.link}>
-          Forgot password?
-        </Link>
-        <Link href="/sign-up" style={styles.link}>
-          Create account
-        </Link>
-      </Card>
+      <View style={styles.screenWrap}>
+        <View style={styles.hero}>
+          <Text style={styles.wordmark}>SavorSelf</Text>
+          <Text style={styles.tagline}>FOOD · MOOD · YOU</Text>
+        </View>
+
+        <View style={styles.formWrap}>
+          <Text style={styles.title}>Welcome back</Text>
+          <Text style={styles.subtitle}>Sign in to pick up where you left off.</Text>
+
+          <Field label="Email" value={email} onChangeText={setEmail} placeholder="you@example.com" />
+          <Field label="Password" value={password} onChangeText={setPassword} placeholder="password" />
+
+          {authLoading ? (
+            <View style={styles.loadingButton}>
+              <ActivityIndicator size="small" color={colors.white} />
+              <Text style={styles.loadingButtonText}>Signing in...</Text>
+            </View>
+          ) : (
+            <Pressable
+              style={({ pressed }) => [styles.primaryButton, pressed && styles.primaryButtonPressed]}
+              onPress={async () => {
+                const result = await signIn(email.trim(), password);
+                if (!result.error) {
+                  router.replace("/");
+                }
+              }}
+            >
+              <Text style={styles.primaryButtonText}>Sign in</Text>
+            </Pressable>
+          )}
+
+          {authError ? <Text style={styles.error}>{authError}</Text> : null}
+
+          <Link href="/forgot-password" style={styles.forgotLink}>
+            Forgot password?
+          </Link>
+
+          <Text style={styles.footerText}>
+            Don&apos;t have an account?{" "}
+            <Link href="/sign-up" style={styles.footerAccent}>
+              Sign up
+            </Link>
+          </Text>
+        </View>
+      </View>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  link: {
-    color: "#C4622D",
-    fontSize: 15,
+  screenWrap: {
+    flex: 1,
+    paddingHorizontal: 24,
+    justifyContent: "center",
+    backgroundColor: colors.background,
   },
-  error: {
-    color: "#C4622D",
-    fontSize: 14,
+  hero: {
+    alignItems: "center",
+    marginBottom: 32,
+  },
+  wordmark: {
+    fontSize: 32,
+    fontWeight: "800",
+    letterSpacing: -1,
+    color: colors.textPrimary,
+    textAlign: "center",
+    marginBottom: 4,
+  },
+  tagline: {
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: 2,
+    color: colors.accentPrimary,
+    textTransform: "uppercase",
+    textAlign: "center",
+    marginBottom: 32,
+  },
+  formWrap: {
+    gap: 14,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: "700",
+    letterSpacing: -0.5,
+    color: colors.textPrimary,
+    textAlign: "center",
+  },
+  subtitle: {
+    fontSize: 15,
+    lineHeight: 24,
+    color: colors.textSecondary,
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  loadingWrap: {
+    flex: 1,
+    backgroundColor: colors.background,
   },
   loadingButton: {
     backgroundColor: colors.accentPrimary,
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    borderRadius: 16,
+    paddingVertical: 16,
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
@@ -99,6 +144,43 @@ const styles = StyleSheet.create({
   loadingButtonText: {
     color: colors.white,
     fontSize: 16,
+    fontWeight: "700",
+  },
+  primaryButton: {
+    backgroundColor: colors.accentPrimary,
+    borderRadius: 16,
+    paddingVertical: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  primaryButtonPressed: {
+    opacity: 0.8,
+  },
+  primaryButtonText: {
+    color: colors.white,
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  error: {
+    color: colors.accentPrimary,
+    fontSize: 14,
+    lineHeight: 22,
+    textAlign: "center",
+  },
+  forgotLink: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    textAlign: "center",
+    marginTop: 8,
+  },
+  footerText: {
+    fontSize: 15,
+    color: colors.textSecondary,
+    textAlign: "center",
+    marginTop: 16,
+  },
+  footerAccent: {
+    color: colors.accentPrimary,
     fontWeight: "600",
   },
 });

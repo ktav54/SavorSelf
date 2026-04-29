@@ -1,7 +1,8 @@
 import { useFocusEffect } from "@react-navigation/native";
+import { Ionicons } from "@expo/vector-icons";
 import { addDays, format, isToday, isYesterday } from "date-fns";
-import { useRouter } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigation, useRouter } from "expo-router";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Animated,
   Easing,
@@ -49,6 +50,7 @@ const moodSummaryOptions = [
 const energySummaryOptions = ["Drained", "Low", "Okay", "Good", "Wired"] as const;
 
 export default function LogScreen() {
+  const navigation = useNavigation();
   const router = useRouter();
   const profile = useAppStore((state: AppState) => state.profile);
   const foodLogs = useAppStore((state: AppState) => state.foodLogs);
@@ -281,6 +283,31 @@ export default function LogScreen() {
       setRefreshing(false);
     }
   }, [loadFoodMoodInsights, loadTodayFoodLogs, loadTodayMoodLog, loadTodayQuickLog]);
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerTitle: "Log",
+      headerTitleStyle: {
+        fontSize: 17,
+        fontWeight: "700",
+        color: colors.textPrimary,
+      },
+      headerLeft: () => (
+        <Pressable
+          onPress={() => router.push("/settings")}
+          accessibilityLabel="Open settings"
+          accessibilityRole="button"
+          style={({ pressed }) => ({
+            marginLeft: 14,
+            paddingHorizontal: 2,
+            opacity: pressed ? 0.72 : 1,
+          })}
+        >
+          <Ionicons name="settings-outline" size={24} color={colors.textPrimary} />
+        </Pressable>
+      ),
+    });
+  }, [navigation, router]);
 
   return (
     <>

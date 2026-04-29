@@ -37,7 +37,7 @@ export function Screen({
     <View style={styles.content}>{children}</View>
   );
 
-  return <SafeAreaView style={styles.screen}>{content}</SafeAreaView>;
+  return <SafeAreaView style={styles.screen} accessible={true}>{content}</SafeAreaView>;
 }
 
 export function Card({ children }: PropsWithChildren) {
@@ -155,6 +155,11 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     padding: spacing.md,
     gap: spacing.sm,
+    shadowColor: "#2C1A0E",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
   },
   sectionHeader: {
     gap: 4,

@@ -80,7 +80,10 @@ function MessageBubble({
         {message.id === "welcome" ? (
           <Text style={styles.welcomeCoachLabel}>✦ SavorSelf Coach</Text>
         ) : null}
-        <Text style={[styles.bubbleText, message.role === "user" && styles.userBubbleText]}>
+        <Text
+          selectable={message.role === "assistant"}
+          style={[styles.bubbleText, message.role === "user" && styles.userBubbleText]}
+        >
           {extractReply(message.content)}
         </Text>
       </View>

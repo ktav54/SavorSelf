@@ -1010,7 +1010,9 @@ export function QuickLogStrip() {
             <Text style={styles.quickModalUnitHint}>{selectedTile?.unitHint ?? ""}</Text>
             {saveError ? <Text style={styles.errorText}>{saveError}</Text> : null}
             <View style={styles.modalActions}>
-              <PrimaryButton label="Cancel" secondary onPress={closeModal} />
+              <Pressable onPress={closeModal} style={styles.cancelLink}>
+                <Text style={styles.cancelLinkText}>Cancel</Text>
+              </Pressable>
               <PrimaryButton label={saving ? "Saving..." : "Save"} onPress={() => void handleSave()} />
             </View>
           </View>
@@ -1631,7 +1633,9 @@ export function FoodLogSection({ mealType, logs, onAddFood }: { mealType: FoodLo
             ) : null}
             {editError ? <Text style={styles.errorText}>{editError}</Text> : null}
             <View style={styles.modalActions}>
-              <PrimaryButton label="Cancel" secondary onPress={closeEditModal} />
+              <Pressable onPress={closeEditModal} style={styles.cancelLink}>
+                <Text style={styles.cancelLinkText}>Cancel</Text>
+              </Pressable>
               <PrimaryButton label={editSaving ? "Saving..." : "Save changes"} onPress={() => void confirmEdit()} />
             </View>
           </View>
@@ -2400,7 +2404,9 @@ export function FoodSearchCard({
               </View>
               {saveError ? <Text style={styles.errorText}>{saveError}</Text> : null}
               <View style={styles.modalActions}>
-                <PrimaryButton label="Cancel" secondary onPress={closeModal} />
+                <Pressable onPress={closeModal} style={styles.cancelLink}>
+                  <Text style={styles.cancelLinkText}>Cancel</Text>
+                </Pressable>
                 <PrimaryButton
                   label={foodLoading ? "Saving..." : "Save food"}
                   onPress={() => void confirmManualSave()}
@@ -3890,17 +3896,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   scannerCancelButton: {
-    backgroundColor: colors.white,
-    borderRadius: 999,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
   },
   scannerCancelText: {
-    color: colors.textPrimary,
+    color: colors.textSecondary,
     fontSize: 15,
-    fontWeight: "600",
+    fontWeight: "500",
   },
   modalActions: {
     gap: spacing.sm,

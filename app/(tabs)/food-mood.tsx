@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useFocusEffect } from "@react-navigation/native";
+import { Ionicons } from "@expo/vector-icons";
 import { format } from "date-fns";
-import { Animated, StyleSheet, Text, View } from "react-native";
+import { router, useNavigation } from "expo-router";
+import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
 import {
   DailyReadCard,
   FoodMoodGate,
@@ -19,6 +21,7 @@ import { useAppStore, type AppState } from "@/store/useAppStore";
 import type { FoodLog } from "@/types/models";
 
 export default function FoodMoodScreen() {
+  const navigation = useNavigation();
   const loadFoodMoodInsights = useAppStore((state: AppState) => state.loadFoodMoodInsights);
   const insightsLoading = useAppStore((state: AppState) => state.insightsLoading);
   const insights = useAppStore((state: AppState) => state.insights);
@@ -121,11 +124,35 @@ export default function FoodMoodScreen() {
   const shouldShowLoadingState =
     insightsLoading && insights.length === 0 && foodMoodTrend.length === 0 && foodMoodSnapshot === null;
 
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerTitle: "Food-Mood",
+      headerTitleStyle: {
+        fontSize: 17,
+        fontWeight: "700",
+        color: colors.textPrimary,
+      },
+      headerLeft: () => (
+        <Pressable
+          onPress={() => router.push("/settings")}
+          accessibilityLabel="Open settings"
+          accessibilityRole="button"
+          style={({ pressed }) => ({
+            marginLeft: 14,
+            paddingHorizontal: 2,
+            opacity: pressed ? 0.72 : 1,
+          })}
+        >
+          <Ionicons name="settings-outline" size={24} color={colors.textPrimary} />
+        </Pressable>
+      ),
+    });
+  }, [navigation]);
+
   return (
     <Screen scroll>
       <View style={styles.screenStack}>
         <View style={styles.header}>
-          <Text style={styles.eyebrow}>FOOD-MOOD</Text>
           <Text style={styles.title}>Your gut-brain picture</Text>
           <Text style={styles.subtitle}>{format(new Date(), "EEEE, MMMM d")}</Text>
         </View>
@@ -207,13 +234,6 @@ const styles = StyleSheet.create({
   },
   header: {
     gap: 6,
-  },
-  eyebrow: {
-    color: colors.accentPrimary,
-    fontSize: 11,
-    fontWeight: "600",
-    letterSpacing: 1,
-    textTransform: "uppercase",
   },
   title: {
     color: colors.textPrimary,
