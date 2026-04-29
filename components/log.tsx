@@ -1666,6 +1666,7 @@ export function FoodSearchCard({
   const [cameraPermission, setCameraPermission] = useState<boolean | null>(null);
   const [scanError, setScanError] = useState("");
   const scannedRef = useRef(false);
+  const skeletonOpacity = useRef(new Animated.Value(0.4)).current;
   const unitOptions = useMemo(
     () => getPreferredUnitOptions(profile?.preferredUnits),
     [profile?.preferredUnits]
@@ -1680,6 +1681,36 @@ export function FoodSearchCard({
       setUnit("serving");
     }
   }, [unit, unitOptions]);
+
+  useEffect(() => {
+    if (!loading) {
+      skeletonOpacity.stopAnimation();
+      skeletonOpacity.setValue(0.4);
+      return;
+    }
+
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(skeletonOpacity, {
+          toValue: 0.8,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+        Animated.timing(skeletonOpacity, {
+          toValue: 0.4,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    loop.start();
+
+    return () => {
+      loop.stop();
+    };
+  }, [loading, skeletonOpacity]);
+
   const preview = useMemo(() => {
     if (!selectedFood) {
       return null;
@@ -2064,52 +2095,37 @@ export function FoodSearchCard({
         }}
       />
       {loading ? (
-        <View style={styles.loadingRow}>
-          <ActivityIndicator color={colors.accentPrimary} />
-          <Text style={styles.loadingText}>Looking up nutrition...</Text>
+        <View>
+          {[1, 2, 3].map((i) => (
+            <Animated.View
+              key={i}
+              style={[styles.skeletonRow, { opacity: skeletonOpacity }]}
+            />
+          ))}
         </View>
       ) : null}
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
         {results.length ? (
           <View style={styles.searchResults}>
             {results.map((item) => {
-              const key = `${item.source}-${item.id}`;
-              const score = gutScores[key];
               return (
-                <Pressable key={key} style={({ pressed }) => [styles.searchResultCard, pressed && styles.pressableFeedback]} onPress={() => setSelectedFood(item)}>
-                  <View style={styles.searchCardTopRow}>
-                    <Text style={styles.foodName}>{formatFoodName(item.description)}</Text>
-                    {gutScoreLoading[key] ? (
-                      <View style={[styles.gutScoreCardBadge, styles.gutScoreLoadingRow]}>
-                        <ActivityIndicator size="small" color={colors.accentPrimary} />
-                      </View>
-                    ) : score != null ? (
-                      <Pressable style={styles.gutScoreCardBadge} onPress={() => void fetchGutScore(item.description, key)}>
-                        <Text style={styles.gutScoreCardBadgeScore}>{score}</Text>
-                        <Text style={styles.gutScoreCardBadgeLabel}>gut</Text>
-                      </Pressable>
-                    ) : (
-                      <Pressable style={styles.gutScoreCardBadge} onPress={() => void fetchGutScore(item.description, key)}>
-                        <Text style={styles.gutScoreCardBadgeLabel}>gut</Text>
-                      </Pressable>
-                    )}
+                <Pressable
+                  key={item.id}
+                  style={({ pressed }) => [styles.resultRow, { opacity: pressed ? 0.8 : 1 }]}
+                  onPress={() => setSelectedFood(item)}
+                >
+                  <View style={styles.resultLetterTile}>
+                    <Text style={styles.resultLetter}>
+                      {(item.description?.[0] ?? "?").toUpperCase()}
+                    </Text>
                   </View>
-
-                  {score != null || gutScoreLoading[key] ? (
-                    <GutScoreBadge score={score ?? null} loading={gutScoreLoading[key]} onPress={() => void fetchGutScore(item.description, key)} />
-                  ) : null}
-
-                  <Text style={styles.foodMeta}>
-                    {Math.round(item.caloriesPer100g)} cal | {Math.round(item.proteinPer100g)}g protein | {Math.round(item.carbsPer100g)}g carbs | {Math.round(item.fatPer100g)}g fat
-                  </Text>
-
-                  <View style={styles.searchCardBottomRow}>
-                    <Pressable style={({ pressed }) => [styles.gutScoreLink, pressed && styles.pressableFeedback]} onPress={() => void fetchGutScore(item.description, key)}>
-                      <Text style={styles.gutScoreLinkText}>🌿 Gut Score</Text>
-                    </Pressable>
-                    <Pressable style={({ pressed }) => [styles.addFoodInlineBtn, pressed && styles.pressableFeedback]} onPress={() => setSelectedFood(item)}>
-                      <Text style={styles.addFoodInlineBtnText}>Add food</Text>
-                    </Pressable>
+                  <View style={styles.resultInfo}>
+                    <Text style={styles.resultName} numberOfLines={1}>
+                      {formatFoodName(item.description)}
+                    </Text>
+                    <Text style={styles.resultMeta}>
+                      {Math.round(item.caloriesPer100g)} cal · {Math.round(item.proteinPer100g)}g protein
+                    </Text>
                   </View>
                 </Pressable>
               );
@@ -2160,72 +2176,95 @@ export function FoodSearchCard({
       <Modal visible={Boolean(selectedFood)} animationType="slide" transparent onRequestClose={closeModal}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-            <SectionTitle
-              eyebrow="Add Food"
-              title={formatFoodName(selectedFood?.description ?? "Selected food")}
-              subtitle="Choose a meal and portion before saving this to your log."
-            />
-            <Text style={styles.helper}>Meal</Text>
-            <View style={styles.rowWrap}>
-              {mealOptions.map((item) => (
-                <Chip
-                  key={item}
-                  label={item}
-                  active={mealType === item}
-                  onPress={() => setMealType(item)}
-                />
-              ))}
-            </View>
+            <Text style={styles.modalFoodName} numberOfLines={2}>
+              {formatFoodName(selectedFood?.description ?? "")}
+            </Text>
+            <Text style={styles.modalFoodCalPer}>
+              {Math.round(selectedFood?.caloriesPer100g ?? 0)} cal per 100g
+            </Text>
+            <Text style={styles.modalSectionLabel}>Meal</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={styles.pillRow}>
+                {mealOptions.map((item) => (
+                  <Pressable
+                    key={item}
+                    style={[styles.mealPill, mealType === item && styles.mealPillActive]}
+                    onPress={() => setMealType(item)}
+                  >
+                    <Text
+                      style={[
+                        styles.mealPillText,
+                        mealType === item && styles.mealPillTextActive,
+                      ]}
+                    >
+                      {item.charAt(0).toUpperCase() + item.slice(1)}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </ScrollView>
             <Field
               label="Quantity"
               value={quantity}
               onChangeText={setQuantity}
               placeholder="1"
             />
-            <Text style={styles.helper}>Unit</Text>
-            <View style={styles.unitControlRow}>
-              <Pressable
-                style={[styles.unitShortcutButton, unit === "serving" && styles.unitShortcutButtonActive]}
-                onPress={() => {
-                  setUnit("serving");
-                  setShowExtraUnits(false);
-                }}
-              >
-                <Text style={[styles.unitShortcutButtonText, unit === "serving" && styles.unitShortcutButtonTextActive]}>Serving</Text>
-              </Pressable>
-              {unit !== "serving" ? (
-                <View style={[styles.unitShortcutButton, styles.unitShortcutButtonActive]}>
-                  <Text style={[styles.unitShortcutButtonText, styles.unitShortcutButtonTextActive]}>{unit}</Text>
-                </View>
-              ) : null}
-              <Pressable style={styles.unitMoreToggle} onPress={() => setShowExtraUnits((current) => !current)}>
-                <Text style={styles.unitMoreToggleText}>{showExtraUnits ? "Hide other units" : "Other units"}</Text>
-              </Pressable>
-            </View>
-            {showExtraUnits ? (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.unitOptionsScroll}>
-                {unitOptions.filter((item) => item !== "serving").map((item) => (
-                  <Chip
-                    key={item}
-                    label={item}
-                    active={unit === item}
-                    onPress={() => setUnit(item)}
-                  />
-                ))}
-              </ScrollView>
-            ) : null}
+            <Text style={styles.modalSectionLabel}>Unit</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={styles.pillRow}>
+                {unitOptions.map((item) => {
+                  const unitLabel: Record<string, string> = {
+                    g: "grams",
+                    oz: "ounces",
+                    ml: "ml",
+                    fl_oz: "fl oz",
+                    cup: "cups",
+                    serving: "serving",
+                    piece: "piece",
+                  };
+                  return (
+                    <Pressable
+                      key={item}
+                      style={[styles.unitPill, unit === item && styles.mealPillActive]}
+                      onPress={() => setUnit(item)}
+                    >
+                      <Text
+                        style={[
+                          styles.unitPillText,
+                          unit === item && styles.mealPillTextActive,
+                        ]}
+                      >
+                        {unitLabel[item] ?? item}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </ScrollView>
             {preview ? (
-              <View style={styles.previewCard}>
-                <Text style={styles.previewTitle}>Nutrition preview</Text>
-                <Text style={styles.foodMeta}>
-                  {Math.round(preview.calories)} cal | {Math.round(preview.proteinG)}g protein | {Math.round(preview.carbsG)}g carbs | {Math.round(preview.fatG)}g fat
-                </Text>
+              <View style={styles.previewGrid}>
+                {[
+                  { label: "CALORIES", value: Math.round(preview.calories), unit: "cal" },
+                  { label: "PROTEIN", value: Math.round(preview.proteinG), unit: "g" },
+                  { label: "CARBS", value: Math.round(preview.carbsG), unit: "g" },
+                  { label: "FAT", value: Math.round(preview.fatG), unit: "g" },
+                ].map((stat) => (
+                  <View key={stat.label} style={styles.previewBox}>
+                    <Text style={styles.previewValue}>
+                      {stat.value}
+                      <Text style={styles.previewUnit}>{stat.unit}</Text>
+                    </Text>
+                    <Text style={styles.previewLabel}>{stat.label}</Text>
+                  </View>
+                ))}
               </View>
             ) : null}
             {saveError ? <Text style={styles.errorText}>{saveError}</Text> : null}
             {foodError && !saveError ? <Text style={styles.errorText}>{foodError}</Text> : null}
             <View style={styles.modalActions}>
-              <PrimaryButton label="Cancel" secondary onPress={closeModal} />
+              <Pressable onPress={closeModal} style={styles.cancelLink}>
+                <Text style={styles.cancelLinkText}>Cancel</Text>
+              </Pressable>
               <PrimaryButton
                 label={foodLoading ? "Saving..." : "Save food"}
                 onPress={() => void confirmSave()}
@@ -3545,6 +3584,49 @@ const styles = StyleSheet.create({
   searchResults: {
     gap: spacing.sm,
   },
+  resultRow: {
+    backgroundColor: colors.white,
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  resultLetterTile: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: "#F6EDE4",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  resultLetter: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: colors.accentPrimary,
+  },
+  resultInfo: {
+    flex: 1,
+  },
+  resultName: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: colors.textPrimary,
+  },
+  resultMeta: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  skeletonRow: {
+    height: 64,
+    borderRadius: 12,
+    backgroundColor: colors.border,
+    marginBottom: 8,
+  },
   searchResultCard: {
     backgroundColor: colors.white,
     borderWidth: 1,
@@ -3750,6 +3832,64 @@ const styles = StyleSheet.create({
   modalActions: {
     gap: spacing.sm,
   },
+  modalFoodName: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: colors.textPrimary,
+    letterSpacing: -0.3,
+    marginBottom: 4,
+  },
+  modalFoodCalPer: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginBottom: 20,
+  },
+  modalSectionLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: colors.textSecondary,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: 8,
+    marginTop: 16,
+  },
+  pillRow: {
+    flexDirection: "row",
+    gap: 8,
+    paddingBottom: 4,
+  },
+  mealPill: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  mealPillActive: {
+    backgroundColor: colors.accentPrimary,
+    borderColor: colors.accentPrimary,
+  },
+  mealPillText: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: colors.textPrimary,
+  },
+  mealPillTextActive: {
+    color: colors.white,
+  },
+  unitPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  unitPillText: {
+    fontSize: 13,
+    color: colors.textPrimary,
+  },
   modalHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -3797,6 +3937,44 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textTransform: "uppercase",
     letterSpacing: 0.5,
+  },
+  previewGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 16,
+  },
+  previewBox: {
+    width: "48%",
+    backgroundColor: "#F6EDE4",
+    borderRadius: 10,
+    padding: 12,
+    alignItems: "center",
+  },
+  previewValue: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: colors.textPrimary,
+  },
+  previewUnit: {
+    fontSize: 13,
+    fontWeight: "400",
+    color: colors.textSecondary,
+  },
+  previewLabel: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginTop: 4,
+  },
+  cancelLink: {
+    alignSelf: "center",
+    padding: 12,
+  },
+  cancelLinkText: {
+    fontSize: 15,
+    color: colors.textSecondary,
   },
   longPressContainer: {
     gap: spacing.xs,
