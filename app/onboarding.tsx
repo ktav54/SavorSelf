@@ -1,6 +1,7 @@
 import { router } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Animated,
   KeyboardAvoidingView,
   Platform,
@@ -15,47 +16,70 @@ import { colors, spacing } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
 import { useAppStore, type AppState } from "@/store/useAppStore";
 
-const goals = [
-  "Understand my mood",
-  "Improve my gut health",
-  "Build better eating habits",
-  "Track my nutrition",
-  "Manage a health condition",
-  "Just curious",
-];
+const questionCards = [
+  {
+    value: "Understand my mood",
+    title: "🧠 Understand my mood",
+    subtitle: "Connect what I eat to how I feel",
+  },
+  {
+    value: "More energy",
+    title: "⚡ More energy",
+    subtitle: "Find what actually fuels me",
+  },
+  {
+    value: "Eat more intentionally",
+    title: "🌿 Eat more intentionally",
+    subtitle: "Build a healthier relationship with food",
+  },
+  {
+    value: "Track my patterns",
+    title: "📊 Track my patterns",
+    subtitle: "See real data about my gut-brain connection",
+  },
+] as const;
 
-function GoalPill({
-  label,
-  active,
+const challengeCards = [
+  "😵 I forget to track",
+  "🍕 Emotional eating",
+  "😴 Low energy crashes",
+  "🌀 Inconsistent moods",
+] as const;
+
+const calorieOptions = [
+  { label: "Under 1800", value: 1600 },
+  { label: "1800–2200", value: 2000 },
+  { label: "2200+", value: 2400 },
+] as const;
+
+function QuestionCard({
+  title,
+  subtitle,
+  selected,
   onPress,
+  compact = false,
 }: {
-  label: string;
-  active: boolean;
+  title: string;
+  subtitle?: string;
+  selected: boolean;
   onPress: () => void;
+  compact?: boolean;
 }) {
-  const scale = useRef(new Animated.Value(1)).current;
-
   return (
-    <Animated.View style={{ transform: [{ scale }] }}>
-      <Pressable
-        onPress={() => {
-          scale.setValue(0.96);
-          Animated.timing(scale, {
-            toValue: 1,
-            duration: 120,
-            useNativeDriver: true,
-          }).start();
-          onPress();
-        }}
-        style={({ pressed }) => [
-          styles.goalPill,
-          active && styles.goalPillActive,
-          pressed && styles.pressed,
-        ]}
-      >
-        <Text style={[styles.goalPillText, active && styles.goalPillTextActive]}>{label}</Text>
-      </Pressable>
-    </Animated.View>
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.questionCard,
+        compact && styles.questionCardCompact,
+        selected && styles.questionCardSelected,
+        pressed && styles.pressed,
+      ]}
+    >
+      <Text style={[styles.questionCardTitle, selected && styles.questionCardTitleSelected]}>{title}</Text>
+      {subtitle ? (
+        <Text style={[styles.questionCardSubtitle, selected && styles.questionCardSubtitleSelected]}>{subtitle}</Text>
+      ) : null}
+    </Pressable>
   );
 }
 
@@ -64,31 +88,24 @@ export default function OnboardingScreen() {
   const profile = useAppStore((state: AppState) => state.profile);
   const sessionReady = useAppStore((state: AppState) => state.sessionReady);
   const [step, setStep] = useState(0);
-  const [selectedGoals, setSelectedGoals] = useState<string[]>([]);
-  const [name, setName] = useState("");
-  const [calories, setCalories] = useState("");
-  const [protein, setProtein] = useState("");
-  const [water, setWater] = useState("");
+  const [questionIndex, setQuestionIndex] = useState(0);
+  const [userName, setUserName] = useState("");
+  const [primaryGoal, setPrimaryGoal] = useState("");
+  const [challenge, setChallenge] = useState("");
+  const [calorieGoal, setCalorieGoal] = useState(2000);
   const [units, setUnits] = useState<"imperial" | "metric">("imperial");
   const [saveError, setSaveError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [allowExplainerAfterSetup, setAllowExplainerAfterSetup] = useState(false);
 
   const stepOpacity = useRef(new Animated.Value(1)).current;
   const stepTranslateY = useRef(new Animated.Value(0)).current;
-  const savePulse = useRef(new Animated.Value(1)).current;
-  const progressOne = useRef(new Animated.Value(6)).current;
-  const progressTwo = useRef(new Animated.Value(6)).current;
-  const progressThree = useRef(new Animated.Value(6)).current;
-
-  const toggleGoal = (goal: string) =>
-    setSelectedGoals((current) =>
-      current.includes(goal) ? current.filter((item) => item !== goal) : [...current, goal]
-    );
+  const questionDots = useRef(Array.from({ length: 5 }, () => new Animated.Value(6))).current;
 
   useEffect(() => {
     let isMounted = true;
 
-    if (profile?.onboardingComplete) {
+    if (profile?.onboardingComplete && !allowExplainerAfterSetup) {
       router.replace("/(tabs)/log");
       return;
     }
@@ -107,7 +124,7 @@ export default function OnboardingScreen() {
         .eq("id", session.user.id)
         .maybeSingle();
 
-      if (isMounted && userRow?.onboarding_complete) {
+      if (isMounted && userRow?.onboarding_complete && !allowExplainerAfterSetup) {
         router.replace("/(tabs)/log");
       }
     })();
@@ -115,7 +132,7 @@ export default function OnboardingScreen() {
     return () => {
       isMounted = false;
     };
-  }, [profile?.onboardingComplete]);
+  }, [allowExplainerAfterSetup, profile?.onboardingComplete]);
 
   useEffect(() => {
     stepOpacity.setValue(0);
@@ -132,48 +149,57 @@ export default function OnboardingScreen() {
         useNativeDriver: true,
       }),
     ]).start();
-  }, [step, stepOpacity, stepTranslateY]);
+  }, [questionIndex, step, stepOpacity, stepTranslateY]);
 
   useEffect(() => {
-    const values = [progressOne, progressTwo, progressThree];
-    values.forEach((value, index) => {
-      const activeWidth = step === index + 1 ? 20 : 6;
+    if (step !== 1) {
+      return;
+    }
+
+    questionDots.forEach((value, index) => {
       Animated.timing(value, {
-        toValue: activeWidth,
+        toValue: index === questionIndex ? 20 : 6,
         duration: 180,
         useNativeDriver: false,
       }).start();
     });
-  }, [progressOne, progressThree, progressTwo, step]);
+  }, [questionDots, questionIndex, step]);
 
-  useEffect(() => {
-    if (!isSaving) {
-      savePulse.stopAnimation();
-      savePulse.setValue(1);
+  const advanceQuestion = (nextIndex: number) => {
+    setTimeout(() => {
+      setQuestionIndex(nextIndex);
+    }, 300);
+  };
+
+  const finishQuestionnaire = async () => {
+    setSaveError("");
+    setIsSaving(true);
+    setAllowExplainerAfterSetup(true);
+
+    const startedAt = Date.now();
+    const result = await completeOnboarding({
+      name: userName.trim() || "",
+      preferredUnits: units,
+      dailyCalorieGoal: calorieGoal,
+      ...(primaryGoal ? ({ goals: [primaryGoal] } as any) : {}),
+    } as any);
+    const elapsed = Date.now() - startedAt;
+    const remaining = Math.max(0, 1000 - elapsed);
+
+    if (remaining > 0) {
+      await new Promise((resolve) => setTimeout(resolve, remaining));
+    }
+
+    if (result.error) {
+      setIsSaving(false);
+      setSaveError(result.error);
+      setAllowExplainerAfterSetup(false);
       return;
     }
 
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(savePulse, {
-          toValue: 0.7,
-          duration: 600,
-          useNativeDriver: true,
-        }),
-        Animated.timing(savePulse, {
-          toValue: 1,
-          duration: 600,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-
-    loop.start();
-
-    return () => {
-      loop.stop();
-    };
-  }, [isSaving, savePulse]);
+    setIsSaving(false);
+    setStep(2);
+  };
 
   if (!sessionReady) {
     return (
@@ -186,7 +212,7 @@ export default function OnboardingScreen() {
     );
   }
 
-  if (profile?.onboardingComplete) {
+  if (profile?.onboardingComplete && !allowExplainerAfterSetup) {
     return (
       <View style={styles.screen}>
         <View style={styles.centerState}>
@@ -200,20 +226,20 @@ export default function OnboardingScreen() {
 
   return (
     <View style={styles.screen}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={styles.flex}
-      >
-        <ScrollView
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {step > 0 ? (
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.flex}>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          {step === 1 ? (
             <View style={styles.progressWrap}>
-              <Animated.View style={[styles.progressDot, { width: progressOne }, step === 1 ? styles.progressDotActive : styles.progressDotInactive]} />
-              <Animated.View style={[styles.progressDot, { width: progressTwo }, step === 2 ? styles.progressDotActive : styles.progressDotInactive]} />
-              <Animated.View style={[styles.progressDot, { width: progressThree }, step === 3 ? styles.progressDotActive : styles.progressDotInactive]} />
+              {questionDots.map((dot, index) => (
+                <Animated.View
+                  key={`question-dot-${index}`}
+                  style={[
+                    styles.progressDot,
+                    { width: dot },
+                    index === questionIndex ? styles.progressDotActive : styles.progressDotInactive,
+                  ]}
+                />
+              ))}
             </View>
           ) : null}
 
@@ -238,7 +264,13 @@ export default function OnboardingScreen() {
                   </View>
                 </View>
                 <View style={styles.stepFooter}>
-                  <Pressable onPress={() => setStep(1)} style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}>
+                  <Pressable
+                    onPress={() => {
+                      setStep(1);
+                      setQuestionIndex(0);
+                    }}
+                    style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
+                  >
                     <Text style={styles.primaryButtonText}>Let's begin</Text>
                   </Pressable>
                   <Text style={styles.footerHint}>A gut-brain wellness journal.</Text>
@@ -248,114 +280,155 @@ export default function OnboardingScreen() {
 
             {step === 1 ? (
               <View style={styles.stepBody}>
-                <View style={styles.stepHeader}>
-                  <Text style={styles.stepTitle}>What brings you here?</Text>
-                  <Text style={styles.stepSubtitle}>Pick everything that resonates.</Text>
+                <View style={styles.questionTopMeta}>
+                  {questionIndex > 0 ? (
+                    <Pressable onPress={() => setQuestionIndex((current) => Math.max(0, current - 1))} style={({ pressed }) => [styles.backLinkWrap, pressed && styles.pressed]}>
+                      <Text style={styles.backLink}>←</Text>
+                    </Pressable>
+                  ) : (
+                    <View style={styles.backLinkSpacer} />
+                  )}
+                  <Text style={styles.questionProgressText}>Question {questionIndex + 1} of 5</Text>
+                  <View style={styles.backLinkSpacer} />
                 </View>
-                <View style={styles.goalWrap}>
-                  {goals.map((goal) => (
-                    <GoalPill
-                      key={goal}
-                      label={goal}
-                      active={selectedGoals.includes(goal)}
-                      onPress={() => toggleGoal(goal)}
-                    />
-                  ))}
-                </View>
-                <View style={styles.stepFooter}>
-                  <Pressable onPress={() => setStep(2)} style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}>
-                    <Text style={styles.primaryButtonText}>Continue</Text>
-                  </Pressable>
-                </View>
+
+                {isSaving ? (
+                  <View style={styles.loadingState}>
+                    <ActivityIndicator size="small" color={colors.accentPrimary} />
+                    <Text style={styles.loadingTitle}>Setting up your profile...</Text>
+                    <Text style={styles.loadingBody}>A softer start is coming together.</Text>
+                  </View>
+                ) : null}
+
+                {!isSaving && questionIndex === 0 ? (
+                  <View style={styles.questionBody}>
+                    <View style={styles.questionHeader}>
+                      <Text style={styles.stepTitle}>What should I call you?</Text>
+                    </View>
+                    <View style={styles.nameFieldWrap}>
+                      <TextInput
+                        value={userName}
+                        onChangeText={setUserName}
+                        placeholder="Your first name"
+                        placeholderTextColor={colors.textSecondary}
+                        style={styles.nameInput}
+                        textAlign="center"
+                      />
+                    </View>
+                    <View style={styles.stepFooter}>
+                      <Pressable onPress={() => setQuestionIndex(1)} style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}>
+                        <Text style={styles.primaryButtonText}>That's me →</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ) : null}
+
+                {!isSaving && questionIndex === 1 ? (
+                  <View style={styles.questionBody}>
+                    <View style={styles.questionHeader}>
+                      <Text style={styles.stepTitle}>What brings you to SavorSelf?</Text>
+                    </View>
+                    <View style={styles.cardStack}>
+                      {questionCards.map((option) => (
+                        <QuestionCard
+                          key={option.value}
+                          title={option.title}
+                          subtitle={option.subtitle}
+                          selected={primaryGoal === option.value}
+                          onPress={() => {
+                            setPrimaryGoal(option.value);
+                            advanceQuestion(2);
+                          }}
+                        />
+                      ))}
+                    </View>
+                  </View>
+                ) : null}
+
+                {!isSaving && questionIndex === 2 ? (
+                  <View style={styles.questionBody}>
+                    <View style={styles.questionHeader}>
+                      <Text style={styles.stepTitle}>What gets in the way most?</Text>
+                    </View>
+                    <View style={styles.cardStack}>
+                      {challengeCards.map((option) => (
+                        <QuestionCard
+                          key={option}
+                          title={option}
+                          selected={challenge === option}
+                          onPress={() => {
+                            setChallenge(option);
+                            advanceQuestion(3);
+                          }}
+                        />
+                      ))}
+                    </View>
+                  </View>
+                ) : null}
+
+                {!isSaving && questionIndex === 3 ? (
+                  <View style={styles.questionBody}>
+                    <View style={styles.questionHeader}>
+                      <Text style={styles.stepTitle}>What's your rough daily calorie target?</Text>
+                    </View>
+                    <View style={styles.calorieRow}>
+                      {calorieOptions.map((option) => (
+                        <QuestionCard
+                          key={option.label}
+                          title={option.label}
+                          compact
+                          selected={calorieGoal === option.value}
+                          onPress={() => {
+                            setCalorieGoal(option.value);
+                            advanceQuestion(4);
+                          }}
+                        />
+                      ))}
+                    </View>
+                    <Pressable
+                      onPress={() => {
+                        setCalorieGoal(2000);
+                        advanceQuestion(4);
+                      }}
+                      style={({ pressed }) => [styles.laterLinkWrap, pressed && styles.pressed]}
+                    >
+                      <Text style={styles.laterLink}>I'll set this later</Text>
+                    </Pressable>
+                  </View>
+                ) : null}
+
+                {!isSaving && questionIndex === 4 ? (
+                  <View style={styles.questionBody}>
+                    <View style={styles.questionHeader}>
+                      <Text style={styles.stepTitle}>Imperial or metric?</Text>
+                    </View>
+                    <View style={styles.unitsRow}>
+                      <QuestionCard
+                        title="🇺🇸 Imperial"
+                        subtitle="lbs, oz, °F"
+                        selected={units === "imperial"}
+                        onPress={() => {
+                          setUnits("imperial");
+                          void finishQuestionnaire();
+                        }}
+                      />
+                      <QuestionCard
+                        title="🌍 Metric"
+                        subtitle="kg, ml, °C"
+                        selected={units === "metric"}
+                        onPress={() => {
+                          setUnits("metric");
+                          void finishQuestionnaire();
+                        }}
+                      />
+                    </View>
+                    {saveError ? <Text style={styles.errorText}>{saveError}</Text> : null}
+                  </View>
+                ) : null}
               </View>
             ) : null}
 
             {step === 2 ? (
-              <View style={styles.stepBody}>
-                <View style={styles.stepHeader}>
-                  <Text style={styles.stepTitle}>Make it yours.</Text>
-                  <Text style={styles.stepSubtitle}>All optional. Change anything later.</Text>
-                </View>
-
-                <View style={styles.nameFieldWrap}>
-                  <TextInput
-                    value={name}
-                    onChangeText={setName}
-                    placeholder="Your name"
-                    placeholderTextColor={colors.textSecondary}
-                    style={styles.nameInput}
-                  />
-                </View>
-
-                <Text style={styles.targetsLabel}>Daily targets</Text>
-                <View style={styles.targetsRow}>
-                  <View style={styles.targetCard}>
-                    <TextInput
-                      value={calories}
-                      onChangeText={setCalories}
-                      keyboardType="numeric"
-                      placeholder="0"
-                      placeholderTextColor={colors.textSecondary}
-                      style={styles.targetInput}
-                    />
-                    <Text style={styles.targetLabel}>Calories</Text>
-                  </View>
-                  <View style={styles.targetCard}>
-                    <TextInput
-                      value={protein}
-                      onChangeText={setProtein}
-                      keyboardType="numeric"
-                      placeholder="0"
-                      placeholderTextColor={colors.textSecondary}
-                      style={styles.targetInput}
-                    />
-                    <Text style={styles.targetLabel}>Protein g</Text>
-                  </View>
-                  <View style={styles.targetCard}>
-                    <TextInput
-                      value={water}
-                      onChangeText={setWater}
-                      keyboardType="numeric"
-                      placeholder="0"
-                      placeholderTextColor={colors.textSecondary}
-                      style={styles.targetInput}
-                    />
-                    <Text style={styles.targetLabel}>Water oz</Text>
-                  </View>
-                </View>
-
-                <View style={styles.segmentedWrap}>
-                  <View style={styles.segmentedControl}>
-                    {(["imperial", "metric"] as const).map((option) => {
-                      const active = units === option;
-                      return (
-                        <Pressable
-                          key={option}
-                          onPress={() => setUnits(option)}
-                          style={({ pressed }) => [
-                            styles.segment,
-                            active && styles.segmentActive,
-                            pressed && styles.pressed,
-                          ]}
-                        >
-                          <Text style={[styles.segmentText, active && styles.segmentTextActive]}>
-                            {option === "imperial" ? "Imperial" : "Metric"}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                </View>
-
-                <View style={styles.stepFooter}>
-                  <Pressable onPress={() => setStep(3)} style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}>
-                    <Text style={styles.primaryButtonText}>Continue</Text>
-                  </Pressable>
-                </View>
-              </View>
-            ) : null}
-
-            {step === 3 ? (
               <View style={styles.stepBody}>
                 <View style={styles.stepHeader}>
                   <Text style={styles.stepTitle}>Here's how it works.</Text>
@@ -398,32 +471,9 @@ export default function OnboardingScreen() {
                 </View>
 
                 <View style={styles.stepFooter}>
-                  <Animated.View style={{ opacity: savePulse }}>
-                    <Pressable
-                      onPress={async () => {
-                        setSaveError("");
-                        setIsSaving(true);
-                        const result = await completeOnboarding({
-                          name: name.trim() || "",
-                          preferredUnits: units,
-                          dailyCalorieGoal: calories ? Number(calories) : undefined,
-                          dailyProteinGoal: protein ? Number(protein) : undefined,
-                          dailyWaterGoal: water ? Number(water) : undefined,
-                        });
-                        setIsSaving(false);
-
-                        if (result.error) {
-                          setSaveError(result.error);
-                          return;
-                        }
-
-                        router.replace("/(tabs)/log");
-                      }}
-                      style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
-                    >
-                      <Text style={styles.primaryButtonText}>{isSaving ? "Saving..." : "Start my first log"}</Text>
-                    </Pressable>
-                  </Animated.View>
+                  <Pressable onPress={() => router.replace("/(tabs)/log")} style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}>
+                    <Text style={styles.primaryButtonText}>Start my first log</Text>
+                  </Pressable>
                   {saveError ? <Text style={styles.errorText}>{saveError}</Text> : null}
                   <Text style={styles.termsText}>By continuing you agree to our terms.</Text>
                 </View>
@@ -533,16 +583,49 @@ const styles = StyleSheet.create({
   },
   stepBody: {
     flex: 1,
-    gap: 28,
+    gap: 24,
+  },
+  questionBody: {
+    flex: 1,
+    gap: 24,
+  },
+  questionTopMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    minHeight: 28,
+  },
+  questionProgressText: {
+    flex: 1,
+    fontSize: 13,
+    color: colors.textSecondary,
+    textAlign: "center",
+  },
+  backLinkWrap: {
+    paddingVertical: 4,
+    paddingRight: 8,
+  },
+  backLinkSpacer: {
+    width: 28,
+  },
+  backLink: {
+    fontSize: 20,
+    color: colors.accentPrimary,
+    fontWeight: "500",
   },
   stepHeader: {
     gap: 6,
+  },
+  questionHeader: {
+    gap: 6,
+    alignItems: "center",
   },
   stepTitle: {
     fontSize: 28,
     fontWeight: "700",
     letterSpacing: -0.5,
     color: colors.textPrimary,
+    textAlign: "center",
   },
   stepSubtitle: {
     fontSize: 16,
@@ -571,31 +654,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: "center",
   },
-  goalWrap: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-  },
-  goalPill: {
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 24,
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  goalPillActive: {
-    backgroundColor: colors.accentPrimary,
-    borderWidth: 0,
-  },
-  goalPillText: {
-    fontSize: 15,
-    fontWeight: "500",
-    color: colors.textPrimary,
-  },
-  goalPillTextActive: {
-    color: colors.white,
-  },
   pressed: {
     opacity: 0.82,
   },
@@ -610,73 +668,79 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     paddingVertical: 10,
   },
-  targetsLabel: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: colors.textSecondary,
-    textTransform: "uppercase",
-    letterSpacing: 1.5,
-    marginBottom: 12,
+  cardStack: {
+    gap: 12,
   },
-  targetsRow: {
+  questionCard: {
+    backgroundColor: colors.white,
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 6,
+  },
+  questionCardCompact: {
+    flex: 1,
+    minWidth: 0,
+    paddingHorizontal: 12,
+    paddingVertical: 18,
+    alignItems: "center",
+  },
+  questionCardSelected: {
+    borderColor: colors.accentPrimary,
+    backgroundColor: "#FFF8F4",
+  },
+  questionCardTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.textPrimary,
+  },
+  questionCardTitleSelected: {
+    color: colors.textPrimary,
+  },
+  questionCardSubtitle: {
+    fontSize: 14,
+    lineHeight: 22,
+    color: colors.textSecondary,
+  },
+  questionCardSubtitleSelected: {
+    color: colors.textSecondary,
+  },
+  calorieRow: {
     flexDirection: "row",
     gap: 10,
   },
-  targetCard: {
-    flex: 1,
-    alignItems: "center",
-    backgroundColor: colors.white,
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    gap: 8,
-  },
-  targetInput: {
-    fontSize: 22,
-    fontWeight: "700",
-    textAlign: "center",
-    color: colors.textPrimary,
-    width: "100%",
-    paddingVertical: 4,
-  },
-  targetLabel: {
-    fontSize: 11,
-    color: colors.textSecondary,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    textAlign: "center",
-  },
-  segmentedWrap: {
+  unitsRow: {
+    flexDirection: "row",
     gap: 12,
   },
-  segmentedControl: {
-    flexDirection: "row",
-    backgroundColor: "#F0EAE3",
-    borderRadius: 12,
-    padding: 3,
+  laterLinkWrap: {
+    alignSelf: "center",
+    paddingVertical: 8,
   },
-  segment: {
+  laterLink: {
+    fontSize: 14,
+    color: colors.accentPrimary,
+  },
+  loadingState: {
     flex: 1,
-    paddingVertical: 10,
+    justifyContent: "center",
     alignItems: "center",
-    borderRadius: 10,
+    gap: 10,
+    paddingHorizontal: 24,
   },
-  segmentActive: {
-    backgroundColor: colors.white,
-    shadowColor: "#2C1A0E",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-  },
-  segmentText: {
-    fontSize: 15,
-    fontWeight: "400",
-    color: colors.textSecondary,
-  },
-  segmentTextActive: {
+  loadingTitle: {
+    fontSize: 24,
+    fontWeight: "700",
+    letterSpacing: -0.4,
     color: colors.textPrimary,
-    fontWeight: "600",
+    textAlign: "center",
+  },
+  loadingBody: {
+    fontSize: 14,
+    lineHeight: 22,
+    color: colors.textSecondary,
+    textAlign: "center",
   },
   explainerStack: {
     gap: 20,
