@@ -9,10 +9,12 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  type StyleProp,
   Text,
   TextInput,
   UIManager,
   View,
+  type ViewStyle,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { CameraView, Camera } from "expo-camera";
@@ -950,15 +952,18 @@ export function QuickLogStrip() {
   function QuickLogTile({
     item,
     onPress,
+    style,
   }: {
     item: (typeof items)[number];
     onPress: (nextItem: (typeof items)[number]) => void;
+    style?: StyleProp<ViewStyle>;
   }) {
     const scaleAnim = useRef(new Animated.Value(1)).current;
 
     return (
       <Pressable
         key={item.label}
+        style={style}
         onPressIn={() =>
           Animated.spring(scaleAnim, {
             toValue: 0.94,
@@ -1047,8 +1052,17 @@ export function QuickLogStrip() {
           <Text style={styles.quickSubtitle}>Capture the factors that often shift mood and energy in the background.</Text>
         </View>
         <View style={styles.quickGrid}>
-          {items.map((item) => (
-            <QuickLogTile key={item.label} item={item} onPress={openModal} />
+          {items.map((item, index) => (
+            <QuickLogTile
+              key={item.label}
+              item={item}
+              onPress={openModal}
+              style={{
+                width: "48%",
+                marginRight: index % 2 === 0 ? spacing.sm : 0,
+                marginBottom: index < items.length - 2 ? spacing.sm : 0,
+              }}
+            />
           ))}
         </View>
       </View>
@@ -3896,7 +3910,7 @@ const styles = StyleSheet.create({
   quickGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: spacing.sm,
+    paddingHorizontal: 0,
   },
   quickHeader: {
     gap: 6,
@@ -3919,7 +3933,7 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
   quickTile: {
-    width: "48%",
+    width: "100%",
     minHeight: 150,
     backgroundColor: colors.white,
     borderRadius: 20,

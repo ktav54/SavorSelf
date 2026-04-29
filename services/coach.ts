@@ -76,33 +76,75 @@ function buildCoachPromptContext(context: Record<string, unknown>) {
   };
 }
 
+function extractReplyText(value: unknown): string {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return "";
+    }
+
+    if (trimmed.startsWith("{")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        const nestedReply = extractReplyText(parsed);
+        if (nestedReply) {
+          return nestedReply;
+        }
+      } catch {}
+
+      const match = trimmed.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+      if (match?.[1]) {
+        return match[1].replace(/\\n/g, "\n").replace(/\\"/g, '"').trim();
+      }
+    }
+
+    return trimmed;
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => extractReplyText(entry))
+      .find((entry) => entry.length > 0) ?? "";
+  }
+
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+
+    return (
+      extractReplyText(record.reply) ||
+      extractReplyText(record.content) ||
+      extractReplyText(record.message) ||
+      extractReplyText(record.choices)
+    );
+  }
+
+  return "";
+}
+
 function normalizeCoachPayload<T extends { reply?: string }>(payload: T | string): T {
   let normalized: unknown = payload;
+  const rawReplyFallback = extractReplyText(payload);
 
   if (typeof normalized === "string") {
     try {
       normalized = JSON.parse(normalized);
     } catch {
-      return { reply: normalized } as T;
+      return { reply: rawReplyFallback } as T;
     }
   }
 
-  if (normalized && typeof normalized === "object" && "reply" in normalized) {
-    const reply = (normalized as { reply?: unknown }).reply;
-    if (typeof reply === "string") {
-      const trimmed = reply.trim();
-      if (trimmed.startsWith("{")) {
-        try {
-          const parsedReply = JSON.parse(trimmed);
-          if (typeof parsedReply?.reply === "string") {
-            (normalized as { reply?: string }).reply = parsedReply.reply;
-          }
-        } catch {}
-      }
+  if (normalized && typeof normalized === "object") {
+    const reply = extractReplyText(normalized) || rawReplyFallback;
+
+    if ("reply" in normalized || reply) {
+      return {
+        ...(normalized as object),
+        reply,
+      } as T;
     }
   }
 
-  return normalized as T;
+  return ({ ...(normalized as object), reply: rawReplyFallback } as T);
 }
 
 async function callEdgeFunction<TRequest, TResponse>(functionName: string, body: TRequest): Promise<TResponse> {

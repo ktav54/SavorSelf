@@ -54,6 +54,51 @@ type CoachStarter = {
   prompt: string;
 };
 
+function extractReplyFromUnknown(value: unknown): string {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return "";
+    }
+
+    if (trimmed.startsWith("{")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        const nestedReply = extractReplyFromUnknown(parsed);
+        if (nestedReply) {
+          return nestedReply;
+        }
+      } catch {}
+
+      const match = trimmed.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+      if (match?.[1]) {
+        return match[1].replace(/\\n/g, "\n").replace(/\\"/g, '"').trim();
+      }
+    }
+
+    return trimmed;
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => extractReplyFromUnknown(entry))
+      .find((entry) => entry.length > 0) ?? "";
+  }
+
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+
+    return (
+      extractReplyFromUnknown(record.reply) ||
+      extractReplyFromUnknown(record.content) ||
+      extractReplyFromUnknown(record.message) ||
+      extractReplyFromUnknown(record.choices)
+    );
+  }
+
+  return "";
+}
+
 function MessageBubble({
   message,
   pendingProposal,
@@ -78,7 +123,12 @@ function MessageBubble({
   const proposalMealType = proposalIsActive
     ? pendingProposal?.mealType
     : message.foodProposal?.mealType;
-  const responseParts = parseCoachResponse(extractReply(message.content));
+  const extractedReply = extractReply(message.content).trim();
+  const fallbackReply = extractedReply || message.content.trim() || "Something went wrong. Try again.";
+  const parsedResponseParts = parseCoachResponse(extractedReply);
+  const responseParts = parsedResponseParts.length
+    ? parsedResponseParts
+    : [{ type: "paragraph" as const, content: fallbackReply }];
 
   return (
     <View style={styles.messageWrap}>
@@ -199,21 +249,7 @@ function MessageBubble({
 }
 
 function extractReply(content: string): string {
-  const trimmed = content.trim();
-  if (trimmed.startsWith("{")) {
-    try {
-      const parsed = JSON.parse(trimmed);
-      if (typeof parsed?.reply === "string" && parsed.reply.trim()) {
-        return parsed.reply.trim();
-      }
-    } catch {}
-    const match = trimmed.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)"/);
-    if (match?.[1]) {
-      return match[1].replace(/\\n/g, "\n").replace(/\\"/g, '"');
-    }
-    return "";
-  }
-  return content;
+  return extractReplyFromUnknown(content);
 }
 
 function parseCoachResponse(text: string): CoachResponsePart[] {
@@ -240,14 +276,7 @@ function parseCoachResponse(text: string): CoachResponsePart[] {
     };
   });
 
-  return parts.length
-    ? parts
-    : [
-        {
-          type: "paragraph",
-          content: text.trim(),
-        },
-      ];
+  return parts.filter((part) => part.content.trim().length > 0);
 }
 
 function buildConfirmationMessage(proposal: CoachFoodProposal): string {
@@ -680,7 +709,7 @@ export function CoachChat() {
     const replyText = extractReply(content);
     addCoachMessage({
       role: "assistant",
-      content: replyText?.trim() ? replyText : "Something went wrong, try again.",
+      content: replyText?.trim() ? replyText : "Something went wrong. Try again.",
       timestamp: new Date().toISOString(),
       kind,
       foodProposal,
