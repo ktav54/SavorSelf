@@ -37,6 +37,7 @@ export interface UserProfile {
   email: string;
   name: string;
   avatarUrl?: string;
+  avatarEmoji?: string | null;
   subscriptionTier: SubscriptionTier;
   preferredUnits: PreferredUnits;
   onboardingComplete: boolean;

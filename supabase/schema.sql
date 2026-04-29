@@ -6,6 +6,7 @@ create table if not exists public.users (
   created_at timestamptz not null default now(),
   name text,
   avatar_url text,
+  avatar_emoji text,
   subscription_tier text not null default 'free',
   preferred_units text not null default 'imperial',
   onboarding_complete boolean not null default false,
@@ -22,6 +23,7 @@ alter table public.users add column if not exists daily_fat_goal numeric;
 alter table public.users add column if not exists coach_conversation jsonb;
 alter table public.users add column if not exists onboarding_goal text;
 alter table public.users add column if not exists onboarding_challenge text;
+alter table public.users add column if not exists avatar_emoji text;
 
 create table if not exists public.mood_logs (
   id uuid primary key default gen_random_uuid(),

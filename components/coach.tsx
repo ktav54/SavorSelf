@@ -565,9 +565,10 @@ export function CoachChat() {
   const hasFoodToday = foodLogs.some((food) => food.loggedAt.slice(0, 10) === todayKey);
   const hasMoodToday = moodLogs.length > 0 && moodLogs[0].loggedAt.slice(0, 10) === todayKey;
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Hey" : "Good evening";
+  const avatarGreeting = profile?.avatarEmoji ? `${profile.avatarEmoji} ` : "";
   const welcomeText = moodLogged
-    ? `${greeting}${profile?.name ? `, ${profile.name}` : ""}! I can see you've already checked in today — feeling ${moodLabels[(moodLogs[0]?.moodScore ?? 3) - 1]?.toLowerCase() ?? "it"}. What's on your mind?`
-    : `${greeting}${profile?.name ? `, ${profile.name}` : ""}! I'm your SavorSelf coach. I can log your food, pull up your patterns, or just talk. What do you need today?`;
+    ? `${avatarGreeting}${greeting}${profile?.name ? `, ${profile.name}` : ""}! I can see you've already checked in today — feeling ${moodLabels[(moodLogs[0]?.moodScore ?? 3) - 1]?.toLowerCase() ?? "it"}. What's on your mind?`
+    : `${avatarGreeting}${greeting}${profile?.name ? `, ${profile.name}` : ""}! I'm your SavorSelf coach. I can log your food, pull up your patterns, or just talk. What do you need today?`;
   const starters = useMemo<CoachStarter[]>(
     () =>
       [

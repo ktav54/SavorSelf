@@ -51,7 +51,7 @@ export interface AppState {
     error?: string;
   }>;
   completeOnboarding: (details: Partial<UserProfile>) => Promise<{ error?: string }>;
-  updateProfile: (updates: Partial<Pick<UserProfile, "name" | "preferredUnits" | "dailyCalorieGoal" | "dailyProteinGoal" | "dailyCarbsGoal" | "dailyFatGoal" | "dailyWaterGoal">>) => Promise<{ error?: string }>;
+  updateProfile: (updates: Partial<Pick<UserProfile, "name" | "avatarEmoji" | "preferredUnits" | "dailyCalorieGoal" | "dailyProteinGoal" | "dailyCarbsGoal" | "dailyFatGoal" | "dailyWaterGoal">>) => Promise<{ error?: string }>;
   updateEmail: (email: string) => Promise<{ error?: string }>;
   deleteAccount: () => Promise<{ error?: string }>;
   setSelectedDate: (date: Date) => Promise<void>;
@@ -241,6 +241,7 @@ function mapProfile(row: any): UserProfile {
     email: row.email,
     name: row.name ?? "",
     avatarUrl: row.avatar_url ?? undefined,
+    avatarEmoji: row.avatar_emoji ?? null,
     subscriptionTier: row.subscription_tier ?? "free",
     preferredUnits: row.preferred_units ?? "imperial",
     onboardingComplete: Boolean(row.onboarding_complete),
@@ -352,7 +353,7 @@ function roundNutrition(value: number) {
 
 function getMissingUsersColumns(message?: string | null) {
   const missing: Array<
-    "daily_carbs_goal" | "daily_fat_goal" | "onboarding_goal" | "onboarding_challenge"
+    "daily_carbs_goal" | "daily_fat_goal" | "onboarding_goal" | "onboarding_challenge" | "avatar_emoji"
   > = [];
 
   if (!message) {
@@ -373,6 +374,10 @@ function getMissingUsersColumns(message?: string | null) {
 
   if (message.includes("onboarding_challenge")) {
     missing.push("onboarding_challenge");
+  }
+
+  if (message.includes("avatar_emoji")) {
+    missing.push("avatar_emoji");
   }
 
   return missing;
@@ -609,6 +614,10 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
       payload.name = updates.name ?? "";
     }
 
+    if ("avatarEmoji" in updates) {
+      payload.avatar_emoji = updates.avatarEmoji ?? null;
+    }
+
     if ("preferredUnits" in updates) {
       payload.preferred_units = updates.preferredUnits;
     }
@@ -642,6 +651,12 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
     set({
       profile: mapProfile(data),
     });
+
+    if (missingColumns.includes("avatar_emoji")) {
+      return {
+        error: "Your avatar saved locally, but the Supabase users table still needs the avatar_emoji column.",
+      };
+    }
 
     if (missingColumns.length > 0) {
       return {

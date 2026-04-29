@@ -383,7 +383,9 @@ export default function LogScreen() {
                 <Text style={[styles.dateNavText, isSelectedDateToday && styles.dateNavTextDisabled]}>{"›"}</Text>
               </Pressable>
             </View>
-            <Text style={styles.logHeaderTitle}>{`Hi${profile?.name ? `, ${profile.name}` : ""}`}</Text>
+            <Text style={styles.logHeaderTitle}>
+              {`${profile?.avatarEmoji ? `${profile.avatarEmoji} ` : ""}Hi${profile?.name ? `, ${profile.name}` : ""}`}
+            </Text>
             <Text style={styles.logHeaderSubtitle}>
               {isSelectedDateToday
                 ? todaySubtitle

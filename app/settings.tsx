@@ -2,8 +2,19 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import * as Notifications from "expo-notifications";
-import { Alert, Modal, Pressable, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import {
+  Alert,
+  Linking,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { Screen } from "@/components/ui";
 import { colors, radii, spacing } from "@/constants/theme";
 import {
@@ -12,6 +23,8 @@ import {
   scheduleWeeklyReport,
 } from "@/services/notifications";
 import { useAppStore, type AppState } from "@/store/useAppStore";
+
+type AboutModalKind = "how" | "science" | null;
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -22,6 +35,9 @@ export default function SettingsScreen() {
   const deleteAccount = useAppStore((state: AppState) => state.deleteAccount);
 
   const [profileModalVisible, setProfileModalVisible] = useState(false);
+  const [showAvatarPicker, setShowAvatarPicker] = useState(false);
+  const [avatarEmoji, setAvatarEmoji] = useState<string | null>(profile?.avatarEmoji ?? null);
+  const [aboutModal, setAboutModal] = useState<AboutModalKind>(null);
   const [nameDraft, setNameDraft] = useState("");
   const [emailDraft, setEmailDraft] = useState("");
   const [calorieGoal, setCalorieGoal] = useState("");
@@ -44,10 +60,13 @@ export default function SettingsScreen() {
   const [lapseNudge, setLapseNudge] = useState(true);
   const [weeklyReport, setWeeklyReport] = useState(true);
   const [weeklyEmailSummary, setWeeklyEmailSummary] = useState(false);
+  const [waitlistEmail, setWaitlistEmail] = useState("");
+  const [waitlistSubmitted, setWaitlistSubmitted] = useState(false);
 
   useEffect(() => {
     setNameDraft(profile?.name ?? "");
     setEmailDraft(profile?.email ?? "");
+    setAvatarEmoji(profile?.avatarEmoji ?? null);
     setCalorieGoal(profile?.dailyCalorieGoal != null ? String(profile.dailyCalorieGoal) : "");
     setProteinGoal(profile?.dailyProteinGoal != null ? String(profile.dailyProteinGoal) : "");
     setCarbsGoal(profile?.dailyCarbsGoal != null ? String(profile.dailyCarbsGoal) : "");
@@ -72,7 +91,23 @@ export default function SettingsScreen() {
     const tier = profile?.subscriptionTier ?? "free";
     return tier.charAt(0).toUpperCase() + tier.slice(1);
   }, [profile?.subscriptionTier]);
-  const avatarLetter = (profile?.name?.trim()?.charAt(0) ?? "S").toUpperCase();
+  const aboutSheetContent = useMemo(() => {
+    if (aboutModal === "how") {
+      return {
+        title: "How SavorSelf works",
+        body: "SavorSelf helps you discover the personal connection between what you eat and how you feel — your gut-brain axis.\n\nEach day you log your food and mood. Over time, SavorSelf finds correlations unique to you: which foods boost your energy, which ones cloud your thinking, and what patterns emerge when you feel your best.\n\nIt's not about perfect eating. It's about understanding your own body.",
+      };
+    }
+
+    if (aboutModal === "science") {
+      return {
+        title: "The gut-brain connection",
+        body: "Your gut and brain are in constant communication through the vagus nerve and gut microbiome. This is called the gut-brain axis.\n\nAbout 95% of your serotonin — your mood-regulating neurotransmitter — is produced in your gut. What you eat directly influences your microbiome, which influences your brain chemistry.\n\nResearch shows that fiber-rich foods, fermented foods, and consistent eating patterns support a healthy microbiome and more stable mood.",
+      };
+    }
+
+    return null;
+  }, [aboutModal]);
 
   const handleSaveName = async () => {
     setSavingName(true);
@@ -108,6 +143,23 @@ export default function SettingsScreen() {
 
     setEmailMessage("Email updated.");
     setProfileModalVisible(false);
+  };
+
+  const handleSaveAvatar = async (emoji: string | null) => {
+    setAvatarEmoji(emoji);
+    setShowAvatarPicker(false);
+    setProfileMessage("");
+
+    const result = await updateProfile({
+      avatarEmoji: emoji,
+    });
+
+    if (result.error) {
+      setProfileMessage(result.error);
+      return;
+    }
+
+    setProfileMessage(emoji ? "Avatar updated." : "Avatar removed.");
   };
 
   const handleUnitChange = async (next: "imperial" | "metric") => {
@@ -207,18 +259,32 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Profile</Text>
           <View style={styles.sectionCard}>
-            <Pressable onPress={() => setProfileModalVisible(true)} style={({ pressed }) => [styles.profileRow, pressed && styles.pressed]}>
-              <View style={styles.avatarCircle}>
-                <Text style={styles.avatarLetter}>{avatarLetter}</Text>
-              </View>
-              <View style={styles.profileCopy}>
-                <Text style={styles.profileName}>{profile?.name || "Add your name"}</Text>
-                <Text style={styles.profileEmail} numberOfLines={1} ellipsizeMode="tail">
-                  {profile?.email || "No email yet"}
-                </Text>
-              </View>
-              <Text style={styles.chevron}>›</Text>
-            </Pressable>
+            <View style={styles.profileRow}>
+              <Pressable onPress={() => setShowAvatarPicker(true)} style={styles.avatarCircle}>
+                {avatarEmoji ? (
+                  <Text style={styles.avatarEmoji}>{avatarEmoji}</Text>
+                ) : (
+                  <Text style={styles.avatarInitial}>
+                    {profile?.name?.[0]?.toUpperCase() ?? "?"}
+                  </Text>
+                )}
+                <View style={styles.avatarEditBadge}>
+                  <Text style={styles.avatarEditText}>✎</Text>
+                </View>
+              </Pressable>
+              <Pressable
+                onPress={() => setProfileModalVisible(true)}
+                style={({ pressed }) => [styles.profileDetailsPressable, pressed && styles.pressed]}
+              >
+                <View style={styles.profileCopy}>
+                  <Text style={styles.profileName}>{profile?.name || "Add your name"}</Text>
+                  <Text style={styles.profileEmail} numberOfLines={1} ellipsizeMode="tail">
+                    {profile?.email || "No email yet"}
+                  </Text>
+                </View>
+                <Text style={styles.chevron}>›</Text>
+              </Pressable>
+            </View>
             {profileMessage ? <Text style={styles.statusText}>{profileMessage}</Text> : null}
             {emailMessage ? <Text style={styles.statusText}>{emailMessage}</Text> : null}
           </View>
@@ -361,9 +427,33 @@ export default function SettingsScreen() {
             <Text style={styles.subscriptionSubtitle}>
               Unlock premium insights, trends, and nutrition analysis
             </Text>
-            <View style={styles.subscriptionBadge}>
-              <Text style={styles.subscriptionBadgeText}>Coming Soon</Text>
-            </View>
+            {!waitlistSubmitted ? (
+              <View style={styles.waitlistRow}>
+                <TextInput
+                  style={styles.waitlistInput}
+                  value={waitlistEmail}
+                  onChangeText={setWaitlistEmail}
+                  placeholder="your@email.com"
+                  placeholderTextColor={colors.textSecondary}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+                <Pressable
+                  style={styles.waitlistButton}
+                  onPress={() => {
+                    if (waitlistEmail.includes("@")) {
+                      setWaitlistSubmitted(true);
+                    }
+                  }}
+                >
+                  <Text style={styles.waitlistButtonText}>Join waitlist</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <Text style={styles.waitlistSuccess}>
+                ✓ You're on the list! We'll reach out when premium launches.
+              </Text>
+            )}
           </View>
         </View>
 
@@ -450,6 +540,31 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        <View style={[styles.section, styles.aboutSection]}>
+          <Text style={styles.sectionLabel}>ABOUT</Text>
+          <View style={styles.sectionCard}>
+            <Pressable style={styles.aboutRow} onPress={() => setAboutModal("how")}>
+              <Text style={styles.aboutRowLabel}>How SavorSelf works</Text>
+              <Text style={styles.aboutChevron}>›</Text>
+            </Pressable>
+            <View style={styles.aboutDivider} />
+            <Pressable style={styles.aboutRow} onPress={() => setAboutModal("science")}>
+              <Text style={styles.aboutRowLabel}>The gut-brain science</Text>
+              <Text style={styles.aboutChevron}>›</Text>
+            </Pressable>
+            <View style={styles.aboutDivider} />
+            <Pressable style={styles.aboutRow} onPress={() => void Linking.openURL("mailto:hello@savorself.app")}>
+              <Text style={styles.aboutRowLabel}>Send feedback</Text>
+              <Text style={styles.aboutChevron}>›</Text>
+            </Pressable>
+            <View style={styles.aboutDivider} />
+            <Pressable style={styles.aboutRow} onPress={() => void Linking.openURL("https://savorself.app/privacy")}>
+              <Text style={styles.aboutRowLabel}>Privacy Policy</Text>
+              <Text style={styles.aboutChevron}>›</Text>
+            </Pressable>
+          </View>
+        </View>
+
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Account</Text>
           <View style={styles.sectionCard}>
@@ -465,10 +580,49 @@ export default function SettingsScreen() {
         </View>
       </View>
 
+      <Modal
+        visible={showAvatarPicker}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowAvatarPicker(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <Pressable style={styles.avatarBackdrop} onPress={() => setShowAvatarPicker(false)} />
+          <View style={styles.avatarSheet}>
+            <View style={styles.dragHandle} />
+            <Text style={styles.avatarPickerTitle}>Choose your avatar</Text>
+            <View style={styles.emojiGrid}>
+              {[
+                "😊", "🌱", "⚡", "🧠", "🌿", "🔥", "✨", "🎯",
+                "💪", "🌊", "🍎", "🥑", "🌸", "🦋", "🌙", "☀️",
+                "🎨", "🎵", "📚", "🏃", "🧘", "🌺", "🍃", "💫",
+              ].map((emoji) => (
+                <Pressable
+                  key={emoji}
+                  style={[
+                    styles.emojiOption,
+                    avatarEmoji === emoji && styles.emojiOptionSelected,
+                  ]}
+                  onPress={() => {
+                    void handleSaveAvatar(emoji);
+                  }}
+                >
+                  <Text style={styles.emojiOptionText}>{emoji}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Pressable style={styles.avatarRemove} onPress={() => void handleSaveAvatar(null)}>
+              <Text style={styles.avatarRemoveText}>Remove avatar</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
       <Modal visible={profileModalVisible} transparent animationType="slide" onRequestClose={() => setProfileModalVisible(false)}>
         <View style={styles.modalBackdrop}>
           <Pressable style={styles.modalScrim} onPress={() => setProfileModalVisible(false)} />
           <View style={styles.editSheet}>
+            <View style={styles.dragHandle} />
             <View style={styles.editHeader}>
               <Text style={styles.editTitle}>Edit profile</Text>
               <Pressable onPress={() => setProfileModalVisible(false)} style={({ pressed }) => [styles.editCloseButton, pressed && styles.pressed]}>
@@ -505,6 +659,31 @@ export default function SettingsScreen() {
                 <Text style={styles.editPrimaryButtonText}>{savingEmail ? "Saving..." : "Save email"}</Text>
               </Pressable>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={Boolean(aboutSheetContent)} transparent animationType="slide" onRequestClose={() => setAboutModal(null)}>
+        <View style={styles.modalBackdrop}>
+          <Pressable style={styles.modalScrim} onPress={() => setAboutModal(null)} />
+          <View style={styles.infoSheet}>
+            <View style={styles.dragHandle} />
+            <View style={styles.editHeader}>
+              <Text style={styles.editTitle}>{aboutSheetContent?.title ?? ""}</Text>
+              <Pressable onPress={() => setAboutModal(null)} style={({ pressed }) => [styles.editCloseButton, pressed && styles.pressed]}>
+                <Ionicons name="close" size={18} color={colors.textPrimary} />
+              </Pressable>
+            </View>
+            <ScrollView
+              style={styles.infoScroll}
+              contentContainerStyle={styles.infoScrollContent}
+              showsVerticalScrollIndicator={false}
+            >
+              <Text style={styles.infoBody}>{aboutSheetContent?.body ?? ""}</Text>
+            </ScrollView>
+            <Pressable style={styles.editPrimaryButton} onPress={() => setAboutModal(null)}>
+              <Text style={styles.editPrimaryButtonText}>Close</Text>
+            </Pressable>
           </View>
         </View>
       </Modal>
@@ -579,6 +758,12 @@ const styles = StyleSheet.create({
     gap: 14,
     paddingVertical: 14,
   },
+  profileDetailsPressable: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
   avatarCircle: {
     width: 56,
     height: 56,
@@ -586,11 +771,30 @@ const styles = StyleSheet.create({
     backgroundColor: "#F6EDE4",
     alignItems: "center",
     justifyContent: "center",
+    position: "relative",
   },
-  avatarLetter: {
+  avatarEmoji: {
+    fontSize: 28,
+  },
+  avatarInitial: {
     fontSize: 24,
     fontWeight: "700",
     color: colors.accentPrimary,
+  },
+  avatarEditBadge: {
+    position: "absolute",
+    bottom: 0,
+    right: 0,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: colors.accentPrimary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarEditText: {
+    fontSize: 10,
+    color: colors.white,
   },
   profileCopy: {
     flex: 1,
@@ -722,18 +926,40 @@ const styles = StyleSheet.create({
     opacity: 0.85,
     lineHeight: 22,
   },
-  subscriptionBadge: {
-    alignSelf: "flex-start",
-    marginTop: 8,
-    backgroundColor: "rgba(255,255,255,0.2)",
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
+  waitlistRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 12,
   },
-  subscriptionBadgeText: {
+  waitlistInput: {
+    flex: 1,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
     color: colors.white,
-    fontSize: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.3)",
+  },
+  waitlistButton: {
+    backgroundColor: "rgba(255,255,255,0.25)",
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    justifyContent: "center",
+  },
+  waitlistButtonText: {
+    fontSize: 14,
+    color: colors.white,
     fontWeight: "600",
+  },
+  waitlistSuccess: {
+    fontSize: 13,
+    color: colors.white,
+    opacity: 0.9,
+    marginTop: 10,
+    lineHeight: 20,
   },
   notificationRows: {
     gap: 0,
@@ -786,6 +1012,27 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     paddingRight: 52,
   },
+  aboutSection: {
+    marginTop: 8,
+  },
+  aboutRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 14,
+  },
+  aboutDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+  },
+  aboutRowLabel: {
+    fontSize: 15,
+    color: colors.textPrimary,
+  },
+  aboutChevron: {
+    fontSize: 20,
+    color: colors.textSecondary,
+  },
   signOutButton: {
     backgroundColor: "#F0EAE3",
     borderRadius: 12,
@@ -820,10 +1067,68 @@ const styles = StyleSheet.create({
   modalBackdrop: {
     flex: 1,
     justifyContent: "flex-end",
-    backgroundColor: "rgba(44, 26, 14, 0.24)",
   },
   modalScrim: {
     flex: 1,
+    backgroundColor: "rgba(44, 26, 14, 0.24)",
+  },
+  avatarBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+  },
+  avatarSheet: {
+    backgroundColor: colors.background,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: 40,
+  },
+  dragHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+    alignSelf: "center",
+    marginBottom: 20,
+  },
+  avatarPickerTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: colors.textPrimary,
+    marginBottom: 20,
+    textAlign: "center",
+  },
+  emojiGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    justifyContent: "center",
+    marginBottom: 20,
+  },
+  emojiOption: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emojiOptionSelected: {
+    borderColor: colors.accentPrimary,
+    backgroundColor: "#FFF8F4",
+  },
+  emojiOptionText: {
+    fontSize: 26,
+  },
+  avatarRemove: {
+    alignItems: "center",
+    paddingVertical: 12,
+  },
+  avatarRemoveText: {
+    fontSize: 14,
+    color: colors.textSecondary,
   },
   editSheet: {
     backgroundColor: colors.background,
@@ -838,6 +1143,21 @@ const styles = StyleSheet.create({
     borderRightWidth: 1,
     borderColor: colors.border,
   },
+  infoSheet: {
+    backgroundColor: colors.background,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 32,
+    gap: 18,
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: colors.border,
+    minHeight: "56%",
+    maxHeight: "82%",
+  },
   editHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -847,6 +1167,7 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontSize: 18,
     fontWeight: "700",
+    flex: 1,
   },
   editCloseButton: {
     width: 36,
@@ -889,5 +1210,16 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontSize: 14,
     fontWeight: "600",
+  },
+  infoScroll: {
+    flex: 1,
+  },
+  infoScrollContent: {
+    paddingBottom: 8,
+  },
+  infoBody: {
+    fontSize: 15,
+    color: colors.textSecondary,
+    lineHeight: 26,
   },
 });
