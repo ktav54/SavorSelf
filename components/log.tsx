@@ -867,18 +867,21 @@ export function HydrationSummaryCard() {
       <View style={styles.hydrationHeader}>
         <View>
           <Text style={styles.hydrationEyebrow}>Hydration</Text>
-          <Text style={styles.hydrationTitle}>Water</Text>
+          <Text style={styles.hydrationTitle}>💧 Water</Text>
         </View>
-        <Text style={styles.hydrationTotal}>
-          {todayValue} / {goalValue} {waterUnit}
-        </Text>
+        <View style={styles.hydrationTotalsWrap}>
+          <Text style={styles.hydrationTotal}>{todayValue} {waterUnit}</Text>
+          <Text style={styles.hydrationGoalText}>
+            {todayValue} of {goalValue} {waterUnit}
+          </Text>
+        </View>
       </View>
       <View style={styles.hydrationActionRow}>
         <Pressable
           style={({ pressed }) => [styles.hydrationStepButton, pressed && styles.pressableFeedback]}
           onPress={() => void saveWaterLog(-8)}
         >
-          <Ionicons name="remove" size={18} color={colors.blue} />
+          <Text style={styles.hydrationStepSymbol}>−</Text>
         </Pressable>
         <View style={styles.hydrationRail}>
           <View style={[styles.hydrationFill, { width: `${Math.max(progress * 100, 6)}%` }]} />
@@ -887,7 +890,7 @@ export function HydrationSummaryCard() {
           style={({ pressed }) => [styles.hydrationStepButton, pressed && styles.pressableFeedback]}
           onPress={() => void saveWaterLog(8)}
         >
-          <Ionicons name="add" size={18} color={colors.blue} />
+          <Text style={styles.hydrationStepSymbol}>+</Text>
         </Pressable>
       </View>
       <Text style={styles.hydrationBody}>
@@ -1565,13 +1568,18 @@ export function FoodLogSection({ mealType, logs, onAddFood }: { mealType: FoodLo
     <>
       <View style={styles.mealCard}>
         <View style={styles.sectionRow}>
-          <Text style={styles.mealTitle}>{mealType[0].toUpperCase() + mealType.slice(1)}</Text>
-          <View style={styles.mealTotalsWrap}>
-            <Text style={styles.mealTotal}>{Math.round(mealCalories)} cal</Text>
-            <Text style={styles.mealMacroSummary}>
-              {Math.round(mealProtein)}p | {Math.round(mealCarbs)}c | {Math.round(mealFat)}f
-            </Text>
+          <View style={styles.mealTitleWrap}>
+            <Text style={styles.mealEmoji}>{mealEmoji[mealType]}</Text>
+            <Text style={styles.mealTitle}>{mealType[0].toUpperCase() + mealType.slice(1)}</Text>
           </View>
+          {logs.length ? (
+            <View style={styles.mealTotalsWrap}>
+              <Text style={styles.mealTotal}>{Math.round(mealCalories)} cal</Text>
+              <Text style={styles.mealMacroSummary}>
+                {Math.round(mealProtein)}p · {Math.round(mealCarbs)}c · {Math.round(mealFat)}f
+              </Text>
+            </View>
+          ) : null}
         </View>
         <View style={styles.sectionDivider} />
         {logs.length ? (
@@ -1595,8 +1603,8 @@ export function FoodLogSection({ mealType, logs, onAddFood }: { mealType: FoodLo
             <Text style={styles.mealEmptyText}>{mealPrompt}</Text>
           </View>
         )}
-        <Pressable style={({ pressed }) => [styles.addMealButton, pressed && styles.pressableFeedback]} onPress={onAddFood}>
-          <Text style={styles.addMealText}>{`+ Add to ${mealType}`}</Text>
+        <Pressable style={({ pressed }) => [styles.addFoodButton, pressed && styles.pressableFeedback]} onPress={onAddFood}>
+          <Text style={styles.addFoodText}>+ Add food</Text>
         </Pressable>
       </View>
       <Modal visible={Boolean(editingItem)} animationType="slide" transparent onRequestClose={closeEditModal}>
@@ -3166,10 +3174,18 @@ const styles = StyleSheet.create({
         }
       : {}),
   },
+  mealTitleWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  mealEmoji: {
+    fontSize: 16,
+  },
   mealTitle: {
     color: colors.textPrimary,
-    fontSize: 20,
-    fontWeight: "600",
+    fontSize: 17,
+    fontWeight: "700",
   },
   mealTotal: {
     color: colors.accentPrimary,
@@ -3182,7 +3198,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   mealMacroSummary: {
-    color: colors.accentPrimary,
+    color: colors.textSecondary,
     fontSize: 12,
     fontWeight: "600",
   },
@@ -3751,6 +3767,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
   },
+  addFoodButton: {
+    marginTop: spacing.sm,
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderStyle: "dashed",
+    borderRadius: 10,
+    paddingVertical: 10,
+  },
+  addFoodText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    textAlign: "center",
+  },
   searchLauncher: {
     backgroundColor: colors.white,
     borderWidth: 1,
@@ -4067,10 +4100,18 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginTop: 4,
   },
+  hydrationTotalsWrap: {
+    alignItems: "flex-end",
+    gap: 2,
+  },
   hydrationTotal: {
-    color: colors.blue,
+    color: colors.accentPrimary,
     fontSize: 15,
     fontWeight: "700",
+  },
+  hydrationGoalText: {
+    color: colors.textSecondary,
+    fontSize: 13,
   },
   hydrationActionRow: {
     flexDirection: "row",
@@ -4087,17 +4128,22 @@ const styles = StyleSheet.create({
   hydrationFill: {
     height: "100%",
     borderRadius: radii.round,
-    backgroundColor: "#74B8C2",
+    backgroundColor: "#6BA3BE",
   },
   hydrationStepButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#EEF7F8",
+    backgroundColor: colors.white,
     borderWidth: 1,
-    borderColor: "rgba(116, 184, 194, 0.26)",
+    borderColor: colors.border,
+  },
+  hydrationStepSymbol: {
+    color: colors.accentPrimary,
+    fontSize: 20,
+    fontWeight: "300",
   },
   pressableFeedback: {
     opacity: 0.7,

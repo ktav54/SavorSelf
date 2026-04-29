@@ -1,5 +1,5 @@
 import { useFocusEffect } from "@react-navigation/native";
-import { addDays, format, isToday } from "date-fns";
+import { addDays, format, isToday, isYesterday } from "date-fns";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
@@ -35,6 +35,16 @@ const dailySubtitles = [
   "One honest check-in is worth more than perfection.",
   "What you eat today shapes how you feel tomorrow.",
 ] as const;
+
+const moodSummaryOptions = [
+  { score: 1, emoji: "😔", label: "Low" },
+  { score: 2, emoji: "😕", label: "Okay" },
+  { score: 3, emoji: "😐", label: "Neutral" },
+  { score: 4, emoji: "🙂", label: "Good" },
+  { score: 5, emoji: "😄", label: "Great" },
+] as const;
+
+const energySummaryOptions = ["Drained", "Low", "Okay", "Good", "Wired"] as const;
 
 export default function LogScreen() {
   const profile = useAppStore((state: AppState) => state.profile);
@@ -167,8 +177,14 @@ export default function LogScreen() {
   };
 
   const todaysMood = moodLogs[0] ?? null;
-  const logHeaderDate = format(selectedDate, "EEE MMM d yyyy").toUpperCase();
   const todaySubtitle = dailySubtitles[new Date().getDay() % dailySubtitles.length];
+  const logHeaderDate = isSelectedDateToday
+    ? "Today"
+    : isYesterday(selectedDate)
+      ? "Yesterday"
+      : format(selectedDate, "EEE, MMM d");
+  const pastDayMoodOption = moodSummaryOptions.find((option) => option.score === todaysMood?.moodScore);
+  const pastDayEnergyLabel = todaysMood ? energySummaryOptions[(todaysMood.energyScore ?? 3) - 1] : "";
   const generalFoodTitle = mealContext
     ? `What did you eat for ${mealContext}?`
     : isSelectedDateToday
@@ -250,7 +266,7 @@ export default function LogScreen() {
           <View style={styles.logHeader}>
             <View style={styles.logHeaderDateRow}>
               <Pressable style={({ pressed }) => [styles.dateNavButton, pressed && styles.dateNavPressed]} onPress={goToPreviousDay}>
-                <Text style={styles.dateNavText}>{"<"}</Text>
+                <Text style={styles.dateNavText}>{"‹"}</Text>
               </Pressable>
               <Text style={styles.logHeaderDate}>{logHeaderDate}</Text>
               <Pressable
@@ -262,21 +278,35 @@ export default function LogScreen() {
                 onPress={goToNextDay}
                 disabled={isSelectedDateToday}
               >
-                <Text style={[styles.dateNavText, isSelectedDateToday && styles.dateNavTextDisabled]}>{">"}</Text>
+                <Text style={[styles.dateNavText, isSelectedDateToday && styles.dateNavTextDisabled]}>{"›"}</Text>
               </Pressable>
             </View>
             <Text style={styles.logHeaderTitle}>{`Hi${profile?.name ? `, ${profile.name}` : ""}`}</Text>
             <Text style={styles.logHeaderSubtitle}>
               {isSelectedDateToday
                 ? todaySubtitle
-                : `Looking back at ${format(selectedDate, "MMMM d")}. Food comes first here, with your saved mood note tucked above.`}
+                : `Looking back at ${format(selectedDate, "MMMM d")}.`}
             </Text>
           </View>
 
-          {isSelectedDateToday ? <MoodCheckInStrip /> : <MoodCheckInStrip compact />}
+          {isSelectedDateToday ? <MoodCheckInStrip /> : null}
+
+          {!isSelectedDateToday && todaysMood && pastDayMoodOption ? (
+            <View style={styles.pastMoodSummaryCard}>
+              <View style={styles.pastMoodSummaryLeft}>
+                <View style={styles.pastMoodEmojiWrap}>
+                  <Text style={styles.pastMoodEmoji}>{pastDayMoodOption.emoji}</Text>
+                </View>
+                <Text style={styles.pastMoodSummaryText}>
+                  {`Feeling ${pastDayMoodOption.label} · ${pastDayEnergyLabel}`}
+                </Text>
+              </View>
+              <Text style={styles.pastMoodSummaryDate}>{format(selectedDate, "EEE, MMM d")}</Text>
+            </View>
+          ) : null}
 
           {isSelectedDateToday ? <MacroSummaryBar /> : null}
-          <FoodSearchLauncher onPress={openGeneralFoodSearch} />
+          {isSelectedDateToday ? <FoodSearchLauncher onPress={openGeneralFoodSearch} /> : null}
           <FoodSearchCard
             visible={foodSearchVisible}
             onRequestClose={closeFoodSearch}
@@ -287,7 +317,7 @@ export default function LogScreen() {
           <FoodLogSection mealType="lunch" logs={foodLogs.filter((item: FoodLog) => item.mealType === "lunch")} onAddFood={() => openFoodSearch("lunch")} />
           <FoodLogSection mealType="dinner" logs={foodLogs.filter((item: FoodLog) => item.mealType === "dinner")} onAddFood={() => openFoodSearch("dinner")} />
           <FoodLogSection mealType="snack" logs={foodLogs.filter((item: FoodLog) => item.mealType === "snack")} onAddFood={() => openFoodSearch("snack")} />
-          {!isSelectedDateToday ? <MacroSummaryBar /> : null}
+          {!isSelectedDateToday ? <FoodSearchLauncher onPress={openGeneralFoodSearch} /> : null}
           <HydrationSummaryCard />
           <QuickLogStrip />
         </View>
@@ -359,7 +389,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 14,
     letterSpacing: 1,
-    textTransform: "uppercase",
     fontWeight: "600",
     flex: 1,
     textAlign: "center",
@@ -374,15 +403,16 @@ const styles = StyleSheet.create({
   },
   dateNavButtonDisabled: {
     backgroundColor: "#F5F1EC",
+    opacity: 0.3,
   },
   dateNavPressed: {
     opacity: 0.7,
   },
   dateNavText: {
-    color: colors.accentPrimary,
-    fontSize: 18,
-    lineHeight: 18,
-    fontWeight: "700",
+    color: colors.textPrimary,
+    fontSize: 28,
+    lineHeight: 28,
+    fontWeight: "300",
   },
   dateNavTextDisabled: {
     color: colors.textSecondary,
@@ -399,6 +429,44 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 24,
     maxWidth: "94%",
+  },
+  pastMoodSummaryCard: {
+    backgroundColor: colors.white,
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  pastMoodSummaryLeft: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  pastMoodEmojiWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#F6EDE4",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pastMoodEmoji: {
+    fontSize: 18,
+  },
+  pastMoodSummaryText: {
+    flex: 1,
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  pastMoodSummaryDate: {
+    color: colors.textSecondary,
+    fontSize: 13,
   },
   entryScreen: {
     flex: 1,
