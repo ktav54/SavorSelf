@@ -1686,6 +1686,7 @@ export function FoodSearchCard({
   const [scanError, setScanError] = useState("");
   const scannedRef = useRef(false);
   const skeletonOpacity = useRef(new Animated.Value(0.4)).current;
+  const scanLineAnim = useRef(new Animated.Value(0)).current;
   const unitOptions = useMemo(
     () => getPreferredUnitOptions(profile?.preferredUnits),
     [profile?.preferredUnits]
@@ -1729,6 +1730,35 @@ export function FoodSearchCard({
       loop.stop();
     };
   }, [loading, skeletonOpacity]);
+
+  useEffect(() => {
+    if (!scannerOpen) {
+      scanLineAnim.stopAnimation();
+      scanLineAnim.setValue(0);
+      return;
+    }
+
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(scanLineAnim, {
+          toValue: 200,
+          duration: 1500,
+          useNativeDriver: true,
+        }),
+        Animated.timing(scanLineAnim, {
+          toValue: 0,
+          duration: 1500,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    loop.start();
+
+    return () => {
+      loop.stop();
+    };
+  }, [scannerOpen, scanLineAnim]);
 
   const preview = useMemo(() => {
     if (!selectedFood) {
@@ -1833,11 +1863,13 @@ export function FoodSearchCard({
     try {
       const product = await fetchBarcodeProduct(data);
       if (!product) {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
         setScanError("No product found for that barcode. Try searching by name.");
         scannedRef.current = false;
         return;
       }
 
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setScanError("");
       setSaveError("");
       setSelectedFood({
@@ -2176,30 +2208,58 @@ export function FoodSearchCard({
           scannedRef.current = false;
         }}
       >
-        <View style={styles.scannerScreen}>
+        <View style={styles.scannerContainer}>
           {cameraPermission ? (
-            <CameraView
-              style={styles.scannerCamera}
-              facing="back"
-              barcodeScannerSettings={{ barcodeTypes: ["ean13", "ean8", "upc_a", "upc_e"] }}
-              onBarcodeScanned={handleBarcodeScan}
-            />
+            <>
+              <CameraView
+                style={StyleSheet.absoluteFill}
+                facing="back"
+                barcodeScannerSettings={{ barcodeTypes: ["ean13", "ean8", "upc_a", "upc_e"] }}
+                onBarcodeScanned={handleBarcodeScan}
+              />
+              <View style={styles.scannerOverlay}>
+                <View style={styles.scannerDark} />
+                <View style={styles.scannerMiddleRow}>
+                  <View style={styles.scannerDarkSide} />
+                  <View style={styles.scannerWindow}>
+                    <View style={[styles.corner, styles.cornerTL]} />
+                    <View style={[styles.corner, styles.cornerTR]} />
+                    <View style={[styles.corner, styles.cornerBL]} />
+                    <View style={[styles.corner, styles.cornerBR]} />
+                    <Animated.View
+                      style={[styles.scanLine, { transform: [{ translateY: scanLineAnim }] }]}
+                    />
+                  </View>
+                  <View style={styles.scannerDarkSide} />
+                </View>
+                <View style={[styles.scannerDark, styles.scannerBottom]}>
+                  <Text style={styles.scannerInstruction}>Point at a barcode to scan</Text>
+                  <Pressable
+                    style={styles.scannerCancel}
+                    onPress={() => {
+                      setScannerOpen(false);
+                      scannedRef.current = false;
+                    }}
+                  >
+                    <Text style={styles.scannerCancelText}>Cancel</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </>
           ) : (
             <View style={styles.scannerFallback}>
               <Text style={styles.errorText}>Camera permission is needed to scan barcodes.</Text>
+              <Pressable
+                style={styles.scannerCancel}
+                onPress={() => {
+                  setScannerOpen(false);
+                  scannedRef.current = false;
+                }}
+              >
+                <Text style={styles.scannerCancelText}>Cancel</Text>
+              </Pressable>
             </View>
           )}
-          <View style={styles.scannerFooter}>
-            <Pressable
-              style={styles.scannerCancelButton}
-              onPress={() => {
-                setScannerOpen(false);
-                scannedRef.current = false;
-              }}
-            >
-              <Text style={styles.scannerCancelText}>Cancel</Text>
-            </Pressable>
-          </View>
         </View>
       </Modal>
       <Modal visible={Boolean(selectedFood)} animationType="slide" transparent onRequestClose={closeModal}>
@@ -2437,19 +2497,36 @@ export function FoodSearchCard({
 
 export function FoodSearchLauncher({
   onPress,
+  onScan,
 }: {
   onPress?: () => void;
+  onScan?: () => void;
 }) {
+  const handleScan = onScan ?? onPress;
+
   return (
-    <Pressable style={({ pressed }) => [styles.searchLauncher, pressed && styles.pressableFeedback]} onPress={onPress}>
-      <View style={styles.searchLauncherCopy}>
-        <Text style={styles.searchLauncherEyebrow}>Add Food</Text>
+    <Pressable style={({ pressed }) => [styles.searchLauncher, { opacity: pressed ? 0.9 : 1 }]} onPress={onPress}>
+      <View style={styles.searchLauncherLeft}>
+        <Text style={styles.searchLauncherEyebrow}>ADD FOOD</Text>
         <Text style={styles.searchLauncherTitle}>What did you eat?</Text>
-        <Text style={styles.searchLauncherSubtitle}>
-          Tap to search for a food, choose your meal, and add it to your log.
+        <Text style={styles.searchLauncherSub}>
+          Search, scan a barcode, or tell the coach
         </Text>
       </View>
-      <Text style={styles.searchLauncherAction}>Open search</Text>
+      <View style={styles.searchLauncherActions}>
+        <View style={styles.searchIconCircle}>
+          <Text style={styles.searchIconText}>🔍</Text>
+        </View>
+        <Pressable
+          style={({ pressed }) => [styles.barcodeShortcut, pressed && styles.pressableFeedback]}
+          onPress={(event) => {
+            event.stopPropagation();
+            handleScan?.();
+          }}
+        >
+          <Text style={styles.barcodeShortcutText}>📷 Scan</Text>
+        </Pressable>
+      </View>
     </Pressable>
   );
 }
@@ -3820,11 +3897,13 @@ const styles = StyleSheet.create({
   },
   searchLauncher: {
     backgroundColor: colors.white,
+    borderRadius: 16,
+    padding: 20,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 16,
-    padding: spacing.lg,
-    gap: spacing.sm,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     ...(Platform.OS === "ios"
       ? {
           shadowColor: "#2C1A0E",
@@ -3834,29 +3913,54 @@ const styles = StyleSheet.create({
         }
       : {}),
   },
-  searchLauncherCopy: {
-    gap: 4,
+  searchLauncherLeft: {
+    flex: 1,
   },
   searchLauncherEyebrow: {
-    color: colors.textSecondary,
-    fontSize: 12,
+    fontSize: 11,
+    fontWeight: "600",
+    color: colors.accentPrimary,
+    letterSpacing: 1,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    marginBottom: 4,
   },
   searchLauncherTitle: {
-    color: colors.textPrimary,
-    fontSize: 22,
-    fontWeight: "600",
-  },
-  searchLauncherSubtitle: {
-    color: colors.textSecondary,
-    fontSize: 15,
-    lineHeight: 24,
-  },
-  searchLauncherAction: {
-    color: colors.accentPrimary,
-    fontSize: 15,
+    fontSize: 20,
     fontWeight: "700",
+    color: colors.textPrimary,
+    letterSpacing: -0.3,
+    marginBottom: 4,
+  },
+  searchLauncherSub: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 20,
+  },
+  searchLauncherActions: {
+    gap: 8,
+    alignItems: "flex-end",
+  },
+  searchIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#F6EDE4",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  searchIconText: {
+    fontSize: 20,
+  },
+  barcodeShortcut: {
+    backgroundColor: "#F6EDE4",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  barcodeShortcutText: {
+    fontSize: 13,
+    color: colors.accentPrimary,
+    fontWeight: "600",
   },
   modalBackdrop: {
     flex: 1,
@@ -3873,12 +3977,79 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     maxHeight: "85%",
   },
-  scannerScreen: {
+  scannerContainer: {
     flex: 1,
-    backgroundColor: "#000",
+    backgroundColor: "black",
   },
-  scannerCamera: {
+  scannerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    flexDirection: "column",
+  },
+  scannerDark: {
     flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+  },
+  scannerBottom: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 20,
+    paddingBottom: 40,
+  },
+  scannerMiddleRow: {
+    flexDirection: "row",
+    height: 220,
+  },
+  scannerDarkSide: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+  },
+  scannerWindow: {
+    width: 240,
+    height: 220,
+    backgroundColor: "transparent",
+    overflow: "hidden",
+  },
+  corner: {
+    position: "absolute",
+    width: 20,
+    height: 20,
+    borderColor: colors.white,
+  },
+  cornerTL: {
+    top: 0,
+    left: 0,
+    borderTopWidth: 3,
+    borderLeftWidth: 3,
+    borderTopLeftRadius: 4,
+  },
+  cornerTR: {
+    top: 0,
+    right: 0,
+    borderTopWidth: 3,
+    borderRightWidth: 3,
+    borderTopRightRadius: 4,
+  },
+  cornerBL: {
+    bottom: 0,
+    left: 0,
+    borderBottomWidth: 3,
+    borderLeftWidth: 3,
+    borderBottomLeftRadius: 4,
+  },
+  cornerBR: {
+    bottom: 0,
+    right: 0,
+    borderBottomWidth: 3,
+    borderRightWidth: 3,
+    borderBottomRightRadius: 4,
+  },
+  scanLine: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    height: 2,
+    backgroundColor: colors.accentPrimary,
+    opacity: 0.8,
   },
   scannerFallback: {
     flex: 1,
@@ -3886,23 +4057,26 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: spacing.lg,
     backgroundColor: colors.background,
+    gap: 20,
   },
-  scannerFooter: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: spacing.xl,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  scannerCancelButton: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: 8,
-  },
-  scannerCancelText: {
-    color: colors.textSecondary,
+  scannerInstruction: {
+    color: colors.white,
     fontSize: 15,
     fontWeight: "500",
+    textAlign: "center",
+  },
+  scannerCancel: {
+    backgroundColor: "rgba(255,255,255,0.15)",
+    borderRadius: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.3)",
+  },
+  scannerCancelText: {
+    color: colors.white,
+    fontSize: 15,
+    fontWeight: "600",
   },
   modalActions: {
     gap: spacing.sm,
