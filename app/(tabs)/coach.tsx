@@ -1,6 +1,6 @@
 import { useLayoutEffect } from "react";
 import { Ionicons } from "@expo/vector-icons";
-import { Pressable, View } from "react-native";
+import { Alert, Pressable, View } from "react-native";
 import { useNavigation } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { CoachChat } from "@/components/coach";
@@ -10,6 +10,21 @@ import { useAppStore, type AppState } from "@/store/useAppStore";
 export default function CoachScreen() {
   const navigation = useNavigation();
   const clearConversation = useAppStore((state: AppState) => state.clearConversation);
+
+  const resetConversation = () => {
+    Alert.alert(
+      "Start fresh?",
+      "This will clear your current conversation.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear",
+          style: "destructive",
+          onPress: () => clearConversation(),
+        },
+      ]
+    );
+  };
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -23,7 +38,7 @@ export default function CoachScreen() {
         <Pressable
           onPress={() => {
             void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            clearConversation();
+            resetConversation();
           }}
           style={({ pressed }) => ({
             marginRight: 14,

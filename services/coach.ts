@@ -3,6 +3,9 @@ import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase";
 
 type CoachHistoryMessage = { role: "user" | "assistant"; content: string };
 
+const COACH_RESPONSE_STYLE_INSTRUCTIONS =
+  "Never offer unsolicited emotional commentary after logging food. When food is logged, confirm briefly and move on. Never say things like 'getting this logged matters' or 'showing up counts' unless the user explicitly asks for encouragement. Keep responses concise — 1-3 sentences for most replies. Never use filler phrases like 'Absolutely!', 'Great question!', 'Of course!', 'Certainly!', or 'Sure thing!'.";
+
 function normalizeCoachPayload<T extends { reply?: string }>(payload: T | string): T {
   let normalized: unknown = payload;
 
@@ -79,7 +82,10 @@ export async function sendCoachMessage(
     { intent?: string; reply?: string }
   >("ai-coach", {
     message,
-    context,
+    context: {
+      ...context,
+      coachResponseStyle: COACH_RESPONSE_STYLE_INSTRUCTIONS,
+    },
     history,
     mode: "simple_chat",
   });
@@ -128,7 +134,10 @@ export async function parseFoodMessage(input: {
     message: input.message,
     pendingProposal: input.pendingProposal ?? null,
     history: input.history ?? [],
-    context: input.context ?? {},
+    context: {
+      ...(input.context ?? {}),
+      coachResponseStyle: COACH_RESPONSE_STYLE_INSTRUCTIONS,
+    },
   });
 
   return normalizeCoachPayload(response);

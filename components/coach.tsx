@@ -1,5 +1,6 @@
 ﻿// components/coach.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
+import { format } from "date-fns";
 import {
   ActivityIndicator,
   Animated,
@@ -19,7 +20,7 @@ import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase";
 import { formatFoodName } from "@/lib/utils";
 import { parseFoodMessage, sendCoachMessage } from "@/services/coach";
 import { useAppStore, type AppState } from "@/store/useAppStore";
-import type { AiConversationMessage, CoachFoodItem, CoachFoodProposal, FoodMoodInsight, FoodUnit } from "@/types/models";
+import type { AiConversationMessage, CoachFoodItem, CoachFoodProposal, FoodMoodInsight, FoodUnit, MealType } from "@/types/models";
 
 type AdjustDraftItem = {
   name: string;
@@ -166,6 +167,14 @@ function getQuantityParts(quantity: number) {
     whole: String(whole),
     fraction: closestFraction.label,
   };
+}
+
+function guessMealType(): MealType {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 11) return "breakfast";
+  if (hour >= 11 && hour < 15) return "lunch";
+  if (hour >= 15 && hour < 18) return "snack";
+  return "dinner";
 }
 
 function formatQuantityLabel(whole: string, fraction: string) {
@@ -403,7 +412,7 @@ export function CoachChat() {
             const proposal: CoachFoodProposal = {
               isFoodLogging: true,
               needsClarification: false,
-              mealType: result.mealType ?? "snack",
+              mealType: result.mealType ?? pendingProposal?.mealType ?? guessMealType(),
               items: result.items,
               sourceMessage: message,
             };
@@ -881,6 +890,9 @@ export function CoachChat() {
                 {extractReply(message.content)}
               </Text>
             </View>
+            <Text style={[styles.messageTime, message.role === "user" ? styles.messageTimeUser : styles.messageTimeAssistant]}>
+              {format(new Date(message.timestamp), "h:mm a")}
+            </Text>
 
             {message.role === "assistant" && message.foodProposal ? (
               <View style={styles.proposalBubble}>
@@ -1005,6 +1017,12 @@ export function CoachChat() {
         ) : null}
       </ScrollView>
 
+      {draft.length > 400 ? (
+        <Text style={[styles.charCount, draft.length > 450 && styles.charCountWarning]}>
+          {draft.length}/500
+        </Text>
+      ) : null}
+
       <View style={styles.inputBar}>
         <View style={styles.inputFieldWrap}>
           <TextInput
@@ -1018,11 +1036,6 @@ export function CoachChat() {
             returnKeyType="send"
             onSubmitEditing={() => void handleSend()}
           />
-          {draft.length > 400 ? (
-            <Text style={styles.inputHelperText}>
-              Message is getting long - consider sending in shorter messages for best results.
-            </Text>
-          ) : null}
         </View>
         <Pressable
           style={[styles.sendButton, (!draft.trim() || sending) && styles.sendButtonDisabled]}
@@ -1117,6 +1130,18 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     letterSpacing: 0.5,
     marginBottom: 6,
+  },
+  messageTime: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginTop: 3,
+    opacity: 0.7,
+  },
+  messageTimeUser: {
+    alignSelf: "flex-end",
+  },
+  messageTimeAssistant: {
+    alignSelf: "flex-start",
   },
   bubbleText: { color: colors.textPrimary, fontSize: 16, lineHeight: 24 },
   userBubbleText: { color: colors.white },
@@ -1481,6 +1506,16 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
     gap: 10,
   },
+  charCount: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    textAlign: "right",
+    paddingRight: spacing.md,
+    paddingBottom: 4,
+  },
+  charCountWarning: {
+    color: colors.accentPrimary,
+  },
   inputFieldWrap: {
     flex: 1,
     gap: 6,
@@ -1498,10 +1533,6 @@ const styles = StyleSheet.create({
     maxHeight: 120,
     lineHeight: 22,
     textAlignVertical: "top",
-  },
-  inputHelperText: {
-    color: colors.accentPrimary,
-    fontSize: 12,
   },
   sendButton: {
     width: 40,
