@@ -1,5 +1,6 @@
 import { useFocusEffect } from "@react-navigation/native";
 import { addDays, format, isToday, isYesterday } from "date-fns";
+import { useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
@@ -7,6 +8,7 @@ import {
   Image,
   Modal,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -47,18 +49,24 @@ const moodSummaryOptions = [
 const energySummaryOptions = ["Drained", "Low", "Okay", "Good", "Wired"] as const;
 
 export default function LogScreen() {
+  const router = useRouter();
   const profile = useAppStore((state: AppState) => state.profile);
   const foodLogs = useAppStore((state: AppState) => state.foodLogs);
   const moodLogs = useAppStore((state: AppState) => state.moodLogs);
+  const insights = useAppStore((state: AppState) => state.insights);
+  const foodMoodSnapshot = useAppStore((state: AppState) => state.foodMoodSnapshot);
+  const foodMoodTrend = useAppStore((state: AppState) => state.foodMoodTrend);
   const selectedDate = useAppStore((state: AppState) => state.selectedDate);
   const setSelectedDate = useAppStore((state: AppState) => state.setSelectedDate);
   const loadTodayMoodLog = useAppStore((state: AppState) => state.loadTodayMoodLog);
   const loadTodayFoodLogs = useAppStore((state: AppState) => state.loadTodayFoodLogs);
   const loadTodayQuickLog = useAppStore((state: AppState) => state.loadTodayQuickLog);
+  const loadFoodMoodInsights = useAppStore((state: AppState) => state.loadFoodMoodInsights);
   const [defaultMealType, setDefaultMealType] = useState<MealType>("breakfast");
   const [mealContext, setMealContext] = useState<MealType | null>(null);
   const [foodSearchVisible, setFoodSearchVisible] = useState(false);
   const [entryStep, setEntryStep] = useState<EntryStep>("hidden");
+  const [refreshing, setRefreshing] = useState(false);
   const hasShownEntryThisSession = useRef(false);
   const lastLoaded = useRef<string | null>(null);
   const touchStartX = useRef(0);
@@ -193,6 +201,9 @@ export default function LogScreen() {
       : format(selectedDate, "EEE, MMM d");
   const pastDayMoodOption = moodSummaryOptions.find((option) => option.score === todaysMood?.moodScore);
   const pastDayEnergyLabel = todaysMood ? energySummaryOptions[(todaysMood.energyScore ?? 3) - 1] : "";
+  const hasAnyFoodMoodHistory =
+    insights.length > 0 || foodMoodTrend.length > 0 || foodMoodSnapshot !== null;
+  const isFirstTimeEmpty = isSelectedDateToday && foodLogs.length === 0 && !hasAnyFoodMoodHistory;
   const generalFoodTitle = mealContext
     ? `What did you eat for ${mealContext}?`
     : isSelectedDateToday
@@ -254,24 +265,54 @@ export default function LogScreen() {
     }
   }, [isSelectedDateToday, selectedDate, setSelectedDate]);
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    lastLoaded.current = null;
+    const currentDate = useAppStore.getState().selectedDate;
+
+    try {
+      await Promise.all([
+        loadTodayMoodLog(currentDate),
+        loadTodayFoodLogs(currentDate),
+        loadTodayQuickLog(),
+        loadFoodMoodInsights(),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadFoodMoodInsights, loadTodayFoodLogs, loadTodayMoodLog, loadTodayQuickLog]);
+
   return (
     <>
-      <Screen scroll>
-        <View
-          style={styles.screenStack}
-          onTouchStart={(event) => {
-            touchStartX.current = event.nativeEvent.pageX;
-          }}
-          onTouchEnd={(event) => {
-            const diff = touchStartX.current - event.nativeEvent.pageX;
-            if (diff > 60) {
-              goToNextDay();
-            } else if (diff < -60) {
-              goToPreviousDay();
-            }
-          }}
+      <Screen>
+        <ScrollView
+          contentContainerStyle={styles.screenScrollContent}
+          keyboardDismissMode="on-drag"
+          keyboardShouldPersistTaps="handled"
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => void onRefresh()}
+              tintColor={colors.accentPrimary}
+              colors={[colors.accentPrimary]}
+            />
+          }
         >
-          <View style={styles.logHeader}>
+          <View
+            style={styles.screenStack}
+            onTouchStart={(event) => {
+              touchStartX.current = event.nativeEvent.pageX;
+            }}
+            onTouchEnd={(event) => {
+              const diff = touchStartX.current - event.nativeEvent.pageX;
+              if (diff > 60) {
+                goToNextDay();
+              } else if (diff < -60) {
+                goToPreviousDay();
+              }
+            }}
+          >
+            <View style={styles.logHeader}>
             <View style={styles.logHeaderDateRow}>
               <Pressable style={({ pressed }) => [styles.dateNavButton, pressed && styles.dateNavPressed]} onPress={goToPreviousDay} accessibilityLabel="Previous day" accessibilityRole="button">
                 <Text style={styles.dateNavText}>{"‹"}</Text>
@@ -315,22 +356,35 @@ export default function LogScreen() {
             </View>
           ) : null}
 
-          {isSelectedDateToday ? <MacroSummaryBar /> : null}
-          {isSelectedDateToday ? <FoodSearchLauncher onPress={openGeneralFoodSearch} /> : null}
-          <FoodSearchCard
-            visible={foodSearchVisible}
-            onRequestClose={closeFoodSearch}
-            defaultMealType={defaultMealType}
-            title={generalFoodTitle}
-          />
-          <FoodLogSection mealType="breakfast" logs={foodLogs.filter((item: FoodLog) => item.mealType === "breakfast")} onAddFood={() => openFoodSearch("breakfast")} />
-          <FoodLogSection mealType="lunch" logs={foodLogs.filter((item: FoodLog) => item.mealType === "lunch")} onAddFood={() => openFoodSearch("lunch")} />
-          <FoodLogSection mealType="dinner" logs={foodLogs.filter((item: FoodLog) => item.mealType === "dinner")} onAddFood={() => openFoodSearch("dinner")} />
-          <FoodLogSection mealType="snack" logs={foodLogs.filter((item: FoodLog) => item.mealType === "snack")} onAddFood={() => openFoodSearch("snack")} />
-          {!isSelectedDateToday ? <FoodSearchLauncher onPress={openGeneralFoodSearch} /> : null}
-          <HydrationSummaryCard />
-          <QuickLogStrip />
-        </View>
+            {isSelectedDateToday ? <MacroSummaryBar /> : null}
+            {isSelectedDateToday ? <FoodSearchLauncher onPress={openGeneralFoodSearch} /> : null}
+            {isFirstTimeEmpty ? (
+              <View style={styles.firstTimeEmpty}>
+                <Text style={styles.firstTimeEmoji}>🌱</Text>
+                <Text style={styles.firstTimeTitle}>Your log is ready</Text>
+                <Text style={styles.firstTimeSub}>
+                  Add your first meal to start building your gut-brain picture. The coach can log food just from a description.
+                </Text>
+                <Pressable style={styles.firstTimeCTA} onPress={() => router.push("/(tabs)/coach")}>
+                  <Text style={styles.firstTimeCTAText}>Try the coach →</Text>
+                </Pressable>
+              </View>
+            ) : null}
+            <FoodSearchCard
+              visible={foodSearchVisible}
+              onRequestClose={closeFoodSearch}
+              defaultMealType={defaultMealType}
+              title={generalFoodTitle}
+            />
+            <FoodLogSection mealType="breakfast" logs={foodLogs.filter((item: FoodLog) => item.mealType === "breakfast")} onAddFood={() => openFoodSearch("breakfast")} />
+            <FoodLogSection mealType="lunch" logs={foodLogs.filter((item: FoodLog) => item.mealType === "lunch")} onAddFood={() => openFoodSearch("lunch")} />
+            <FoodLogSection mealType="dinner" logs={foodLogs.filter((item: FoodLog) => item.mealType === "dinner")} onAddFood={() => openFoodSearch("dinner")} />
+            <FoodLogSection mealType="snack" logs={foodLogs.filter((item: FoodLog) => item.mealType === "snack")} onAddFood={() => openFoodSearch("snack")} />
+            {!isSelectedDateToday ? <FoodSearchLauncher onPress={openGeneralFoodSearch} /> : null}
+            <HydrationSummaryCard />
+            <QuickLogStrip />
+          </View>
+        </ScrollView>
       </Screen>
 
       <Modal visible={entryStep === "welcome"} animationType="fade" transparent>
@@ -387,6 +441,10 @@ export default function LogScreen() {
 }
 
 const styles = StyleSheet.create({
+  screenScrollContent: {
+    padding: spacing.lg,
+    paddingBottom: spacing.xl,
+  },
   screenStack: {
     gap: 20,
   },
@@ -482,6 +540,40 @@ const styles = StyleSheet.create({
   pastMoodSummaryDate: {
     color: colors.textSecondary,
     fontSize: 13,
+  },
+  firstTimeEmpty: {
+    alignItems: "center",
+    paddingVertical: 32,
+    paddingHorizontal: 24,
+  },
+  firstTimeEmoji: {
+    fontSize: 48,
+    marginBottom: 16,
+  },
+  firstTimeTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: colors.textPrimary,
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  firstTimeSub: {
+    fontSize: 15,
+    color: colors.textSecondary,
+    lineHeight: 24,
+    textAlign: "center",
+    marginBottom: 20,
+  },
+  firstTimeCTA: {
+    backgroundColor: "#F6EDE4",
+    borderRadius: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+  },
+  firstTimeCTAText: {
+    fontSize: 15,
+    color: colors.accentPrimary,
+    fontWeight: "600",
   },
   entryScreen: {
     flex: 1,

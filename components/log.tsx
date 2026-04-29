@@ -2098,7 +2098,12 @@ export function FoodSearchCard({
       <Pressable style={({ pressed }) => [styles.addMealButton, pressed && styles.pressableFeedback]} onPress={() => void requestAndOpenScanner()}>
         <Text style={styles.addMealText}>+ Scan barcode</Text>
       </Pressable>
-      {scanError ? <Text style={styles.errorText}>{scanError}</Text> : null}
+      {scanError ? (
+        <View style={styles.searchError}>
+          <Text style={styles.searchErrorText}>🔍 {scanError}</Text>
+          <Text style={styles.searchErrorSub}>Try a simpler search term.</Text>
+        </View>
+      ) : null}
       <PrimaryButton label={loading ? "Searching..." : "Search"} onPress={() => void runSearch()} />
       <PrimaryButton
         label="Add manually"
@@ -2119,7 +2124,12 @@ export function FoodSearchCard({
           ))}
         </View>
       ) : null}
-      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+      {error ? (
+        <View style={styles.searchError}>
+          <Text style={styles.searchErrorText}>🔍 {error}</Text>
+          <Text style={styles.searchErrorSub}>Try a simpler search term.</Text>
+        </View>
+      ) : null}
         {results.length ? (
           <View style={styles.searchResults}>
             {results.map((item) => {
@@ -3608,6 +3618,24 @@ const styles = StyleSheet.create({
   errorText: {
     color: colors.accentPrimary,
     fontSize: 14,
+  },
+  searchError: {
+    backgroundColor: "#F6EDE4",
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 4,
+  },
+  searchErrorText: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    lineHeight: 22,
+    fontWeight: "600",
+  },
+  searchErrorSub: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 20,
   },
   searchResults: {
     gap: spacing.sm,

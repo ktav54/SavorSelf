@@ -320,6 +320,11 @@ export function StreakHeroCard() {
   const moodLogs = useAppStore((state: AppState) => state.moodLogs);
   const streak = useMemo(() => getCurrentMoodStreak(moodLogs), [moodLogs]);
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const milestones: Record<number, string> = {
+    3: "3 days strong 🎉",
+    7: "One week! 🔥",
+    14: "Two weeks! 🌟",
+  };
 
   useEffect(() => {
     if (streak <= 0) {
@@ -365,6 +370,7 @@ export function StreakHeroCard() {
 
   const nextMilestone = getNextMilestone(streak);
   const progress = Math.min((streak / nextMilestone) * 100, 100);
+  const milestone = milestones[streak];
 
   return (
     <SurfaceCard>
@@ -375,6 +381,11 @@ export function StreakHeroCard() {
           <Animated.Text style={[styles.flameEmoji, { transform: [{ scale: pulseAnim }] }]}>🔥</Animated.Text>
         </View>
         <Text style={styles.streakLabel}>day streak</Text>
+        {milestone ? (
+          <View style={styles.milestoneBanner}>
+            <Text style={styles.milestoneText}>{milestone}</Text>
+          </View>
+        ) : null}
         <View style={styles.gateProgressWrap}>
           <Text style={styles.gateProgressLabel}>
             {streak} / {nextMilestone} days
@@ -566,7 +577,11 @@ export function DailyReadCard() {
       ) : loading ? (
         <Text style={styles.note}>Putting together your daily read...</Text>
       ) : errorMessage ? (
-        <Text style={styles.note}>{errorMessage}</Text>
+        <View style={styles.readError}>
+          <Text style={styles.readErrorEmoji}>🌥️</Text>
+          <Text style={styles.readErrorText}>Couldn't generate your daily read right now.</Text>
+          <Text style={styles.readErrorSub}>Check back after logging more today.</Text>
+        </View>
       ) : (
         <View style={styles.dailyReadList}>
           {(readSentences.length ? readSentences : [reply]).map((sentence, index) => (
@@ -1420,6 +1435,19 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignSelf: "flex-start",
   },
+  milestoneBanner: {
+    backgroundColor: "rgba(196, 98, 45, 0.12)",
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    alignSelf: "flex-start",
+    marginTop: 8,
+  },
+  milestoneText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.accentPrimary,
+  },
   heroScore: {
     fontSize: 80,
     fontWeight: "800",
@@ -1508,6 +1536,27 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 26,
     color: colors.textPrimary,
+  },
+  readError: {
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 8,
+  },
+  readErrorEmoji: {
+    fontSize: 26,
+  },
+  readErrorText: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    lineHeight: 24,
+    textAlign: "center",
+    fontWeight: "600",
+  },
+  readErrorSub: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 22,
+    textAlign: "center",
   },
   heroBadgeRow: {
     alignItems: "flex-start",

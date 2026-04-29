@@ -20,6 +20,10 @@ import type { FoodLog } from "@/types/models";
 
 export default function FoodMoodScreen() {
   const loadFoodMoodInsights = useAppStore((state: AppState) => state.loadFoodMoodInsights);
+  const insightsLoading = useAppStore((state: AppState) => state.insightsLoading);
+  const insights = useAppStore((state: AppState) => state.insights);
+  const foodMoodSnapshot = useAppStore((state: AppState) => state.foodMoodSnapshot);
+  const foodMoodTrend = useAppStore((state: AppState) => state.foodMoodTrend);
   const moodLogs = useAppStore((state: AppState) => state.moodLogs);
   const foodLogs = useAppStore((state: AppState) => state.foodLogs);
   const cardAnims = useRef(
@@ -29,6 +33,7 @@ export default function FoodMoodScreen() {
     }))
   ).current;
   const gateAnim = useRef(new Animated.Value(0)).current;
+  const skeletonAnim = useRef(new Animated.Value(0.4)).current;
 
   const hasEnoughData = useMemo(() => {
     const cutoff = new Date();
@@ -68,6 +73,29 @@ export default function FoodMoodScreen() {
   }, [gateAnim]);
 
   useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(skeletonAnim, {
+          toValue: 0.8,
+          duration: 700,
+          useNativeDriver: true,
+        }),
+        Animated.timing(skeletonAnim, {
+          toValue: 0.4,
+          duration: 700,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    loop.start();
+
+    return () => {
+      loop.stop();
+    };
+  }, [skeletonAnim]);
+
+  useEffect(() => {
     if (hasEnoughData) {
       cardAnims.forEach((anim, i) => {
         anim.opacity.setValue(0);
@@ -90,6 +118,9 @@ export default function FoodMoodScreen() {
     }
   }, [cardAnims, hasEnoughData]);
 
+  const shouldShowLoadingState =
+    insightsLoading && insights.length === 0 && foodMoodTrend.length === 0 && foodMoodSnapshot === null;
+
   return (
     <Screen scroll>
       <View style={styles.screenStack}>
@@ -98,12 +129,19 @@ export default function FoodMoodScreen() {
           <Text style={styles.title}>Your gut-brain picture</Text>
           <Text style={styles.subtitle}>{format(new Date(), "EEEE, MMMM d")}</Text>
         </View>
-        {!hasEnoughData ? (
+        {shouldShowLoadingState ? (
+          <>
+            {[1, 2, 3].map((item) => (
+              <Animated.View key={item} style={[styles.skeletonCard, { opacity: skeletonAnim }]} />
+            ))}
+          </>
+        ) : null}
+        {!shouldShowLoadingState && !hasEnoughData ? (
           <Animated.View style={{ opacity: gateAnim, flex: 1 }}>
             <FoodMoodGate />
             <StreakHeroCard />
           </Animated.View>
-        ) : (
+        ) : !shouldShowLoadingState ? (
           <>
             <Animated.View
               style={{
@@ -156,7 +194,7 @@ export default function FoodMoodScreen() {
               <InsightFeed />
             </Animated.View>
           </>
-        )}
+        ) : null}
       </View>
     </Screen>
   );
@@ -187,5 +225,11 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 14,
     lineHeight: 22,
+  },
+  skeletonCard: {
+    height: 120,
+    borderRadius: 16,
+    backgroundColor: colors.border,
+    marginBottom: 16,
   },
 });
