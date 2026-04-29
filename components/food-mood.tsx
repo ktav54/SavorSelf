@@ -1,7 +1,7 @@
 import React, { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import * as Haptics from "expo-haptics";
 import { format } from "date-fns";
-import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Animated, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { colors, radii, spacing } from "@/constants/theme";
 import { SectionTitle } from "@/components/ui";
 import { sendCoachMessage } from "@/services/coach";
@@ -9,6 +9,13 @@ import { useAppStore, type AppState } from "@/store/useAppStore";
 import type { FoodLog, FoodMoodInsight, FoodMoodTrendPoint, MoodLog, QuickLog } from "@/types/models";
 
 const PATTERN_WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const MOOD_HISTORY_OPTIONS = [
+  { score: 1, emoji: "😔", label: "Low" },
+  { score: 2, emoji: "😕", label: "Okay" },
+  { score: 3, emoji: "😐", label: "Neutral" },
+  { score: 4, emoji: "🙂", label: "Good" },
+  { score: 5, emoji: "😄", label: "Great" },
+] as const;
 const DAILY_READ_PROMPT =
   "Give me a 2-sentence daily gut-brain read based on today's data. First sentence: one specific observation about today's food or mood. Second sentence: one gentle, specific suggestion. No preamble, no sign-off, speak directly to the user.";
 
@@ -320,6 +327,27 @@ export function StreakHeroCard() {
   const moodLogs = useAppStore((state: AppState) => state.moodLogs);
   const streak = useMemo(() => getCurrentMoodStreak(moodLogs), [moodLogs]);
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const moodHistory = useMemo(() => {
+    const moodMap = new Map<string, MoodLog>();
+    moodLogs.forEach((log) => {
+      const key = toDateKey(log.loggedAt);
+      if (!moodMap.has(key)) {
+        moodMap.set(key, log);
+      }
+    });
+
+    return getLastNDates(14)
+      .map((date) => {
+        const dateKey = toDateKey(date);
+        return {
+          dateKey,
+          label: format(date, "EEE, MMM d"),
+          log: moodMap.get(dateKey) ?? null,
+        };
+      })
+      .reverse();
+  }, [moodLogs]);
   const milestones: Record<number, string> = {
     3: "3 days strong 🎉",
     7: "One week! 🔥",
@@ -363,7 +391,11 @@ export function StreakHeroCard() {
           <Text style={styles.zeroStreakTitle}>Start your streak today 🌱</Text>
           <Text style={styles.zeroStreakSubtitle}>Log food and mood on the same day to begin</Text>
           <Text style={styles.zeroStreakFlame}>🔥</Text>
+          <Pressable onPress={() => setHistoryOpen(true)} style={({ pressed }) => [styles.historyLinkWrap, pressed && styles.cardPressFeedback]}>
+            <Text style={styles.historyLinkText}>See history →</Text>
+          </Pressable>
         </View>
+        <MoodHistorySheet visible={historyOpen} entries={moodHistory} onClose={() => setHistoryOpen(false)} />
       </SurfaceCard>
     );
   }
@@ -395,8 +427,65 @@ export function StreakHeroCard() {
           </View>
         </View>
         <Text style={styles.milestoneReward}>{getMilestoneReward(nextMilestone)}</Text>
+        <Pressable onPress={() => setHistoryOpen(true)} style={({ pressed }) => [styles.historyLinkWrap, pressed && styles.cardPressFeedback]}>
+          <Text style={styles.historyLinkText}>See history →</Text>
+        </Pressable>
       </View>
+      <MoodHistorySheet visible={historyOpen} entries={moodHistory} onClose={() => setHistoryOpen(false)} />
     </SurfaceCard>
+  );
+}
+
+function MoodHistorySheet({
+  visible,
+  entries,
+  onClose,
+}: {
+  visible: boolean;
+  entries: Array<{ dateKey: string; label: string; log: MoodLog | null }>;
+  onClose: () => void;
+}) {
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.historyModalRoot}>
+        <Pressable style={styles.historyBackdrop} onPress={onClose} />
+        <View style={styles.historySheet}>
+          <View style={styles.historyDragHandle} />
+          <Text style={styles.historyEyebrow}>MOOD HISTORY</Text>
+          <Text style={styles.historyTitle}>Last 14 days</Text>
+          <ScrollView style={styles.historyScroll} showsVerticalScrollIndicator={false}>
+            {entries.map((entry) => {
+              const moodOption =
+                entry.log && entry.log.moodScore >= 1 && entry.log.moodScore <= 5
+                  ? MOOD_HISTORY_OPTIONS[entry.log.moodScore - 1]
+                  : null;
+
+              return (
+                <View key={entry.dateKey} style={styles.historyRow}>
+                  <Text style={styles.historyDate}>{entry.label}</Text>
+                  {entry.log && moodOption ? (
+                    <>
+                      <Text style={styles.historyMood}>
+                        {moodOption.emoji} {entry.log.moodScore}/5
+                      </Text>
+                      <Text style={styles.historyEnergy}>Energy {entry.log.energyScore}/5</Text>
+                    </>
+                  ) : (
+                    <>
+                      <Text style={styles.historyEmpty}>—</Text>
+                      <Text style={styles.historyEnergyEmpty}>—</Text>
+                    </>
+                  )}
+                </View>
+              );
+            })}
+          </ScrollView>
+          <Pressable onPress={onClose} style={({ pressed }) => [styles.historyCloseButton, pressed && styles.cardPressFeedback]}>
+            <Text style={styles.historyCloseText}>Close</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -1447,6 +1536,106 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: colors.accentPrimary,
+  },
+  historyLinkWrap: {
+    alignSelf: "flex-start",
+    marginTop: 4,
+  },
+  historyLinkText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.accentPrimary,
+  },
+  historyModalRoot: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  historyBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.4)",
+  },
+  historySheet: {
+    backgroundColor: colors.background,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: 40,
+    maxHeight: "85%",
+  },
+  historyDragHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+    alignSelf: "center",
+    marginBottom: 20,
+  },
+  historyEyebrow: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: colors.accentPrimary,
+    letterSpacing: 1.5,
+    textTransform: "uppercase",
+    marginBottom: 4,
+  },
+  historyTitle: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: colors.textPrimary,
+    marginBottom: 20,
+  },
+  historyScroll: {
+    marginBottom: 20,
+  },
+  historyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  historyDate: {
+    flex: 1,
+    fontSize: 14,
+    color: colors.textPrimary,
+  },
+  historyMood: {
+    minWidth: 72,
+    fontSize: 14,
+    color: colors.textPrimary,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  historyEnergy: {
+    minWidth: 88,
+    fontSize: 13,
+    color: colors.textSecondary,
+    textAlign: "right",
+  },
+  historyEmpty: {
+    minWidth: 72,
+    fontSize: 18,
+    color: colors.textSecondary,
+    textAlign: "center",
+  },
+  historyEnergyEmpty: {
+    minWidth: 88,
+    fontSize: 13,
+    color: colors.textSecondary,
+    textAlign: "right",
+  },
+  historyCloseButton: {
+    backgroundColor: "#F6EDE4",
+    borderRadius: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    alignSelf: "center",
+  },
+  historyCloseText: {
+    color: colors.accentPrimary,
+    fontWeight: "600",
+    fontSize: 15,
   },
   heroScore: {
     fontSize: 80,

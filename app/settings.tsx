@@ -43,6 +43,7 @@ export default function SettingsScreen() {
   const [dailyReminder, setDailyReminder] = useState(true);
   const [lapseNudge, setLapseNudge] = useState(true);
   const [weeklyReport, setWeeklyReport] = useState(true);
+  const [weeklyEmailSummary, setWeeklyEmailSummary] = useState(false);
 
   useEffect(() => {
     setNameDraft(profile?.name ?? "");
@@ -404,7 +405,7 @@ export default function SettingsScreen() {
                 />
               </View>
 
-              <View style={[styles.notificationRow, styles.notificationRowLast]}>
+              <View style={styles.notificationRow}>
                 <Text style={styles.notificationLabel}>Weekly Food-Mood report</Text>
                 <Switch
                   value={weeklyReport}
@@ -420,6 +421,30 @@ export default function SettingsScreen() {
                   trackColor={{ false: "#E5D9CE", true: colors.accentPrimary }}
                   thumbColor={colors.white}
                 />
+              </View>
+
+              <View style={[styles.notificationRowStack, styles.notificationRowLast]}>
+                <View style={styles.notificationRow}>
+                  <View style={styles.notificationLabelWrap}>
+                    <View style={styles.notificationLabelRow}>
+                      <Text style={styles.notificationLabel}>Weekly email summary</Text>
+                      <View style={styles.soonBadge}>
+                        <Text style={styles.soonBadgeText}>SOON</Text>
+                      </View>
+                    </View>
+                  </View>
+                  <Switch
+                    value={weeklyEmailSummary}
+                    onValueChange={setWeeklyEmailSummary}
+                    trackColor={{ false: "#E5D9CE", true: colors.accentPrimary }}
+                    thumbColor={colors.white}
+                  />
+                </View>
+                {weeklyEmailSummary ? (
+                  <Text style={styles.notificationInlineNote}>
+                    We'll email you a summary of your Food-Mood patterns every Sunday.
+                  </Text>
+                ) : null}
               </View>
             </View>
           </View>
@@ -725,10 +750,41 @@ const styles = StyleSheet.create({
   notificationRowLast: {
     borderBottomWidth: 0,
   },
+  notificationRowStack: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
   notificationLabel: {
     flex: 1,
     color: colors.textPrimary,
     fontSize: 15,
+  },
+  notificationLabelWrap: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  notificationLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  soonBadge: {
+    backgroundColor: "#F0EAE3",
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  soonBadgeText: {
+    fontSize: 10,
+    color: colors.textSecondary,
+    fontWeight: "600",
+  },
+  notificationInlineNote: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: -2,
+    marginBottom: 14,
+    paddingRight: 52,
   },
   signOutButton: {
     backgroundColor: "#F0EAE3",

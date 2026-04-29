@@ -68,6 +68,17 @@ const mentalOptions: MentalState[] = [
 ];
 
 const mealOptions: MealType[] = ["breakfast", "lunch", "dinner", "snack"];
+const FOOD_UNIT_LABELS: Record<FoodUnit, string> = {
+  g: "grams",
+  oz: "ounces",
+  ml: "ml",
+  fl_oz: "fl oz",
+  cup: "cups",
+  serving: "serving",
+  piece: "piece",
+  tbsp: "tbsp",
+  tsp: "tsp",
+};
 const DETAILED_GUT_ANALYSIS_PROMPT =
   "Give me a detailed but warm daily gut-brain analysis. Cover: how today's specific foods affect my gut-brain axis, what my mood and energy scores suggest about my current state, any nutrient gaps worth noting, and 2-3 specific actionable suggestions for the rest of the day. Be personal and specific to the actual foods listed. 4-6 sentences, no bullet points, flowing paragraph style.";
 
@@ -1486,11 +1497,29 @@ export function MacroSummaryBar() {
 export function FoodLogSection({ mealType, logs, onAddFood }: { mealType: FoodLog["mealType"]; logs: FoodLog[]; onAddFood?: () => void }) {
   const deleteFoodLog = useAppStore((state: AppState) => state.deleteFoodLog);
   const updateFoodLog = useAppStore((state: AppState) => state.updateFoodLog);
+  const profile = useAppStore((state: AppState) => state.profile);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingItem, setEditingItem] = useState<FoodLog | null>(null);
+  const [editModalOpen, setEditModalOpen] = useState(false);
   const [editQuantity, setEditQuantity] = useState("");
+  const [editUnit, setEditUnit] = useState<FoodUnit>("serving");
+  const [editMeal, setEditMeal] = useState<MealType>(mealType);
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState("");
+  const unitOptions = useMemo(
+    () => getPreferredUnitOptions(profile?.preferredUnits),
+    [profile?.preferredUnits]
+  );
+  const editUnitOptions = useMemo(
+    () =>
+      Array.from(
+        new Set<FoodUnit>([
+          ...(editingItem?.unit ? [editingItem.unit] : []),
+          ...unitOptions,
+        ])
+      ),
+    [editingItem?.unit, unitOptions]
+  );
   const mealCalories = logs.reduce((sum, item) => sum + item.calories, 0);
   const mealProtein = logs.reduce((sum, item) => sum + item.proteinG, 0);
   const mealCarbs = logs.reduce((sum, item) => sum + item.carbsG, 0);
@@ -1529,13 +1558,19 @@ export function FoodLogSection({ mealType, logs, onAddFood }: { mealType: FoodLo
 
   const openEditModal = (item: FoodLog) => {
     setEditingItem(item);
+    setEditModalOpen(true);
     setEditQuantity(String(item.quantity));
+    setEditUnit(item.unit);
+    setEditMeal(item.mealType);
     setEditError("");
   };
 
   const closeEditModal = () => {
+    setEditModalOpen(false);
     setEditingItem(null);
     setEditQuantity("");
+    setEditUnit("serving");
+    setEditMeal(mealType);
     setEditSaving(false);
     setEditError("");
   };
@@ -1547,14 +1582,11 @@ export function FoodLogSection({ mealType, logs, onAddFood }: { mealType: FoodLo
     }
 
     setEditSaving(true);
-    const result = await updateFoodLog(editingItem.id, {
+    const result = await updateFoodLog({
+      id: editingItem.id,
       quantity: Number(editQuantity),
-      calories: editPreview.calories,
-      proteinG: editPreview.proteinG,
-      carbsG: editPreview.carbsG,
-      fatG: editPreview.fatG,
-      fiberG: editPreview.fiberG,
-      sugarG: editPreview.sugarG,
+      unit: editUnit,
+      mealType: editMeal,
     });
     setEditSaving(false);
 
@@ -1609,26 +1641,69 @@ export function FoodLogSection({ mealType, logs, onAddFood }: { mealType: FoodLo
           <Text style={styles.addFoodText}>+ Add food</Text>
         </Pressable>
       </View>
-      <Modal visible={Boolean(editingItem)} animationType="slide" transparent onRequestClose={closeEditModal}>
+      <Modal visible={editModalOpen && Boolean(editingItem)} animationType="slide" transparent onRequestClose={closeEditModal}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-            <SectionTitle
-              eyebrow="Edit Food"
-              title={formatFoodName(editingItem?.foodName ?? "Food")}
-              subtitle="Adjust the logged quantity for this food and we'll scale this day's macros with it."
-            />
+            <Text style={styles.modalFoodName} numberOfLines={1}>
+              {formatFoodName(editingItem?.foodName ?? "Food")}
+            </Text>
+            <Text style={styles.modalFoodCalPer}>
+              Adjust the meal, amount, and unit for this entry.
+            </Text>
+            <Text style={styles.modalSectionLabel}>Meal</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={styles.pillRow}>
+                {mealOptions.map((option) => (
+                  <Pressable
+                    key={option}
+                    style={[styles.mealPill, editMeal === option && styles.mealPillActive]}
+                    onPress={() => setEditMeal(option)}
+                  >
+                    <Text style={[styles.mealPillText, editMeal === option && styles.mealPillTextActive]}>
+                      {option.charAt(0).toUpperCase() + option.slice(1)}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </ScrollView>
             <Field
-              label={`Quantity (${editingItem?.unit ?? "serving"})`}
+              label="Quantity"
               value={editQuantity}
               onChangeText={setEditQuantity}
               placeholder="1"
             />
+            <Text style={styles.modalSectionLabel}>Unit</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={styles.pillRow}>
+                {editUnitOptions.map((option) => (
+                  <Pressable
+                    key={option}
+                    style={[styles.unitPill, editUnit === option && styles.mealPillActive]}
+                    onPress={() => setEditUnit(option)}
+                  >
+                    <Text style={[styles.unitPillText, editUnit === option && styles.mealPillTextActive]}>
+                      {FOOD_UNIT_LABELS[option] ?? option}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </ScrollView>
             {editPreview ? (
-              <View style={styles.previewCard}>
-                <Text style={styles.previewTitle}>Updated nutrition</Text>
-                <Text style={styles.foodMeta}>
-                  {editPreview.calories} cal | {editPreview.proteinG}g protein | {editPreview.carbsG}g carbs | {editPreview.fatG}g fat
-                </Text>
+              <View style={styles.previewGrid}>
+                {[
+                  { label: "CALORIES", value: Math.round(editPreview.calories), unit: "cal" },
+                  { label: "PROTEIN", value: Math.round(editPreview.proteinG), unit: "g" },
+                  { label: "CARBS", value: Math.round(editPreview.carbsG), unit: "g" },
+                  { label: "FAT", value: Math.round(editPreview.fatG), unit: "g" },
+                ].map((stat) => (
+                  <View key={stat.label} style={styles.previewBox}>
+                    <Text style={styles.previewValue}>
+                      {stat.value}
+                      <Text style={styles.previewUnit}>{stat.unit}</Text>
+                    </Text>
+                    <Text style={styles.previewLabel}>{stat.label}</Text>
+                  </View>
+                ))}
               </View>
             ) : null}
             {editError ? <Text style={styles.errorText}>{editError}</Text> : null}

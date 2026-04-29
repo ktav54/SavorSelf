@@ -92,14 +92,11 @@ export interface AppState {
     sugarG?: number;
   }>) => Promise<{ error?: string }>;
   deleteFoodLog: (foodLogId: string) => Promise<{ error?: string }>;
-  updateFoodLog: (foodLogId: string, updates: {
+  updateFoodLog: (updates: {
+    id: string;
     quantity: number;
-    calories: number;
-    proteinG: number;
-    carbsG: number;
-    fatG: number;
-    fiberG?: number;
-    sugarG?: number;
+    unit: FoodUnit;
+    mealType: MealType;
   }) => Promise<{ error?: string }>;
   addMoodLog: (log: MoodLog) => void;
   addFoodLog: (log: FoodLog) => void;
@@ -1244,27 +1241,46 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
 
     return {};
   },
-  updateFoodLog: async (foodLogId, updates) => {
+  updateFoodLog: async (updates) => {
     set({
       foodError: null,
     });
 
+    if (!Number.isFinite(updates.quantity) || updates.quantity <= 0) {
+      set({
+        foodError: "Enter a quantity greater than zero.",
+      });
+      return { error: "Enter a quantity greater than zero." };
+    }
+
+    const currentItem = useAppStore
+      .getState()
+      .foodLogs.find((item) => item.id === updates.id);
+
+    if (!currentItem) {
+      set({
+        foodError: "We couldn't find that food entry.",
+      });
+      return { error: "We couldn't find that food entry." };
+    }
+
+    const multiplier = updates.quantity / Math.max(currentItem.quantity, 1);
     const payload = {
       quantity: updates.quantity,
-      calories: roundNutrition(updates.calories),
-      protein_g: roundNutrition(updates.proteinG),
-      carbs_g: roundNutrition(updates.carbsG),
-      fat_g: roundNutrition(updates.fatG),
-      fiber_g: roundNutrition(updates.fiberG ?? 0),
-      sugar_g: roundNutrition(updates.sugarG ?? 0),
+      unit: updates.unit,
+      meal_type: updates.mealType,
+      calories: roundNutrition(currentItem.calories * multiplier),
+      protein_g: roundNutrition(currentItem.proteinG * multiplier),
+      carbs_g: roundNutrition(currentItem.carbsG * multiplier),
+      fat_g: roundNutrition(currentItem.fatG * multiplier),
+      fiber_g: roundNutrition((currentItem.fiberG ?? 0) * multiplier),
+      sugar_g: roundNutrition((currentItem.sugarG ?? 0) * multiplier),
     };
 
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from("food_logs")
       .update(payload)
-      .eq("id", foodLogId)
-      .select("*")
-      .single();
+      .eq("id", updates.id);
 
     if (error) {
       set({
@@ -1273,12 +1289,7 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
       return { error: error.message };
     }
 
-    const updatedFood = mapFoodLog(data);
-
-    set((state) => ({
-      foodLogs: state.foodLogs.map((item) => (item.id === foodLogId ? updatedFood : item)),
-      foodError: null,
-    }));
+    await useAppStore.getState().loadTodayFoodLogs(useAppStore.getState().selectedDate);
 
     return {};
   },
