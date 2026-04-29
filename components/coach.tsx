@@ -68,6 +68,8 @@ const quantityFractionOptions = [
   { label: "3/4", value: 0.75 },
 ] as const;
 
+const moodLabels = ["Low", "Okay", "Neutral", "Good", "Great"] as const;
+
 function estimateMicronutrients(foodName: string) {
   const name = foodName.toLowerCase();
   const patterns = [
@@ -289,6 +291,15 @@ export function CoachChat() {
     () => getCoachUnitOptions(profile?.preferredUnits),
     [profile?.preferredUnits]
   );
+  const hour = new Date().getHours();
+  const inputPlaceholder =
+    hour < 11
+      ? "What did you have for breakfast?"
+      : hour < 15
+        ? "Log your lunch..."
+        : hour < 19
+          ? "How are you feeling this afternoon?"
+          : "Log dinner or wind down...";
 
   useEffect(() => {
     setDraft("");
@@ -331,6 +342,13 @@ export function CoachChat() {
   }, [sending, thinkingDotsOpacity]);
 
   const hasStartedConversation = conversation.length > 0;
+  const moodLogged =
+    moodLogs.length > 0 &&
+    moodLogs[0]?.loggedAt?.slice(0, 10) === format(new Date(), "yyyy-MM-dd");
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Hey" : "Good evening";
+  const welcomeText = moodLogged
+    ? `${greeting}${profile?.name ? `, ${profile.name}` : ""}! I can see you've already checked in today — feeling ${moodLabels[(moodLogs[0]?.moodScore ?? 3) - 1]?.toLowerCase() ?? "it"}. What's on your mind?`
+    : `${greeting}${profile?.name ? `, ${profile.name}` : ""}! I'm your SavorSelf coach. I can log your food, pull up your patterns, or just talk. What do you need today?`;
   const displayConversation = useMemo<Array<AiConversationMessage & { id?: string; createdAt?: string }>>(
     () =>
       conversation.length === 0
@@ -338,20 +356,29 @@ export function CoachChat() {
             {
               id: "welcome",
               role: "assistant" as const,
-              content:
-                "Hey! I'm your SavorSelf coach. I can log your food just from a description, pull up your mood patterns, suggest what to eat based on your gut-brain data, or just talk through how you're feeling. What's on your mind?",
+              content: welcomeText,
               createdAt: new Date().toISOString(),
               timestamp: new Date().toISOString(),
               kind: "text",
             },
           ]
         : conversation,
-    [conversation]
+    [conversation, welcomeText]
   );
 
   const coachContext = useMemo(
     () => ({
+      profileName: profile?.name ?? "",
       moodLogs: moodLogs.slice(-7),
+      todaysMood: moodLogs[0]
+        ? {
+            score: moodLogs[0].moodScore,
+            energy: moodLogs[0].energyScore,
+            physicalStates: moodLogs[0].physicalState,
+            mentalStates: moodLogs[0].mentalState,
+            note: moodLogs[0].notes,
+          }
+        : null,
       foodSummary: {
         averageCalories: Math.round(
           foodLogs.reduce((sum, item) => sum + item.calories, 0) / Math.max(foodLogs.length, 1)
@@ -367,8 +394,14 @@ export function CoachChat() {
       quickLogs: quickLogs.slice(-7),
       insights: insights.slice(0, 3),
     }),
-    [foodLogs, insights, moodLogs, quickLogs]
+    [foodLogs, insights, moodLogs, profile?.name, quickLogs]
   );
+
+  const updateProposalMealType = (meal: MealType) => {
+    if (pendingProposal) {
+      setPendingProposal({ ...pendingProposal, mealType: meal });
+    }
+  };
 
   const appendAssistant = (
     content: string,
@@ -933,32 +966,57 @@ export function CoachChat() {
                   )}g protein
                 </Text>
                 {pendingProposal && message.foodProposal.sourceMessage === pendingProposal.sourceMessage ? (
-                  <View style={styles.proposalActionRow}>
-                    <Pressable
-                      onPress={() => void confirmProposal()}
-                      style={({ pressed }) => [
-                        styles.proposalActionButton,
-                        styles.proposalConfirmButton,
-                        pressed && styles.promptPressed,
-                      ]}
-                    >
-                      {confirming ? (
-                        <ActivityIndicator size="small" color={colors.white} />
-                      ) : (
-                        <Text style={[styles.proposalActionText, styles.proposalConfirmText]}>Log it ✓</Text>
-                      )}
-                    </Pressable>
-                    <Pressable
-                      onPress={() => openAdjustModal()}
-                      style={({ pressed }) => [
-                        styles.proposalActionButton,
-                        styles.proposalSecondaryButton,
-                        pressed && styles.promptPressed,
-                      ]}
-                    >
-                      <Text style={[styles.proposalActionText, styles.proposalSecondaryText]}>Not quite</Text>
-                    </Pressable>
-                  </View>
+                  <>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                      <View style={styles.proposalMealRow}>
+                        {(["breakfast", "lunch", "dinner", "snack"] as MealType[]).map((meal) => (
+                          <Pressable
+                            key={meal}
+                            style={[
+                              styles.proposalMealChip,
+                              pendingProposal.mealType === meal && styles.proposalMealChipActive,
+                            ]}
+                            onPress={() => updateProposalMealType(meal)}
+                          >
+                            <Text
+                              style={[
+                                styles.proposalMealChipText,
+                                pendingProposal.mealType === meal && styles.proposalMealChipTextActive,
+                              ]}
+                            >
+                              {meal.charAt(0).toUpperCase() + meal.slice(1)}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    </ScrollView>
+                    <View style={styles.proposalActionRow}>
+                      <Pressable
+                        onPress={() => void confirmProposal()}
+                        style={({ pressed }) => [
+                          styles.proposalActionButton,
+                          styles.proposalConfirmButton,
+                          pressed && styles.promptPressed,
+                        ]}
+                      >
+                        {confirming ? (
+                          <ActivityIndicator size="small" color={colors.white} />
+                        ) : (
+                          <Text style={[styles.proposalActionText, styles.proposalConfirmText]}>Log it ✓</Text>
+                        )}
+                      </Pressable>
+                      <Pressable
+                        onPress={() => openAdjustModal()}
+                        style={({ pressed }) => [
+                          styles.proposalActionButton,
+                          styles.proposalSecondaryButton,
+                          pressed && styles.promptPressed,
+                        ]}
+                      >
+                        <Text style={[styles.proposalActionText, styles.proposalSecondaryText]}>Not quite</Text>
+                      </Pressable>
+                    </View>
+                  </>
                 ) : null}
               </View>
             ) : null}
@@ -1029,7 +1087,7 @@ export function CoachChat() {
             style={styles.inputField}
             value={draft}
             onChangeText={setDraft}
-            placeholder="Log food or ask anything..."
+            placeholder={inputPlaceholder}
             placeholderTextColor={colors.textSecondary}
             multiline
             maxLength={500}
@@ -1233,6 +1291,31 @@ const styles = StyleSheet.create({
   proposalTotalText: {
     color: colors.textPrimary,
     fontSize: 14,
+    fontWeight: "600",
+  },
+  proposalMealRow: {
+    flexDirection: "row",
+    gap: 8,
+    paddingVertical: 8,
+  },
+  proposalMealChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 16,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  proposalMealChipActive: {
+    backgroundColor: colors.accentPrimary,
+    borderColor: colors.accentPrimary,
+  },
+  proposalMealChipText: {
+    fontSize: 13,
+    color: colors.textPrimary,
+  },
+  proposalMealChipTextActive: {
+    color: colors.white,
     fontWeight: "600",
   },
   proposalActionRow: {

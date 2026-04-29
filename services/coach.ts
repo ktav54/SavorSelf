@@ -6,6 +6,41 @@ type CoachHistoryMessage = { role: "user" | "assistant"; content: string };
 const COACH_RESPONSE_STYLE_INSTRUCTIONS =
   "Never offer unsolicited emotional commentary after logging food. When food is logged, confirm briefly and move on. Never say things like 'getting this logged matters' or 'showing up counts' unless the user explicitly asks for encouragement. Keep responses concise — 1-3 sentences for most replies. Never use filler phrases like 'Absolutely!', 'Great question!', 'Of course!', 'Certainly!', or 'Sure thing!'.";
 
+function buildCoachPromptContext(context: Record<string, unknown>) {
+  const name =
+    typeof context.profileName === "string" && context.profileName.trim()
+      ? context.profileName.trim()
+      : "the user";
+  const todaysMood =
+    context.todaysMood && typeof context.todaysMood === "object"
+      ? (context.todaysMood as {
+          score?: number;
+          energy?: number;
+          physicalStates?: string[];
+          mentalStates?: string[];
+          note?: string;
+        })
+      : null;
+
+  const coachIdentityPrompt = [
+    `You are talking to ${name}.`,
+    `The user's name is ${name}. Use their name occasionally but not in every message — only when it feels natural.`,
+  ].join(" ");
+
+  const coachTodaysMoodPrompt = todaysMood
+    ? `Today's mood check-in: mood ${todaysMood.score ?? "?"}/5, energy ${todaysMood.energy ?? "?"}/5. Physical: ${todaysMood.physicalStates?.join(", ") || "none noted"}. Mental: ${todaysMood.mentalStates?.join(", ") || "none noted"}.${todaysMood.note ? ` Note: "${todaysMood.note}"` : ""}`
+    : "";
+
+  return {
+    ...context,
+    coachIdentityPrompt,
+    coachTodaysMoodPrompt,
+    coachSystemPromptAddendum: [coachIdentityPrompt, coachTodaysMoodPrompt, COACH_RESPONSE_STYLE_INSTRUCTIONS]
+      .filter(Boolean)
+      .join(" "),
+  };
+}
+
 function normalizeCoachPayload<T extends { reply?: string }>(payload: T | string): T {
   let normalized: unknown = payload;
 
@@ -83,7 +118,7 @@ export async function sendCoachMessage(
   >("ai-coach", {
     message,
     context: {
-      ...context,
+      ...buildCoachPromptContext(context),
       coachResponseStyle: COACH_RESPONSE_STYLE_INSTRUCTIONS,
     },
     history,
@@ -135,7 +170,7 @@ export async function parseFoodMessage(input: {
     pendingProposal: input.pendingProposal ?? null,
     history: input.history ?? [],
     context: {
-      ...(input.context ?? {}),
+      ...buildCoachPromptContext(input.context ?? {}),
       coachResponseStyle: COACH_RESPONSE_STYLE_INSTRUCTIONS,
     },
   });
