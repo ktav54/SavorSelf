@@ -1,7 +1,7 @@
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import * as Haptics from "expo-haptics";
 import { format } from "date-fns";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { colors, radii, spacing } from "@/constants/theme";
 import { SectionTitle } from "@/components/ui";
 import { sendCoachMessage } from "@/services/coach";
@@ -317,6 +317,36 @@ export function FoodMoodGate() {
 export function StreakHeroCard() {
   const moodLogs = useAppStore((state: AppState) => state.moodLogs);
   const streak = useMemo(() => getCurrentMoodStreak(moodLogs), [moodLogs]);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (streak <= 0) {
+      pulseAnim.stopAnimation();
+      pulseAnim.setValue(1);
+      return;
+    }
+
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.12,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    loop.start();
+
+    return () => {
+      loop.stop();
+    };
+  }, [pulseAnim, streak]);
 
   if (streak === 0) {
     return (
@@ -338,7 +368,10 @@ export function StreakHeroCard() {
     <SurfaceCard>
       <View style={styles.streakHero}>
         <Text style={styles.editorialEyebrow}>YOUR STREAK</Text>
-        <Text style={styles.streakNumber}>{streak} 🔥</Text>
+        <View style={styles.streakHeroHeadline}>
+          <Text style={styles.streakNumber}>{streak}</Text>
+          <Animated.Text style={[styles.flameEmoji, { transform: [{ scale: pulseAnim }] }]}>🔥</Animated.Text>
+        </View>
         <Text style={styles.streakLabel}>day streak</Text>
         <View style={styles.gateProgressWrap}>
           <Text style={styles.gateProgressLabel}>
@@ -866,7 +899,11 @@ export function InsightFeed() {
         return (
           <Pressable
             key={insight.id}
-            style={({ pressed }) => [styles.surfaceCard, pressed && styles.cardPressFeedback]}
+            style={({ pressed }) => [
+              styles.surfaceCard,
+              { transform: [{ scale: pressed ? 0.98 : 1 }] },
+              pressed && styles.cardPressFeedback,
+            ]}
             onPress={() => {
               void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             }}
@@ -1318,10 +1355,19 @@ const styles = StyleSheet.create({
   streakHero: {
     gap: spacing.md,
   },
+  streakHeroHeadline: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
   streakNumber: {
     fontSize: 72,
     fontWeight: "900",
     color: colors.accentPrimary,
+  },
+  flameEmoji: {
+    fontSize: 48,
+    lineHeight: 52,
   },
   streakLabel: {
     fontSize: 14,

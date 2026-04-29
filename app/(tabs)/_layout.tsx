@@ -1,5 +1,6 @@
 import { Tabs, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import { Pressable, Text } from "react-native";
 import { colors } from "@/constants/theme";
 
@@ -55,14 +56,29 @@ export default function TabsLayout() {
     >
       <Tabs.Screen
         name="log"
+        listeners={{
+          tabPress: () => {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          },
+        }}
         options={{ title: "Log", tabBarIcon: ({ color }) => <Text style={{ fontSize: 20, color }}>⊕</Text> }}
       />
       <Tabs.Screen
         name="food-mood"
+        listeners={{
+          tabPress: () => {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          },
+        }}
         options={{ title: "Food-Mood", tabBarIcon: ({ color }) => <Text style={{ fontSize: 20, color }}>◈</Text> }}
       />
       <Tabs.Screen
         name="coach"
+        listeners={{
+          tabPress: () => {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          },
+        }}
         options={{ title: "Coach", tabBarIcon: ({ color }) => <Text style={{ fontSize: 20, color }}>◉</Text> }}
       />
     </Tabs>

@@ -1,7 +1,7 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import { format } from "date-fns";
-import { StyleSheet, Text, View } from "react-native";
+import { Animated, StyleSheet, Text, View } from "react-native";
 import {
   DailyReadCard,
   FoodMoodGate,
@@ -22,6 +22,13 @@ export default function FoodMoodScreen() {
   const loadFoodMoodInsights = useAppStore((state: AppState) => state.loadFoodMoodInsights);
   const moodLogs = useAppStore((state: AppState) => state.moodLogs);
   const foodLogs = useAppStore((state: AppState) => state.foodLogs);
+  const cardAnims = useRef(
+    Array.from({ length: 6 }, () => ({
+      opacity: new Animated.Value(0),
+      translateY: new Animated.Value(20),
+    }))
+  ).current;
+  const gateAnim = useRef(new Animated.Value(0)).current;
 
   const hasEnoughData = useMemo(() => {
     const cutoff = new Date();
@@ -52,6 +59,37 @@ export default function FoodMoodScreen() {
     }, [loadFoodMoodInsights])
   );
 
+  useEffect(() => {
+    Animated.timing(gateAnim, {
+      toValue: 1,
+      duration: 400,
+      useNativeDriver: true,
+    }).start();
+  }, [gateAnim]);
+
+  useEffect(() => {
+    if (hasEnoughData) {
+      cardAnims.forEach((anim, i) => {
+        anim.opacity.setValue(0);
+        anim.translateY.setValue(20);
+        Animated.parallel([
+          Animated.timing(anim.opacity, {
+            toValue: 1,
+            duration: 350,
+            delay: i * 80,
+            useNativeDriver: true,
+          }),
+          Animated.timing(anim.translateY, {
+            toValue: 0,
+            duration: 350,
+            delay: i * 80,
+            useNativeDriver: true,
+          }),
+        ]).start();
+      });
+    }
+  }, [cardAnims, hasEnoughData]);
+
   return (
     <Screen scroll>
       <View style={styles.screenStack}>
@@ -61,20 +99,62 @@ export default function FoodMoodScreen() {
           <Text style={styles.subtitle}>{format(new Date(), "EEEE, MMMM d")}</Text>
         </View>
         {!hasEnoughData ? (
-          <>
+          <Animated.View style={{ opacity: gateAnim, flex: 1 }}>
             <FoodMoodGate />
             <StreakHeroCard />
-          </>
+          </Animated.View>
         ) : (
           <>
-            <GutMoodScoreCard />
-            <StreakHeroCard />
-            <DailyReadCard />
-            <TrendCard />
+            <Animated.View
+              style={{
+                opacity: cardAnims[0].opacity,
+                transform: [{ translateY: cardAnims[0].translateY }],
+              }}
+            >
+              <GutMoodScoreCard />
+            </Animated.View>
+            <Animated.View
+              style={{
+                opacity: cardAnims[1].opacity,
+                transform: [{ translateY: cardAnims[1].translateY }],
+              }}
+            >
+              <DailyReadCard />
+            </Animated.View>
+            <Animated.View
+              style={{
+                opacity: cardAnims[2].opacity,
+                transform: [{ translateY: cardAnims[2].translateY }],
+              }}
+            >
+              <StreakHeroCard />
+            </Animated.View>
+            <Animated.View
+              style={{
+                opacity: cardAnims[3].opacity,
+                transform: [{ translateY: cardAnims[3].translateY }],
+              }}
+            >
+              <TrendCard />
+            </Animated.View>
             <NutrientSpotlight />
             <HorizontalInsightScroll />
-            <WeeklySnapshot />
-            <InsightFeed />
+            <Animated.View
+              style={{
+                opacity: cardAnims[4].opacity,
+                transform: [{ translateY: cardAnims[4].translateY }],
+              }}
+            >
+              <WeeklySnapshot />
+            </Animated.View>
+            <Animated.View
+              style={{
+                opacity: cardAnims[5].opacity,
+                transform: [{ translateY: cardAnims[5].translateY }],
+              }}
+            >
+              <InsightFeed />
+            </Animated.View>
           </>
         )}
       </View>
