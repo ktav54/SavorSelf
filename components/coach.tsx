@@ -312,6 +312,20 @@ function guessMealType(): MealType {
   return "dinner";
 }
 
+function getFollowUpSuggestion(mealType: MealType, calories: number): string | null {
+  const hour = new Date().getHours();
+  if (mealType === "breakfast" && calories < 400) {
+    return "That's a lighter breakfast — want me to suggest something to add?";
+  }
+  if (mealType === "lunch" && hour > 14) {
+    return "Late lunch logged! Want a lighter dinner suggestion?";
+  }
+  if (mealType === "dinner" && calories > 800) {
+    return "Big dinner — a short walk after can help digestion. Want any tips?";
+  }
+  return null;
+}
+
 function formatQuantityLabel(whole: string, fraction: string) {
   const wholeValue = Number(whole || "0");
   const pieces: string[] = [];
@@ -669,8 +683,17 @@ export function CoachChat() {
       return;
     }
 
+    const suggestion = getFollowUpSuggestion(
+      proposalToSave.mealType,
+      proposalToSave.items.reduce((sum, item) => sum + (item.calories ?? 0), 0)
+    );
     appendAssistant(`Logged to your ${proposalToSave.mealType}. ✓`, "status");
     setPendingProposal(null);
+    if (suggestion) {
+      setTimeout(() => {
+        appendAssistant(suggestion, "text");
+      }, 800);
+    }
   };
 
   const openInsights = async () => {

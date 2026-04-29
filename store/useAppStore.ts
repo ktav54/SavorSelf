@@ -103,6 +103,7 @@ export interface AppState {
   addQuickLog: (log: QuickLog) => void;
   saveConversation: () => Promise<void>;
   loadConversation: () => Promise<void>;
+  getFrequentFoods: (mealType: MealType, limit?: number) => FoodLog[];
   addCoachMessage: (message: AiConversationMessage) => void;
   deleteCoachMessage: (timestamp: string, index: number) => void;
   clearConversation: () => void;
@@ -1348,6 +1349,56 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
         conversation: parsed,
       });
     }
+  },
+  getFrequentFoods: (mealType, limit = 3) => {
+    const mealFoods = useAppStore
+      .getState()
+      .foodLogs.filter((item) => item.mealType === mealType);
+
+    const byFoodName = new Map<
+      string,
+      { count: number; latestLoggedAt: string; sample: FoodLog }
+    >();
+
+    mealFoods.forEach((item) => {
+      const key = item.foodName.trim().toLowerCase();
+      const existing = byFoodName.get(key);
+      if (!existing) {
+        byFoodName.set(key, {
+          count: 1,
+          latestLoggedAt: item.loggedAt,
+          sample: item,
+        });
+        return;
+      }
+
+      const nextLatest =
+        new Date(item.loggedAt).getTime() > new Date(existing.latestLoggedAt).getTime()
+          ? item.loggedAt
+          : existing.latestLoggedAt;
+
+      byFoodName.set(key, {
+        count: existing.count + 1,
+        latestLoggedAt: nextLatest,
+        sample:
+          new Date(item.loggedAt).getTime() > new Date(existing.sample.loggedAt).getTime()
+            ? item
+            : existing.sample,
+      });
+    });
+
+    const frequentFoods = Array.from(byFoodName.values())
+      .filter((entry) => entry.count >= 2)
+      .sort((left, right) => {
+        if (right.count !== left.count) {
+          return right.count - left.count;
+        }
+        return new Date(right.latestLoggedAt).getTime() - new Date(left.latestLoggedAt).getTime();
+      })
+      .slice(0, limit)
+      .map((entry) => entry.sample);
+
+    return frequentFoods.length >= 2 ? frequentFoods : [];
   },
   addCoachMessage: (message) => {
     set((state) => ({ conversation: [...state.conversation, message] }));

@@ -2,7 +2,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { addDays, format, isToday, isYesterday } from "date-fns";
 import { useNavigation, useRouter } from "expo-router";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
   Easing,
@@ -100,6 +100,12 @@ export default function LogScreen() {
   );
 
   const isSelectedDateToday = isToday(selectedDate);
+  const totalCalories = useMemo(
+    () => foodLogs.reduce((sum, item) => sum + item.calories, 0),
+    [foodLogs]
+  );
+  const calorieGoal = profile?.dailyCalorieGoal ?? 0;
+  const calorieProgress = calorieGoal > 0 ? totalCalories / calorieGoal : 0;
 
   useEffect(() => {
     if (!isSelectedDateToday) {
@@ -384,6 +390,24 @@ export default function LogScreen() {
           ) : null}
 
             {isSelectedDateToday ? <MacroSummaryBar /> : null}
+            {isSelectedDateToday && calorieGoal > 0 ? (
+              <View>
+                <View style={styles.goalProgressBar}>
+                  <View
+                    style={[
+                      styles.goalProgressFill,
+                      {
+                        width: `${Math.min(100, calorieProgress * 100)}%`,
+                        backgroundColor: calorieProgress >= 1 ? "#5C9E6E" : colors.accentPrimary,
+                      },
+                    ]}
+                  />
+                </View>
+                <Text style={styles.goalProgressLabel}>
+                  {Math.round(calorieProgress * 100)}% of daily goal
+                </Text>
+              </View>
+            ) : null}
             {isSelectedDateToday ? <FoodSearchLauncher onPress={openGeneralFoodSearch} /> : null}
             {isFirstTimeEmpty ? (
               <View style={styles.firstTimeEmpty}>
@@ -568,6 +592,25 @@ const styles = StyleSheet.create({
   pastMoodSummaryDate: {
     color: colors.textSecondary,
     fontSize: 13,
+  },
+  goalProgressBar: {
+    height: 4,
+    backgroundColor: colors.border,
+    borderRadius: 2,
+    marginTop: 8,
+    marginHorizontal: 16,
+    overflow: "hidden",
+  },
+  goalProgressFill: {
+    height: 4,
+    borderRadius: 2,
+  },
+  goalProgressLabel: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    textAlign: "right",
+    marginTop: 4,
+    marginRight: 16,
   },
   firstTimeEmpty: {
     alignItems: "center",

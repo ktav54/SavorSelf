@@ -962,6 +962,7 @@ export const InsightFeed = React.memo(function InsightFeed() {
   const insightsLoading = useAppStore((state: AppState) => state.insightsLoading);
   const insightsError = useAppStore((state: AppState) => state.insightsError);
   const trend = useAppStore((state: AppState) => state.foodMoodTrend);
+  const [expandedInsight, setExpandedInsight] = useState<string | null>(null);
 
   if (insightsLoading) {
     return (
@@ -1035,10 +1036,63 @@ export const InsightFeed = React.memo(function InsightFeed() {
             ]}
             onPress={() => {
               void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setExpandedInsight((current) => (current === insight.id ? null : insight.id));
             }}
           >
             <Text style={styles.editorialEyebrow}>INSIGHTS</Text>
             <Text style={styles.insightBodyText}>{insight.insightBody}</Text>
+            {expandedInsight === insight.id ? (
+              <View style={styles.insightExpandedSection}>
+                {(() => {
+                  const supportingData = (insight.supportingData ?? {}) as Record<string, unknown>;
+                  const metric = typeof supportingData.metric === "string" ? supportingData.metric : null;
+                  const correlation =
+                    typeof supportingData.correlation === "number" ? supportingData.correlation : null;
+                  const comparableDaysValue = supportingData.comparableDays;
+                  const dayCountValue = supportingData.dayCount;
+                  const daysValue = supportingData.days;
+                  const supportingDays =
+                    Array.isArray(comparableDaysValue)
+                      ? comparableDaysValue.length
+                      : typeof comparableDaysValue === "number"
+                        ? comparableDaysValue
+                        : typeof dayCountValue === "number"
+                          ? dayCountValue
+                          : typeof daysValue === "number"
+                            ? daysValue
+                            : null;
+                  const correlationStrength =
+                    correlation == null
+                      ? null
+                      : Math.abs(correlation) < 0.4
+                        ? "weak"
+                        : Math.abs(correlation) < 0.7
+                          ? "moderate"
+                          : "strong";
+
+                  return (
+                    <>
+                      {metric && supportingDays ? (
+                        <Text style={styles.insightExpandedText}>
+                          Based on: {metric} patterns over {supportingDays} days
+                        </Text>
+                      ) : null}
+                      {correlationStrength ? (
+                        <Text style={styles.insightExpandedText}>
+                          Correlation strength: {correlationStrength}
+                        </Text>
+                      ) : null}
+                      <Pressable
+                        onPress={() => setExpandedInsight(null)}
+                        style={({ pressed }) => [styles.insightCollapseButton, pressed && styles.cardPressFeedback]}
+                      >
+                        <Text style={styles.insightCollapseText}>Got it</Text>
+                      </Pressable>
+                    </>
+                  );
+                })()}
+              </View>
+            ) : null}
             <View style={styles.insightTimelineRow}>
               <Text style={styles.insightTimelineLabel}>Last 7 days</Text>
               <View style={styles.insightTimelineStrip}>
@@ -1944,6 +1998,27 @@ const styles = StyleSheet.create({
     lineHeight: 26,
     color: colors.textPrimary,
     fontWeight: "500",
+  },
+  insightExpandedSection: {
+    backgroundColor: "#F6EDE4",
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 10,
+    gap: 8,
+  },
+  insightExpandedText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 20,
+  },
+  insightCollapseButton: {
+    alignSelf: "flex-start",
+    marginTop: 2,
+  },
+  insightCollapseText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.accentPrimary,
   },
   insightTimelineRow: {
     minHeight: 32,

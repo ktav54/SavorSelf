@@ -1497,6 +1497,8 @@ export function MacroSummaryBar() {
 export function FoodLogSection({ mealType, logs, onAddFood }: { mealType: FoodLog["mealType"]; logs: FoodLog[]; onAddFood?: () => void }) {
   const deleteFoodLog = useAppStore((state: AppState) => state.deleteFoodLog);
   const updateFoodLog = useAppStore((state: AppState) => state.updateFoodLog);
+  const saveFoodLog = useAppStore((state: AppState) => state.saveFoodLog);
+  const getFrequentFoods = useAppStore((state: AppState) => state.getFrequentFoods);
   const profile = useAppStore((state: AppState) => state.profile);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingItem, setEditingItem] = useState<FoodLog | null>(null);
@@ -1534,6 +1536,10 @@ export function FoodLogSection({ mealType, logs, onAddFood }: { mealType: FoodLo
     mealType === "snack"
       ? "Nothing here yet. Tap below to add a snack."
       : `Nothing here yet. Tap below to add ${mealType}.`;
+  const frequentFoods = useMemo(
+    () => getFrequentFoods(mealType, 3),
+    [getFrequentFoods, mealType, logs]
+  );
 
   const editPreview = useMemo(() => {
     if (!editingItem) {
@@ -1598,6 +1604,24 @@ export function FoodLogSection({ mealType, logs, onAddFood }: { mealType: FoodLo
     closeEditModal();
   };
 
+  const quickAddFood = async (food: FoodLog) => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await saveFoodLog({
+      foodName: food.foodName,
+      foodSource: food.foodSource,
+      externalFoodId: food.externalFoodId,
+      mealType: food.mealType,
+      quantity: food.quantity,
+      unit: food.unit,
+      calories: food.calories,
+      proteinG: food.proteinG,
+      carbsG: food.carbsG,
+      fatG: food.fatG,
+      fiberG: food.fiberG,
+      sugarG: food.sugarG,
+    });
+  };
+
   return (
     <>
       <View style={styles.mealCard}>
@@ -1635,6 +1659,23 @@ export function FoodLogSection({ mealType, logs, onAddFood }: { mealType: FoodLo
           <View style={styles.mealEmptyState}>
             <Text style={styles.mealEmptyEmoji}>{mealEmoji[mealType]}</Text>
             <Text style={styles.mealEmptyText}>{mealPrompt}</Text>
+            {frequentFoods.length > 0 ? (
+              <View style={styles.frequentFoods}>
+                <Text style={styles.frequentFoodsLabel}>Often for {mealType}</Text>
+                {frequentFoods.map((food) => (
+                  <Pressable
+                    key={food.id}
+                    style={({ pressed }) => [styles.frequentFoodRow, pressed && styles.pressableFeedback]}
+                    onPress={() => void quickAddFood(food)}
+                  >
+                    <Text style={styles.frequentFoodName} numberOfLines={1}>
+                      {formatFoodName(food.foodName)}
+                    </Text>
+                    <Text style={styles.frequentFoodCal}>{Math.round(food.calories)} cal</Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
           </View>
         )}
         <Pressable style={({ pressed }) => [styles.addFoodButton, pressed && styles.pressableFeedback]} onPress={onAddFood}>
@@ -3397,6 +3438,38 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 15,
     lineHeight: 24,
+  },
+  frequentFoods: {
+    marginTop: 12,
+    gap: 6,
+  },
+  frequentFoodsLabel: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: colors.textSecondary,
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    marginBottom: 4,
+  },
+  frequentFoodRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: "#F6EDE4",
+    borderRadius: 10,
+    gap: 8,
+  },
+  frequentFoodName: {
+    fontSize: 14,
+    color: colors.textPrimary,
+    flex: 1,
+  },
+  frequentFoodCal: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginLeft: 8,
   },
   linkText: {
     color: colors.accentPrimary,
