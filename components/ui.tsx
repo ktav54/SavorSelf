@@ -23,7 +23,14 @@ export function Screen({
   onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
 }>) {
   const content = scroll ? (
-    <ScrollView ref={scrollRef} contentContainerStyle={styles.scrollContent} onScroll={onScroll} scrollEventThrottle={16}>
+    <ScrollView
+      ref={scrollRef}
+      contentContainerStyle={styles.scrollContent}
+      onScroll={onScroll}
+      scrollEventThrottle={16}
+      keyboardDismissMode="on-drag"
+      keyboardShouldPersistTaps="handled"
+    >
       {children}
     </ScrollView>
   ) : (

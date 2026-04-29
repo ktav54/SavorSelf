@@ -24,6 +24,8 @@ export default function TabsLayout() {
         headerLeft: () => (
           <Pressable
             onPress={() => router.push("/settings")}
+            accessibilityLabel="Open settings"
+            accessibilityRole="button"
             style={({ pressed }) => ({
               marginLeft: 14,
               marginTop: -2,

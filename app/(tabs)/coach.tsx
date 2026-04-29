@@ -40,6 +40,8 @@ export default function CoachScreen() {
             void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             resetConversation();
           }}
+          accessibilityLabel="Clear conversation"
+          accessibilityRole="button"
           style={({ pressed }) => ({
             marginRight: 14,
             marginTop: -2,

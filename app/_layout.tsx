@@ -1,7 +1,8 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as Notifications from "expo-notifications";
+import * as SplashScreen from "expo-splash-screen";
 import { Text, View } from "react-native";
 import { colors } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
@@ -26,6 +27,19 @@ export default function RootLayout() {
   const initializeAuth = useAppStore((state: AppState) => state.initializeAuth);
   const handleSessionChange = useAppStore((state: AppState) => state.handleSessionChange);
   const sessionReady = useAppStore((state: AppState) => state.sessionReady);
+  const [appReady, setAppReady] = useState(false);
+
+  useEffect(() => {
+    void SplashScreen.preventAutoHideAsync()
+      .then(() => setAppReady(true))
+      .catch(() => setAppReady(true));
+  }, []);
+
+  useEffect(() => {
+    if (appReady) {
+      void SplashScreen.hideAsync().catch(() => undefined);
+    }
+  }, [appReady]);
 
   useEffect(() => {
     void initializeAuth();
@@ -52,6 +66,10 @@ export default function RootLayout() {
       }
     })();
   }, []);
+
+  if (!appReady) {
+    return null;
+  }
 
   if (!sessionReady) {
     return (

@@ -4,6 +4,7 @@ import { format } from "date-fns";
 import {
   ActivityIndicator,
   Animated,
+  FlatList,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -39,6 +40,135 @@ type AdjustDraftItem = {
   originalCarbs: number;
   originalFat: number;
 };
+
+type CoachDisplayMessage = AiConversationMessage & { id: string };
+
+function MessageBubble({
+  message,
+  pendingProposal,
+  confirming,
+  onOpenGutFeedback,
+  onConfirmProposal,
+  onOpenAdjustModal,
+  onUpdateProposalMealType,
+}: {
+  message: CoachDisplayMessage;
+  pendingProposal: CoachFoodProposal | null;
+  confirming: boolean;
+  onOpenGutFeedback: (item: CoachFoodItem) => Promise<void>;
+  onConfirmProposal: () => Promise<void>;
+  onOpenAdjustModal: () => void;
+  onUpdateProposalMealType: (meal: MealType) => void;
+}) {
+  const proposalIsActive = Boolean(
+    pendingProposal && message.foodProposal && message.foodProposal.sourceMessage === pendingProposal.sourceMessage
+  );
+  const proposalItems = proposalIsActive ? pendingProposal?.items ?? [] : message.foodProposal?.items ?? [];
+  const proposalMealType = proposalIsActive
+    ? pendingProposal?.mealType
+    : message.foodProposal?.mealType;
+
+  return (
+    <View style={styles.messageWrap}>
+      <View
+        style={[
+          styles.bubble,
+          message.role === "user" ? styles.userBubble : styles.assistantBubble,
+          message.id === "welcome" && styles.welcomeBubble,
+        ]}
+      >
+        {message.id === "welcome" ? (
+          <Text style={styles.welcomeCoachLabel}>✦ SavorSelf Coach</Text>
+        ) : null}
+        <Text style={[styles.bubbleText, message.role === "user" && styles.userBubbleText]}>
+          {extractReply(message.content)}
+        </Text>
+      </View>
+      <Text style={[styles.messageTime, message.role === "user" ? styles.messageTimeUser : styles.messageTimeAssistant]}>
+        {format(new Date(message.timestamp), "h:mm a")}
+      </Text>
+
+      {message.role === "assistant" && message.foodProposal ? (
+        <View style={styles.proposalBubble}>
+          <Text style={styles.proposalEyebrow}>Food proposal</Text>
+          {proposalItems.map((item) => (
+            <View key={`${message.id}-${item.name}`} style={styles.proposalItemWrap}>
+              <Pressable
+                onPress={() => void onOpenGutFeedback(item)}
+                style={({ pressed }) => [styles.proposalItemRow, pressed && styles.promptPressed]}
+              >
+                <Text style={styles.proposalItemText}>
+                  • {formatFoodName(item.name)}  {Math.round(item.calories)} cal
+                </Text>
+              </Pressable>
+              {item.foodSource === "ai_estimate" ? (
+                <Text style={styles.proposalMetaText}>AI estimate</Text>
+              ) : null}
+            </View>
+          ))}
+          <View style={styles.proposalDivider} />
+          <Text style={styles.proposalTotalText}>
+            Total: {Math.round(proposalItems.reduce((sum, item) => sum + item.calories, 0))} cal ·{" "}
+            {Math.round(proposalItems.reduce((sum, item) => sum + item.protein, 0))}g protein
+          </Text>
+          {proposalIsActive && proposalMealType ? (
+            <>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={styles.proposalMealRow}>
+                  {(["breakfast", "lunch", "dinner", "snack"] as MealType[]).map((meal) => (
+                    <Pressable
+                      key={meal}
+                      style={[
+                        styles.proposalMealChip,
+                        proposalMealType === meal && styles.proposalMealChipActive,
+                      ]}
+                      onPress={() => onUpdateProposalMealType(meal)}
+                    >
+                      <Text
+                        style={[
+                          styles.proposalMealChipText,
+                          proposalMealType === meal && styles.proposalMealChipTextActive,
+                        ]}
+                      >
+                        {meal.charAt(0).toUpperCase() + meal.slice(1)}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </ScrollView>
+              <View style={styles.proposalActionRow}>
+                <Pressable
+                  onPress={() => void onConfirmProposal()}
+                  style={({ pressed }) => [
+                    styles.proposalActionButton,
+                    styles.proposalConfirmButton,
+                    pressed && styles.promptPressed,
+                  ]}
+                >
+                  {confirming ? (
+                    <ActivityIndicator size="small" color={colors.white} />
+                  ) : (
+                    <Text style={[styles.proposalActionText, styles.proposalConfirmText]}>Log it ✓</Text>
+                  )}
+                </Pressable>
+                <Pressable
+                  onPress={onOpenAdjustModal}
+                  style={({ pressed }) => [
+                    styles.proposalActionButton,
+                    styles.proposalSecondaryButton,
+                    pressed && styles.promptPressed,
+                  ]}
+                >
+                  <Text style={[styles.proposalActionText, styles.proposalSecondaryText]}>Not quite</Text>
+                </Pressable>
+              </View>
+            </>
+          ) : null}
+        </View>
+      ) : null}
+    </View>
+  );
+}
 
 function extractReply(content: string): string {
   const trimmed = content.trim();
@@ -285,7 +415,7 @@ export function CoachChat() {
   const [proposalGutScoreLoading, setProposalGutScoreLoading] = useState<Record<string, boolean>>({});
   const [adjustModalVisible, setAdjustModalVisible] = useState(false);
   const [adjustDraftItems, setAdjustDraftItems] = useState<AdjustDraftItem[]>([]);
-  const scrollRef = useRef<ScrollView>(null);
+  const flatListRef = useRef<FlatList<CoachDisplayMessage> | null>(null);
   const thinkingDotsOpacity = useRef(new Animated.Value(0.3)).current;
   const coachUnitOptions = useMemo(
     () => getCoachUnitOptions(profile?.preferredUnits),
@@ -309,7 +439,7 @@ export function CoachChat() {
   }, [conversationResetCount]);
 
   useEffect(() => {
-    scrollRef.current?.scrollToEnd({ animated: true });
+    flatListRef.current?.scrollToEnd({ animated: true });
   }, [conversation.length, sending]);
 
   useEffect(() => {
@@ -349,7 +479,7 @@ export function CoachChat() {
   const welcomeText = moodLogged
     ? `${greeting}${profile?.name ? `, ${profile.name}` : ""}! I can see you've already checked in today — feeling ${moodLabels[(moodLogs[0]?.moodScore ?? 3) - 1]?.toLowerCase() ?? "it"}. What's on your mind?`
     : `${greeting}${profile?.name ? `, ${profile.name}` : ""}! I'm your SavorSelf coach. I can log your food, pull up your patterns, or just talk. What do you need today?`;
-  const displayConversation = useMemo<Array<AiConversationMessage & { id?: string; createdAt?: string }>>(
+  const displayConversation = useMemo<CoachDisplayMessage[]>(
     () =>
       conversation.length === 0
         ? [
@@ -362,7 +492,10 @@ export function CoachChat() {
               kind: "text",
             },
           ]
-        : conversation,
+        : conversation.map((message, index) => ({
+            ...message,
+            id: `${message.timestamp}-${index}`,
+          })),
     [conversation, welcomeText]
   );
 
@@ -900,180 +1033,83 @@ export function CoachChat() {
       </Modal>
 
       <GutScoreModal visible={Boolean(gutScoreData)} data={gutScoreData} onClose={() => setGutScoreData(null)} />
-      <ScrollView
-        ref={scrollRef}
+      <FlatList
+        ref={flatListRef}
         style={styles.messagesScroll}
+        data={displayConversation}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <MessageBubble
+            message={item}
+            pendingProposal={pendingProposal}
+            confirming={confirming}
+            onOpenGutFeedback={openGutFeedback}
+            onConfirmProposal={confirmProposal}
+            onOpenAdjustModal={openAdjustModal}
+            onUpdateProposalMealType={updateProposalMealType}
+          />
+        )}
         contentContainerStyle={styles.messagesContent}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+        onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
         showsVerticalScrollIndicator={false}
-      >
-        {displayConversation.map((message, index) => (
-          <View key={`${message.timestamp}-${index}`} style={styles.messageWrap}>
-            <View
-              style={[
-                styles.bubble,
-                message.role === "user" ? styles.userBubble : styles.assistantBubble,
-                message.id === "welcome" && styles.welcomeBubble,
-              ]}
-            >
-              {message.id === "welcome" ? (
-                <Text style={styles.welcomeCoachLabel}>✦ SavorSelf Coach</Text>
-              ) : null}
-              <Text style={[styles.bubbleText, message.role === "user" && styles.userBubbleText]}>
-                {extractReply(message.content)}
-              </Text>
-            </View>
-            <Text style={[styles.messageTime, message.role === "user" ? styles.messageTimeUser : styles.messageTimeAssistant]}>
-              {format(new Date(message.timestamp), "h:mm a")}
-            </Text>
-
-            {message.role === "assistant" && message.foodProposal ? (
-              <View style={styles.proposalBubble}>
-                <Text style={styles.proposalEyebrow}>Food proposal</Text>
-                {(pendingProposal && message.foodProposal.sourceMessage === pendingProposal.sourceMessage
-                  ? pendingProposal.items
-                  : message.foodProposal.items
-                ).map((item) => (
-                  <View key={`${message.timestamp}-${item.name}`} style={styles.proposalItemWrap}>
-                    <Pressable
-                      onPress={() => void openGutFeedback(item)}
-                      style={({ pressed }) => [styles.proposalItemRow, pressed && styles.promptPressed]}
-                    >
-                      <Text style={styles.proposalItemText}>
-                        • {formatFoodName(item.name)}  {Math.round(item.calories)} cal
-                      </Text>
-                    </Pressable>
-                    {item.foodSource === "ai_estimate" ? (
-                      <Text style={styles.proposalMetaText}>AI estimate</Text>
-                    ) : null}
-                  </View>
-                ))}
-                <View style={styles.proposalDivider} />
-                <Text style={styles.proposalTotalText}>
-                  Total:{" "}
-                  {Math.round(
-                    (pendingProposal && message.foodProposal.sourceMessage === pendingProposal.sourceMessage
-                      ? pendingProposal.items
-                      : message.foodProposal.items
-                    ).reduce((sum, item) => sum + item.calories, 0)
-                  )}{" "}
-                  cal ·{" "}
-                  {Math.round(
-                    (pendingProposal && message.foodProposal.sourceMessage === pendingProposal.sourceMessage
-                      ? pendingProposal.items
-                      : message.foodProposal.items
-                    ).reduce((sum, item) => sum + item.protein, 0)
-                  )}g protein
-                </Text>
-                {pendingProposal && message.foodProposal.sourceMessage === pendingProposal.sourceMessage ? (
-                  <>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                      <View style={styles.proposalMealRow}>
-                        {(["breakfast", "lunch", "dinner", "snack"] as MealType[]).map((meal) => (
-                          <Pressable
-                            key={meal}
-                            style={[
-                              styles.proposalMealChip,
-                              pendingProposal.mealType === meal && styles.proposalMealChipActive,
-                            ]}
-                            onPress={() => updateProposalMealType(meal)}
-                          >
-                            <Text
-                              style={[
-                                styles.proposalMealChipText,
-                                pendingProposal.mealType === meal && styles.proposalMealChipTextActive,
-                              ]}
-                            >
-                              {meal.charAt(0).toUpperCase() + meal.slice(1)}
-                            </Text>
-                          </Pressable>
-                        ))}
-                      </View>
-                    </ScrollView>
-                    <View style={styles.proposalActionRow}>
-                      <Pressable
-                        onPress={() => void confirmProposal()}
-                        style={({ pressed }) => [
-                          styles.proposalActionButton,
-                          styles.proposalConfirmButton,
-                          pressed && styles.promptPressed,
-                        ]}
-                      >
-                        {confirming ? (
-                          <ActivityIndicator size="small" color={colors.white} />
-                        ) : (
-                          <Text style={[styles.proposalActionText, styles.proposalConfirmText]}>Log it ✓</Text>
-                        )}
-                      </Pressable>
-                      <Pressable
-                        onPress={() => openAdjustModal()}
-                        style={({ pressed }) => [
-                          styles.proposalActionButton,
-                          styles.proposalSecondaryButton,
-                          pressed && styles.promptPressed,
-                        ]}
-                      >
-                        <Text style={[styles.proposalActionText, styles.proposalSecondaryText]}>Not quite</Text>
-                      </Pressable>
-                    </View>
-                  </>
-                ) : null}
+        ListFooterComponent={
+          <>
+            {sending ? (
+              <View style={styles.messageWrap}>
+                <View style={[styles.bubble, styles.assistantBubble, styles.thinkingBubble]}>
+                  <Animated.Text style={[styles.thinkingDots, { opacity: thinkingDotsOpacity }]}>···</Animated.Text>
+                  <Text style={styles.thinkingText}>thinking...</Text>
+                </View>
               </View>
             ) : null}
-          </View>
-        ))}
 
-        {sending ? (
-          <View style={styles.messageWrap}>
-            <View style={[styles.bubble, styles.assistantBubble, styles.thinkingBubble]}>
-              <Animated.Text style={[styles.thinkingDots, { opacity: thinkingDotsOpacity }]}>···</Animated.Text>
-              <Text style={styles.thinkingText}>thinking...</Text>
-            </View>
-          </View>
-        ) : null}
-
-        {!hasStartedConversation ? (
-          <View style={styles.promptRow}>
-            <Text style={styles.promptTitle}>What I can help with</Text>
-            <View style={styles.starterCards}>
-              {[
-                {
-                  title: "🍳  Log what I ate",
-                  subtitle: "Just describe it naturally — I'll find the nutrition and add it to your log",
-                  prompt: "I want to log what I ate",
-                },
-                {
-                  title: "📊  How's my mood been?",
-                  subtitle: "I'll pull your recent patterns and give you a personal read",
-                  prompt: "How has my mood been lately?",
-                },
-                {
-                  title: "🥗  What should I eat?",
-                  subtitle: "Get a suggestion based on your gut-brain goals and recent logs",
-                  prompt: "What should I eat to support my mood today?",
-                },
-                {
-                  title: "💬  Just talk",
-                  subtitle: "No food stuff required — a supportive space to think out loud",
-                  prompt: "I just need to talk through something",
-                },
-              ].map((item) => (
-                <Pressable
-                  key={item.prompt}
-                  onPress={() => {
-                    setDraft(item.prompt);
-                    void handleSend(item.prompt);
-                  }}
-                  style={({ pressed }) => [styles.starterCard, pressed && styles.promptPressed]}
-                >
-                  <Text style={styles.starterCardTitle}>{item.title}</Text>
-                  <Text style={styles.starterCardSubtitle}>{item.subtitle}</Text>
-                </Pressable>
-              ))}
-            </View>
-          </View>
-        ) : null}
-      </ScrollView>
+            {!hasStartedConversation ? (
+              <View style={styles.promptRow}>
+                <Text style={styles.promptTitle}>What I can help with</Text>
+                <View style={styles.starterCards}>
+                  {[
+                    {
+                      title: "🍳  Log what I ate",
+                      subtitle: "Just describe it naturally — I'll find the nutrition and add it to your log",
+                      prompt: "I want to log what I ate",
+                    },
+                    {
+                      title: "📊  How's my mood been?",
+                      subtitle: "I'll pull your recent patterns and give you a personal read",
+                      prompt: "How has my mood been lately?",
+                    },
+                    {
+                      title: "🥗  What should I eat?",
+                      subtitle: "Get a suggestion based on your gut-brain goals and recent logs",
+                      prompt: "What should I eat to support my mood today?",
+                    },
+                    {
+                      title: "💬  Just talk",
+                      subtitle: "No food stuff required — a supportive space to think out loud",
+                      prompt: "I just need to talk through something",
+                    },
+                  ].map((item) => (
+                    <Pressable
+                      key={item.prompt}
+                      onPress={() => {
+                        setDraft(item.prompt);
+                        void handleSend(item.prompt);
+                      }}
+                      style={({ pressed }) => [styles.starterCard, pressed && styles.promptPressed]}
+                    >
+                      <Text style={styles.starterCardTitle}>{item.title}</Text>
+                      <Text style={styles.starterCardSubtitle}>{item.subtitle}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            ) : null}
+          </>
+        }
+      />
 
       {draft.length > 400 ? (
         <Text style={[styles.charCount, draft.length > 450 && styles.charCountWarning]}>

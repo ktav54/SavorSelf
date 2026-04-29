@@ -60,6 +60,7 @@ export default function LogScreen() {
   const [foodSearchVisible, setFoodSearchVisible] = useState(false);
   const [entryStep, setEntryStep] = useState<EntryStep>("hidden");
   const hasShownEntryThisSession = useRef(false);
+  const lastLoaded = useRef<string | null>(null);
   const touchStartX = useRef(0);
   const heroRise = useRef(new Animated.Value(24)).current;
   const heroFade = useRef(new Animated.Value(0)).current;
@@ -70,6 +71,13 @@ export default function LogScreen() {
   useFocusEffect(
     useCallback(() => {
       const currentDate = useAppStore.getState().selectedDate;
+      const cacheKey = `${format(currentDate, "yyyy-MM-dd")}-${profile?.id ?? "guest"}`;
+
+      if (lastLoaded.current === cacheKey) {
+        return;
+      }
+
+      lastLoaded.current = cacheKey;
       void loadTodayMoodLog(currentDate);
       void loadTodayFoodLogs(currentDate);
       void loadTodayQuickLog(currentDate);
@@ -78,7 +86,7 @@ export default function LogScreen() {
         hasShownEntryThisSession.current = true;
         setEntryStep("welcome");
       }
-    }, [loadTodayFoodLogs, loadTodayMoodLog, loadTodayQuickLog])
+    }, [loadTodayFoodLogs, loadTodayMoodLog, loadTodayQuickLog, profile?.id])
   );
 
   const isSelectedDateToday = isToday(selectedDate);
@@ -265,7 +273,7 @@ export default function LogScreen() {
         >
           <View style={styles.logHeader}>
             <View style={styles.logHeaderDateRow}>
-              <Pressable style={({ pressed }) => [styles.dateNavButton, pressed && styles.dateNavPressed]} onPress={goToPreviousDay}>
+              <Pressable style={({ pressed }) => [styles.dateNavButton, pressed && styles.dateNavPressed]} onPress={goToPreviousDay} accessibilityLabel="Previous day" accessibilityRole="button">
                 <Text style={styles.dateNavText}>{"‹"}</Text>
               </Pressable>
               <Text style={styles.logHeaderDate}>{logHeaderDate}</Text>
@@ -277,6 +285,8 @@ export default function LogScreen() {
                 ]}
                 onPress={goToNextDay}
                 disabled={isSelectedDateToday}
+                accessibilityLabel="Next day"
+                accessibilityRole="button"
               >
                 <Text style={[styles.dateNavText, isSelectedDateToday && styles.dateNavTextDisabled]}>{"›"}</Text>
               </Pressable>
@@ -340,7 +350,12 @@ export default function LogScreen() {
                 <Text style={styles.entryCloseText}>X</Text>
               </Pressable>
             </View>
-            <ScrollView contentContainerStyle={styles.entryScrollContent} showsVerticalScrollIndicator={false}>
+            <ScrollView
+              contentContainerStyle={styles.entryScrollContent}
+              showsVerticalScrollIndicator={false}
+              keyboardDismissMode="on-drag"
+              keyboardShouldPersistTaps="handled"
+            >
               <Animated.View style={[styles.heroGlow, glowStyle]} />
               <View style={styles.heroMarkWrap}>
                 <Animated.View style={[styles.heroLogoFrame, floatingLogoStyle]}>

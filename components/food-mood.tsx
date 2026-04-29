@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import React, { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import * as Haptics from "expo-haptics";
 import { format } from "date-fns";
 import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -266,7 +266,7 @@ function PreGatePreview({ pairedDays }: { pairedDays: number }) {
   );
 }
 
-export function GutMoodScoreCard() {
+export const GutMoodScoreCard = React.memo(function GutMoodScoreCard() {
   const moodLogs = useAppStore((state: AppState) => state.moodLogs);
   const foodLogs = useAppStore((state: AppState) => state.foodLogs);
   const snapshot = useAppStore((state: AppState) => state.foodMoodSnapshot);
@@ -302,7 +302,7 @@ export function GutMoodScoreCard() {
       </View>
     </SurfaceCard>
   );
-}
+});
 
 export function FoodMoodGate() {
   const moodLogs = useAppStore((state: AppState) => state.moodLogs);
@@ -853,7 +853,7 @@ export function WeeklySnapshot() {
   );
 }
 
-export function InsightFeed() {
+export const InsightFeed = React.memo(function InsightFeed() {
   const insights = useAppStore((state: AppState) => state.insights);
   const insightsLoading = useAppStore((state: AppState) => state.insightsLoading);
   const insightsError = useAppStore((state: AppState) => state.insightsError);
@@ -958,9 +958,9 @@ export function InsightFeed() {
       })}
     </View>
   );
-}
+});
 
-export function TrendCard() {
+export const TrendCard = React.memo(function TrendCard() {
   const trend = useAppStore((state: AppState) => state.foodMoodTrend);
   const moodLogs = useAppStore((state: AppState) => state.moodLogs);
   const moodByDate = useMemo(() => buildMoodByDate(moodLogs), [moodLogs]);
@@ -1027,9 +1027,9 @@ export function TrendCard() {
       </View>
     </SurfaceCard>
   );
-}
+});
 
-export function NutrientSpotlight() {
+export const NutrientSpotlight = React.memo(function NutrientSpotlight() {
   const profile = useAppStore((state: AppState) => state.profile);
   const foodLogs = useAppStore((state: AppState) => state.foodLogs);
   const todayKey = format(new Date(), "yyyy-MM-dd");
@@ -1078,7 +1078,7 @@ export function NutrientSpotlight() {
       )}
     </SurfaceCard>
   );
-}
+});
 
 function SnapshotStat({ label, value, valueStyle }: { label: string; value: string; valueStyle?: object }) {
   return (
