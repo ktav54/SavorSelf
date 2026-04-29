@@ -1,4 +1,4 @@
-import { PropsWithChildren, RefObject } from "react";
+import { type PropsWithChildren, type ReactNode, type RefObject } from "react";
 import {
   Pressable,
   SafeAreaView,
@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  type TextInputProps,
   View,
 } from "react-native";
 import { colors, radii, spacing } from "@/constants/theme";
@@ -92,24 +93,41 @@ export function Field({
   onChangeText,
   placeholder,
   multiline = false,
+  secureTextEntry = false,
+  keyboardType = "default",
+  autoCapitalize = "sentences",
+  autoCorrect = true,
+  rightAccessory,
 }: {
   label: string;
   value: string;
   onChangeText?: (text: string) => void;
   placeholder?: string;
   multiline?: boolean;
+  secureTextEntry?: boolean;
+  keyboardType?: TextInputProps["keyboardType"];
+  autoCapitalize?: TextInputProps["autoCapitalize"];
+  autoCorrect?: boolean;
+  rightAccessory?: ReactNode;
 }) {
   return (
     <View style={styles.fieldWrap}>
       <Text style={styles.fieldLabel}>{label}</Text>
-      <TextInput
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor={colors.textSecondary}
-        multiline={multiline}
-        style={[styles.input, multiline && styles.textarea]}
-      />
+      <View style={styles.inputWrap}>
+        <TextInput
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          placeholderTextColor={colors.textSecondary}
+          multiline={multiline}
+          secureTextEntry={secureTextEntry}
+          keyboardType={keyboardType}
+          autoCapitalize={autoCapitalize}
+          autoCorrect={autoCorrect}
+          style={[styles.input, multiline && styles.textarea, rightAccessory ? styles.inputWithAccessory : undefined]}
+        />
+        {rightAccessory ? <View style={styles.inputAccessory}>{rightAccessory}</View> : null}
+      </View>
     </View>
   );
 }
@@ -224,6 +242,10 @@ const styles = StyleSheet.create({
   fieldWrap: {
     gap: 8,
   },
+  inputWrap: {
+    position: "relative",
+    justifyContent: "center",
+  },
   fieldLabel: {
     fontSize: 12,
     textTransform: "uppercase",
@@ -239,6 +261,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.textPrimary,
     backgroundColor: colors.white,
+  },
+  inputWithAccessory: {
+    paddingRight: 56,
+  },
+  inputAccessory: {
+    position: "absolute",
+    right: 14,
+    top: 0,
+    bottom: 0,
+    justifyContent: "center",
   },
   textarea: {
     minHeight: 120,

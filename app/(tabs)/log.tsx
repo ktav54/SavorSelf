@@ -56,15 +56,12 @@ export default function LogScreen() {
   const profile = useAppStore((state: AppState) => state.profile);
   const foodLogs = useAppStore((state: AppState) => state.foodLogs);
   const moodLogs = useAppStore((state: AppState) => state.moodLogs);
-  const insights = useAppStore((state: AppState) => state.insights);
-  const foodMoodSnapshot = useAppStore((state: AppState) => state.foodMoodSnapshot);
-  const foodMoodTrend = useAppStore((state: AppState) => state.foodMoodTrend);
+  const analyticsFoodLogs = useAppStore((state: AppState) => state.analyticsFoodLogs);
   const selectedDate = useAppStore((state: AppState) => state.selectedDate);
   const setSelectedDate = useAppStore((state: AppState) => state.setSelectedDate);
   const loadTodayMoodLog = useAppStore((state: AppState) => state.loadTodayMoodLog);
   const loadTodayFoodLogs = useAppStore((state: AppState) => state.loadTodayFoodLogs);
   const loadTodayQuickLog = useAppStore((state: AppState) => state.loadTodayQuickLog);
-  const loadFoodMoodInsights = useAppStore((state: AppState) => state.loadFoodMoodInsights);
   const [defaultMealType, setDefaultMealType] = useState<MealType>("breakfast");
   const [mealContext, setMealContext] = useState<MealType | null>(null);
   const [foodSearchVisible, setFoodSearchVisible] = useState(false);
@@ -227,9 +224,8 @@ export default function LogScreen() {
       : format(selectedDate, "EEE, MMMM d");
   const pastDayMoodOption = moodSummaryOptions.find((option) => option.score === todaysMood?.moodScore);
   const pastDayEnergyLabel = todaysMood ? energySummaryOptions[(todaysMood.energyScore ?? 3) - 1] : "";
-  const hasAnyFoodMoodHistory =
-    insights.length > 0 || foodMoodTrend.length > 0 || foodMoodSnapshot !== null;
-  const isFirstTimeEmpty = isSelectedDateToday && foodLogs.length === 0 && !hasAnyFoodMoodHistory;
+  const hasEverLoggedFood = foodLogs.length > 0 || analyticsFoodLogs.length > 0;
+  const isFirstTimeEmpty = isSelectedDateToday && !hasEverLoggedFood;
   const generalFoodTitle = mealContext
     ? `What did you eat for ${mealContext}?`
     : isSelectedDateToday
@@ -300,13 +296,12 @@ export default function LogScreen() {
       await Promise.all([
         loadTodayMoodLog(currentDate),
         loadTodayFoodLogs(currentDate),
-        loadTodayQuickLog(),
-        loadFoodMoodInsights(),
+        loadTodayQuickLog(currentDate),
       ]);
     } finally {
       setRefreshing(false);
     }
-  }, [loadFoodMoodInsights, loadTodayFoodLogs, loadTodayMoodLog, loadTodayQuickLog]);
+  }, [loadTodayFoodLogs, loadTodayMoodLog, loadTodayQuickLog]);
 
   useLayoutEffect(() => {
     navigation.setOptions({

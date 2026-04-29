@@ -24,7 +24,7 @@ import {
 } from "@/services/notifications";
 import { useAppStore, type AppState } from "@/store/useAppStore";
 
-type AboutModalKind = "how" | "science" | null;
+type AboutModalKind = "how" | "science" | "terms" | null;
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -103,6 +103,13 @@ export default function SettingsScreen() {
       return {
         title: "The gut-brain connection",
         body: "Your gut and brain are in constant communication through the vagus nerve and gut microbiome. This is called the gut-brain axis.\n\nAbout 95% of your serotonin — your mood-regulating neurotransmitter — is produced in your gut. What you eat directly influences your microbiome, which influences your brain chemistry.\n\nResearch shows that fiber-rich foods, fermented foods, and consistent eating patterns support a healthy microbiome and more stable mood.",
+      };
+    }
+
+    if (aboutModal === "terms") {
+      return {
+        title: "Terms of Service",
+        body: "Last updated: April 2026\n\nBy using SavorSelf, you agree to these terms.\n\n1. Use of Service\nSavorSelf is a personal wellness tracking app. It is not a medical device and does not provide medical advice. Always consult a healthcare professional for medical decisions.\n\n2. Your Data\nYou own your data. We collect food logs, mood logs, and wellness data only to provide you with personalized insights. We do not sell your data to third parties.\n\n3. Account\nYou are responsible for maintaining the security of your account. You can delete your account and all data at any time from Settings.\n\n4. Limitation of Liability\nSavorSelf is provided as-is. We are not liable for any decisions made based on information in the app.\n\n5. Contact\nQuestions? Email us at savor.self.app@gmail.com",
       };
     }
 
@@ -553,9 +560,14 @@ export default function SettingsScreen() {
               <Text style={styles.aboutChevron}>›</Text>
             </Pressable>
             <View style={styles.aboutDivider} />
-            <Pressable style={styles.aboutRow} onPress={() => void Linking.openURL("mailto:hello@savorself.app")}>
+            <Pressable style={styles.aboutRow} onPress={() => void Linking.openURL("mailto:savor.self.app@gmail.com")}>
               <Text style={styles.aboutRowLabel}>Send feedback</Text>
               <Text style={styles.aboutChevron}>›</Text>
+            </Pressable>
+            <View style={styles.aboutDivider} />
+            <Pressable style={styles.aboutRow} onPress={() => setAboutModal("terms")}>
+              <Text style={styles.aboutRowLabel}>Terms of Service</Text>
+              <Text style={styles.aboutChevron}>â€º</Text>
             </Pressable>
             <View style={styles.aboutDivider} />
             <Pressable style={styles.aboutRow} onPress={() => void Linking.openURL("https://savorself.app/privacy")}>

@@ -2273,8 +2273,7 @@ export function FoodSearchCard({
       if (resolvedKey) {
         setGutScores((prev) => ({ ...prev, [resolvedKey]: fallbackData.score }));
       }
-    } catch (e) {
-      console.log("[gut_score] fetch failed", e);
+    } catch {
       setGutScore(fallbackData);
       setGutScoreVisible(true);
       if (resolvedKey) {

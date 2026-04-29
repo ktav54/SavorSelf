@@ -292,8 +292,6 @@ RESPONSE FORMAT — always return valid JSON only, no markdown, no explanation o
 }`;
 
 Deno.serve(async (request: Request) => {
-  console.log("[ai-coach] invoked");
-
   try {
     if (request.method !== "POST") {
       return jsonResponse({ error: "Method not allowed." }, 405);
@@ -371,20 +369,16 @@ Return ONLY valid JSON, no markdown, no explanation:
       );
 
       if (!gutRes.ok) {
-        const err = await gutRes.text();
-        console.log("[ai-coach] gut_score azure error", err);
         return jsonResponse({ intent: "gut_score", error: "Could not generate gut score." }, 500);
       }
 
       const gutData = await gutRes.json();
       const raw = gutData?.choices?.[0]?.message?.content ?? "";
-      console.log("[ai-coach] gut_score raw", raw);
 
       try {
         const parsed = JSON.parse(cleanJson(raw));
         return jsonResponse({ intent: "gut_score", foodName, ...parsed });
       } catch {
-        console.log("[ai-coach] gut_score parse failed", raw);
         return jsonResponse({ intent: "gut_score", error: "Could not parse gut score." }, 500);
       }
     }
@@ -434,8 +428,6 @@ Return ONLY valid JSON, no markdown, no explanation:
       );
 
       if (!chatRes.ok) {
-        const err = await chatRes.text();
-        console.log("[ai-coach] simple chat error", err);
         return jsonResponse({ intent: "chat", reply: "I'm here with you. Try sending that one more time and we'll keep going." });
       }
 
@@ -504,13 +496,9 @@ Return ONLY valid JSON, no markdown, no explanation:
       { role: "user", content: payload.message },
     ];
 
-    console.log("[ai-coach] calling Azure OpenAI, history:", filteredHistory.length);
-
     let azureRes = await callAzureOpenAI(messages, azureOpenAiKey, 0.3);
 
     if (!azureRes.ok) {
-      const err = await azureRes.text();
-      console.log("[ai-coach] Azure OpenAI error", err);
       azureRes = await callAzureOpenAI(
         [
           { role: "system", content: SYSTEM_PROMPT },
@@ -524,15 +512,12 @@ Return ONLY valid JSON, no markdown, no explanation:
       );
 
       if (!azureRes.ok) {
-        const retryErr = await azureRes.text();
-        console.log("[ai-coach] Azure OpenAI retry error", retryErr);
         return jsonResponse({ intent: "chat", reply: "I hit a snag, but I'm still here. Try sending that one more time." });
       }
     }
 
     const azureData = await azureRes.json();
     const raw = azureData?.choices?.[0]?.message?.content ?? "";
-    console.log("[ai-coach] raw response", raw);
 
     let parsed: UnifiedResponse;
     try {
@@ -581,7 +566,7 @@ Return ONLY valid JSON, no markdown, no explanation:
     });
 
   } catch (error) {
-    console.log("[ai-coach] error", error);
+    console.error("[ai-coach] error", error);
     return jsonResponse(
       {
         intent: "chat",

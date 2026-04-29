@@ -25,6 +25,20 @@ alter table public.users add column if not exists onboarding_goal text;
 alter table public.users add column if not exists onboarding_challenge text;
 alter table public.users add column if not exists avatar_emoji text;
 
+create or replace function public.delete_user_account()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  delete from auth.users where id = auth.uid();
+end;
+$$;
+
+revoke all on function public.delete_user_account() from public;
+grant execute on function public.delete_user_account() to authenticated;
+
 create table if not exists public.mood_logs (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.users(id) on delete cascade,

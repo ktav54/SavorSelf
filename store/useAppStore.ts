@@ -28,6 +28,8 @@ export interface AppState {
   selectedDate: Date;
   moodLogs: MoodLog[];
   foodLogs: FoodLog[];
+  analyticsMoodLogs: MoodLog[];
+  analyticsFoodLogs: FoodLog[];
   quickLogs: QuickLog[];
   insights: FoodMoodInsight[];
   foodMoodSnapshot: FoodMoodSnapshot | null;
@@ -425,6 +427,8 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
   selectedDate: normalizeSelectedDate(),
   moodLogs: [],
   foodLogs: [],
+  analyticsMoodLogs: [],
+  analyticsFoodLogs: [],
   quickLogs: demoQuickLogs,
   insights: demoInsights,
   foodMoodSnapshot: null,
@@ -462,6 +466,8 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
         profile: null,
         moodLogs: [],
         foodLogs: [],
+        analyticsMoodLogs: [],
+        analyticsFoodLogs: [],
         quickLogs: demoQuickLogs,
         insights: [],
         foodMoodSnapshot: null,
@@ -714,6 +720,13 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
     }
 
     await supabase.from("users").delete().eq("id", profile.id);
+    const { error: authDeleteError } = await supabase.rpc("delete_user_account");
+
+    if (authDeleteError) {
+      return { error: authDeleteError.message };
+    }
+
+    await cancelAllSavorSelfNotifications();
     await supabase.auth.signOut();
 
     set({
@@ -723,7 +736,12 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
       selectedDate: normalizeSelectedDate(),
       moodLogs: [],
       foodLogs: [],
+      analyticsMoodLogs: [],
+      analyticsFoodLogs: [],
       quickLogs: [],
+      insights: [],
+      foodMoodSnapshot: null,
+      foodMoodTrend: [],
       aiNarrative: "",
       conversation: [],
       conversationResetCount: 0,
@@ -753,7 +771,12 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
       selectedDate: normalizeSelectedDate(),
       moodLogs: [],
       foodLogs: [],
+      analyticsMoodLogs: [],
+      analyticsFoodLogs: [],
       quickLogs: [],
+      insights: [],
+      foodMoodSnapshot: null,
+      foodMoodTrend: [],
       aiNarrative: "",
       conversation: [],
       conversationResetCount: 0,
@@ -911,25 +934,25 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
       return;
     }
 
-    const moodLogs = (moodData ?? [])
+    const analyticsMoodLogs = (moodData ?? [])
       .map(mapMoodLog)
       .sort((left, right) => right.loggedAt.localeCompare(left.loggedAt));
-    const foodLogs = (foodData ?? [])
+    const analyticsFoodLogs = (foodData ?? [])
       .map(mapFoodLog)
       .sort((left, right) => left.loggedAt.localeCompare(right.loggedAt));
-    const quickLogs = (quickData ?? []).map(mapQuickLog);
+    const analyticsQuickLogs = (quickData ?? []).map(mapQuickLog);
 
     const analysis = analyzeFoodMood({
       userId: profile.id,
-      moodLogs,
-      foodLogs,
-      quickLogs,
+      moodLogs: analyticsMoodLogs,
+      foodLogs: analyticsFoodLogs,
+      quickLogs: analyticsQuickLogs,
     });
-    const snapshot = buildFoodMoodSnapshot(moodLogs, foodLogs);
+    const snapshot = buildFoodMoodSnapshot(analyticsMoodLogs, analyticsFoodLogs);
 
     set({
-      moodLogs,
-      foodLogs,
+      analyticsMoodLogs,
+      analyticsFoodLogs,
       insights: analysis.insights,
       foodMoodSnapshot: snapshot,
       foodMoodTrend: analysis.trend,
@@ -942,8 +965,8 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
         insights: analysis.insights,
         snapshot,
         trend: analysis.trend,
-        moodLogs,
-        foodLogs,
+        moodLogs: analyticsMoodLogs,
+        foodLogs: analyticsFoodLogs,
       });
 
       set({
@@ -1207,23 +1230,18 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
       pre_logged: false,
     }));
 
-    console.log("[store] saveMultipleFoodLogs payload", payload);
-
     const { data, error } = await supabase
       .from("food_logs")
       .insert(payload)
       .select("*");
 
     if (error) {
-      console.log("[store] saveMultipleFoodLogs error", error.message);
       set({
         foodLoading: false,
         foodError: error.message,
       });
       return { error: error.message };
     }
-
-    console.log("[store] saveMultipleFoodLogs success", data);
 
     const savedFoods = (data ?? []).map(mapFoodLog);
 
@@ -1324,7 +1342,6 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
         .eq("id", profile.id);
 
       if (error) {
-        console.log("[store] saveConversation skipped", error.message);
         const message = error.message.toLowerCase();
         if (
           message.includes("coach_conversation") ||
@@ -1334,11 +1351,8 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
           return;
         }
       }
-    } catch (error) {
-      console.log(
-        "[store] saveConversation failed",
-        error instanceof Error ? error.message : String(error)
-      );
+    } catch {
+      return;
     }
   },
   loadConversation: async () => {
@@ -1355,7 +1369,6 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
         .maybeSingle();
 
       if (error) {
-        console.log("[store] loadConversation skipped", error.message);
         const message = error.message.toLowerCase();
         if (
           message.includes("coach_conversation") ||
@@ -1377,17 +1390,17 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
           conversation: parsed,
         });
       }
-    } catch (error) {
-      console.log(
-        "[store] loadConversation failed",
-        error instanceof Error ? error.message : String(error)
-      );
+    } catch {
+      return;
     }
   },
   getFrequentFoods: (mealType, limit = 3) => {
-    const mealFoods = useAppStore
-      .getState()
-      .foodLogs.filter((item) => item.mealType === mealType);
+    const state = useAppStore.getState();
+    const mealFoods = Array.from(
+      new Map(
+        [...state.foodLogs, ...state.analyticsFoodLogs].map((item) => [item.id, item])
+      ).values()
+    ).filter((item) => item.mealType === mealType);
 
     const byFoodName = new Map<
       string,

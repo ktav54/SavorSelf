@@ -23,6 +23,7 @@ export default function SignInScreen() {
   const profile = useAppStore((state: AppState) => state.profile);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     if (!sessionReady || !isAuthenticated) {
@@ -62,8 +63,29 @@ export default function SignInScreen() {
               <Text style={styles.title}>Welcome back</Text>
               <Text style={styles.subtitle}>Sign in to pick up where you left off.</Text>
 
-              <Field label="Email" value={email} onChangeText={setEmail} placeholder="you@example.com" />
-              <Field label="Password" value={password} onChangeText={setPassword} placeholder="password" />
+              <Field
+                label="Email"
+                value={email}
+                onChangeText={setEmail}
+                placeholder="you@example.com"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <Field
+                label="Password"
+                value={password}
+                onChangeText={setPassword}
+                placeholder="password"
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+                autoCorrect={false}
+                rightAccessory={
+                  <Pressable onPress={() => setShowPassword((current) => !current)} style={styles.eyeButton}>
+                    <Text style={styles.eyeIcon}>{showPassword ? "👁" : "👁‍🗨"}</Text>
+                  </Pressable>
+                }
+              />
 
               {authLoading ? (
                 <View style={styles.loadingButton}>
@@ -209,5 +231,12 @@ const styles = StyleSheet.create({
   footerAccent: {
     color: colors.accentPrimary,
     fontWeight: "600",
+  },
+  eyeButton: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  eyeIcon: {
+    fontSize: 18,
   },
 });

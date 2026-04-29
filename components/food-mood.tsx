@@ -320,11 +320,14 @@ function PreGatePreview({ pairedDays }: { pairedDays: number }) {
 }
 
 export const GutMoodScoreCard = React.memo(function GutMoodScoreCard() {
-  const moodLogs = useAppStore((state: AppState) => state.moodLogs);
-  const foodLogs = useAppStore((state: AppState) => state.foodLogs);
+  const analyticsMoodLogs = useAppStore((state: AppState) => state.analyticsMoodLogs);
+  const analyticsFoodLogs = useAppStore((state: AppState) => state.analyticsFoodLogs);
   const snapshot = useAppStore((state: AppState) => state.foodMoodSnapshot);
   const [showScoreInfo, setShowScoreInfo] = useState(false);
-  const score = useMemo(() => getGutMoodScore(moodLogs, foodLogs), [foodLogs, moodLogs]);
+  const score = useMemo(
+    () => getGutMoodScore(analyticsMoodLogs, analyticsFoodLogs),
+    [analyticsFoodLogs, analyticsMoodLogs]
+  );
   const tone = getGutMoodTone(score);
   const moodAverage = snapshot?.averageMoodThisWeek != null ? `${snapshot.averageMoodThisWeek.toFixed(1)} / 5` : "—";
   const topTag = snapshot?.topTag
@@ -382,9 +385,12 @@ export const GutMoodScoreCard = React.memo(function GutMoodScoreCard() {
 });
 
 export function FoodMoodGate() {
-  const moodLogs = useAppStore((state: AppState) => state.moodLogs);
-  const foodLogs = useAppStore((state: AppState) => state.foodLogs);
-  const pairedDays = useMemo(() => getPairedDays(moodLogs, foodLogs), [foodLogs, moodLogs]);
+  const analyticsMoodLogs = useAppStore((state: AppState) => state.analyticsMoodLogs);
+  const analyticsFoodLogs = useAppStore((state: AppState) => state.analyticsFoodLogs);
+  const pairedDays = useMemo(
+    () => getPairedDays(analyticsMoodLogs, analyticsFoodLogs),
+    [analyticsFoodLogs, analyticsMoodLogs]
+  );
 
   if (pairedDays >= 3) {
     return null;
@@ -394,13 +400,13 @@ export function FoodMoodGate() {
 }
 
 export function StreakHeroCard() {
-  const moodLogs = useAppStore((state: AppState) => state.moodLogs);
-  const streak = useMemo(() => getCurrentMoodStreak(moodLogs), [moodLogs]);
+  const analyticsMoodLogs = useAppStore((state: AppState) => state.analyticsMoodLogs);
+  const streak = useMemo(() => getCurrentMoodStreak(analyticsMoodLogs), [analyticsMoodLogs]);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const [historyOpen, setHistoryOpen] = useState(false);
   const moodHistory = useMemo(() => {
     const moodMap = new Map<string, MoodLog>();
-    moodLogs.forEach((log) => {
+    analyticsMoodLogs.forEach((log) => {
       const key = toDateKey(log.loggedAt);
       if (!moodMap.has(key)) {
         moodMap.set(key, log);
@@ -417,7 +423,7 @@ export function StreakHeroCard() {
         };
       })
       .reverse();
-  }, [moodLogs]);
+  }, [analyticsMoodLogs]);
   const milestones: Record<number, string> = {
     3: "3 days strong 🎉",
     7: "One week! 🔥",
@@ -560,8 +566,8 @@ function MoodHistorySheet({
 }
 
 export function DailyReadCard() {
-  const moodLogs = useAppStore((state: AppState) => state.moodLogs);
-  const foodLogs = useAppStore((state: AppState) => state.foodLogs);
+  const analyticsMoodLogs = useAppStore((state: AppState) => state.analyticsMoodLogs);
+  const analyticsFoodLogs = useAppStore((state: AppState) => state.analyticsFoodLogs);
   const quickLogs = useAppStore((state: AppState) => state.quickLogs);
   const profile = useAppStore((state: AppState) => state.profile);
   const today = format(new Date(), "yyyy-MM-dd");
@@ -574,46 +580,53 @@ export function DailyReadCard() {
   const [cacheDate, setCacheDate] = useState<string | null>(initialCachedRead ? today : null);
   const [showRefresh, setShowRefresh] = useState(false);
   const [refreshNonce, setRefreshNonce] = useState(0);
-  const todayMood = moodLogs[0] ?? null;
   const todayQuickLog = quickLogs[0] ?? null;
-  const hasAnyTodayData = foodLogs.length > 0 || Boolean(todayMood);
+  const todayMood = useMemo(
+    () => analyticsMoodLogs.find((log) => log.loggedAt.slice(0, 10) === today) ?? null,
+    [analyticsMoodLogs, today]
+  );
+  const todayFoodLogs = useMemo(
+    () => analyticsFoodLogs.filter((food) => food.loggedAt.slice(0, 10) === today),
+    [analyticsFoodLogs, today]
+  );
+  const hasAnyTodayData = todayFoodLogs.length > 0 || Boolean(todayMood);
 
   const totalCaloriesToday = useMemo(
-    () => foodLogs.reduce((sum: number, food: FoodLog) => sum + food.calories, 0),
-    [foodLogs]
+    () => todayFoodLogs.reduce((sum: number, food: FoodLog) => sum + food.calories, 0),
+    [todayFoodLogs]
   );
   const totalProteinToday = useMemo(
-    () => foodLogs.reduce((sum: number, food: FoodLog) => sum + food.proteinG, 0),
-    [foodLogs]
+    () => todayFoodLogs.reduce((sum: number, food: FoodLog) => sum + food.proteinG, 0),
+    [todayFoodLogs]
   );
   const totalFiberToday = useMemo(
-    () => foodLogs.reduce((sum: number, food: FoodLog) => sum + food.fiberG, 0),
-    [foodLogs]
+    () => todayFoodLogs.reduce((sum: number, food: FoodLog) => sum + food.fiberG, 0),
+    [todayFoodLogs]
   );
   const allGutTagsToday = useMemo(
-    () => Array.from(new Set(foodLogs.flatMap((food: FoodLog) => food.gutHealthTags))),
-    [foodLogs]
+    () => Array.from(new Set(todayFoodLogs.flatMap((food: FoodLog) => food.gutHealthTags))),
+    [todayFoodLogs]
   );
   const foodDetails = useMemo(
     () =>
-      foodLogs.map((food: FoodLog) => ({
+      todayFoodLogs.map((food: FoodLog) => ({
         name: food.foodName,
         calories: food.calories,
         protein: food.proteinG,
         fiber: food.fiberG,
         gutHealthTags: food.gutHealthTags,
       })),
-    [foodLogs]
+    [todayFoodLogs]
   );
   const readContext = useMemo(
     () => ({
-      moodLogs: moodLogs.slice(0, 1),
+      moodLogs: todayMood ? [todayMood] : [],
       foodSummary: {
         averageCalories: totalCaloriesToday,
         averageProtein: totalProteinToday,
         averageFiber: totalFiberToday,
         tags: allGutTagsToday,
-        todaysFoods: foodLogs.map((food: FoodLog) => food.foodName).join(", "),
+        todaysFoods: todayFoodLogs.map((food: FoodLog) => food.foodName).join(", "),
         foodDetails,
         waterOz: todayQuickLog?.waterOz ?? 0,
         sleepHours: todayQuickLog?.sleepHours ?? 0,
@@ -628,12 +641,12 @@ export function DailyReadCard() {
     [
       allGutTagsToday,
       foodDetails,
-      foodLogs,
-      moodLogs,
       profile?.dailyCalorieGoal,
       profile?.dailyProteinGoal,
       profile?.name,
       quickLogs,
+      todayFoodLogs,
+      todayMood,
       todayQuickLog?.caffeineMg,
       todayQuickLog?.sleepHours,
       todayQuickLog?.waterOz,
@@ -810,12 +823,18 @@ export function DailyReadCard() {
 }
 
 export function HorizontalInsightScroll() {
-  const moodLogs = useAppStore((state: AppState) => state.moodLogs);
-  const foodLogsData = useAppStore((state: AppState) => state.foodLogs);
-  const moodMap = useMemo(() => buildMoodByDate(moodLogs), [moodLogs]);
+  const analyticsMoodLogs = useAppStore((state: AppState) => state.analyticsMoodLogs);
+  const analyticsFoodLogs = useAppStore((state: AppState) => state.analyticsFoodLogs);
+  const moodMap = useMemo(() => buildMoodByDate(analyticsMoodLogs), [analyticsMoodLogs]);
   const calendarDates = useMemo(() => getLastNDates(28), []);
-  const betterDayFoods = useMemo(() => getTopFoodsByMood(moodLogs, foodLogsData, 4), [foodLogsData, moodLogs]);
-  const pairedDays = useMemo(() => getPairedDays(moodLogs, foodLogsData), [foodLogsData, moodLogs]);
+  const betterDayFoods = useMemo(
+    () => getTopFoodsByMood(analyticsMoodLogs, analyticsFoodLogs, 4),
+    [analyticsFoodLogs, analyticsMoodLogs]
+  );
+  const pairedDays = useMemo(
+    () => getPairedDays(analyticsMoodLogs, analyticsFoodLogs),
+    [analyticsFoodLogs, analyticsMoodLogs]
+  );
   const loggedMoodDays = useMemo(
     () => calendarDates.filter((date) => moodMap.has(toDateKey(date))).length,
     [calendarDates, moodMap]
@@ -903,10 +922,10 @@ export function HorizontalInsightScroll() {
 }
 
 export function MoodHeatmap() {
-  const moodLogs = useAppStore((state: AppState) => state.moodLogs);
+  const analyticsMoodLogs = useAppStore((state: AppState) => state.analyticsMoodLogs);
 
   const cells = useMemo(() => {
-    const moodMap = new Map(moodLogs.map((log) => [log.loggedAt.slice(0, 10), log.moodScore]));
+    const moodMap = new Map(analyticsMoodLogs.map((log) => [log.loggedAt.slice(0, 10), log.moodScore]));
 
     return Array.from({ length: 28 }).map((_, index) => {
       const date = new Date();
@@ -922,7 +941,7 @@ export function MoodHeatmap() {
         dateNumber: date.getDate(),
       };
     });
-  }, [moodLogs]);
+  }, [analyticsMoodLogs]);
 
   const firstWeek = cells.slice(0, 7);
 
@@ -973,14 +992,14 @@ export function MoodHeatmap() {
 }
 
 export function TopFoodsByMood() {
-  const moodLogs = useAppStore((state: AppState) => state.moodLogs);
-  const foodLogs = useAppStore((state: AppState) => state.foodLogs);
+  const analyticsMoodLogs = useAppStore((state: AppState) => state.analyticsMoodLogs);
+  const analyticsFoodLogs = useAppStore((state: AppState) => state.analyticsFoodLogs);
 
   const topFoods = useMemo(() => {
-    const moodByDate = new Map(moodLogs.map((log) => [log.loggedAt.slice(0, 10), log.moodScore]));
+    const moodByDate = new Map(analyticsMoodLogs.map((log) => [log.loggedAt.slice(0, 10), log.moodScore]));
     const grouped = new Map<string, number[]>();
 
-    foodLogs.forEach((log) => {
+    analyticsFoodLogs.forEach((log) => {
       const dayMood = moodByDate.get(log.loggedAt.slice(0, 10));
       if (dayMood == null) {
         return;
@@ -1000,7 +1019,7 @@ export function TopFoodsByMood() {
       .filter((item) => item.appearances >= 2)
       .sort((left, right) => right.averageMood - left.averageMood)
       .slice(0, 5);
-  }, [foodLogs, moodLogs]);
+  }, [analyticsFoodLogs, analyticsMoodLogs]);
 
   return (
     <SurfaceCard>
@@ -1254,8 +1273,8 @@ export const InsightFeed = React.memo(function InsightFeed() {
 
 export const TrendCard = React.memo(function TrendCard() {
   const trend = useAppStore((state: AppState) => state.foodMoodTrend);
-  const moodLogs = useAppStore((state: AppState) => state.moodLogs);
-  const moodByDate = useMemo(() => buildMoodByDate(moodLogs), [moodLogs]);
+  const analyticsMoodLogs = useAppStore((state: AppState) => state.analyticsMoodLogs);
+  const moodByDate = useMemo(() => buildMoodByDate(analyticsMoodLogs), [analyticsMoodLogs]);
   const trendByDate = useMemo(
     () => new Map(trend.map((point: FoodMoodTrendPoint) => [point.date.slice(0, 10), point])),
     [trend]
@@ -1323,11 +1342,11 @@ export const TrendCard = React.memo(function TrendCard() {
 
 export const NutrientSpotlight = React.memo(function NutrientSpotlight() {
   const profile = useAppStore((state: AppState) => state.profile);
-  const foodLogs = useAppStore((state: AppState) => state.foodLogs);
+  const analyticsFoodLogs = useAppStore((state: AppState) => state.analyticsFoodLogs);
   const todayKey = format(new Date(), "yyyy-MM-dd");
   const todayFoodLogs = useMemo(
-    () => foodLogs.filter((f: FoodLog) => f.loggedAt.slice(0, 10) === todayKey),
-    [foodLogs, todayKey]
+    () => analyticsFoodLogs.filter((f: FoodLog) => f.loggedAt.slice(0, 10) === todayKey),
+    [analyticsFoodLogs, todayKey]
   );
   const totalFiber = useMemo(() => todayFoodLogs.reduce((sum, f) => sum + (f.fiberG ?? 0), 0), [todayFoodLogs]);
   const totalProtein = useMemo(() => todayFoodLogs.reduce((sum, f) => sum + (f.proteinG ?? 0), 0), [todayFoodLogs]);

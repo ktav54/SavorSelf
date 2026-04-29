@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   Animated,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -52,6 +53,9 @@ const calorieOptions = [
   { label: "2200+", value: 2400 },
 ] as const;
 
+const TERMS_OF_SERVICE_TEXT =
+  "Last updated: April 2026\n\nBy using SavorSelf, you agree to these terms.\n\n1. Use of Service\nSavorSelf is a personal wellness tracking app. It is not a medical device and does not provide medical advice. Always consult a healthcare professional for medical decisions.\n\n2. Your Data\nYou own your data. We collect food logs, mood logs, and wellness data only to provide you with personalized insights. We do not sell your data to third parties.\n\n3. Account\nYou are responsible for maintaining the security of your account. You can delete your account and all data at any time from Settings.\n\n4. Limitation of Liability\nSavorSelf is provided as-is. We are not liable for any decisions made based on information in the app.\n\n5. Contact\nQuestions? Email us at savor.self.app@gmail.com";
+
 function QuestionCard({
   title,
   subtitle,
@@ -97,6 +101,7 @@ export default function OnboardingScreen() {
   const [saveError, setSaveError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [allowExplainerAfterSetup, setAllowExplainerAfterSetup] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
 
   const stepOpacity = useRef(new Animated.Value(1)).current;
   const stepTranslateY = useRef(new Animated.Value(0)).current;
@@ -532,7 +537,13 @@ export default function OnboardingScreen() {
                     <Text style={styles.primaryButtonText}>Start my first log</Text>
                   </Pressable>
                   {saveError ? <Text style={styles.errorText}>{saveError}</Text> : null}
-                  <Text style={styles.termsText}>By continuing you agree to our terms.</Text>
+                  <View style={styles.termsRow}>
+                    <Text style={styles.termsText}>By continuing you agree to our </Text>
+                    <Pressable onPress={() => setShowTerms(true)}>
+                      <Text style={styles.termsLink}>terms of service</Text>
+                    </Pressable>
+                    <Text style={styles.termsText}>.</Text>
+                  </View>
                 </View>
               </View>
             ) : null}
@@ -553,6 +564,25 @@ export default function OnboardingScreen() {
           </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
+      <Modal visible={showTerms} transparent animationType="slide" onRequestClose={() => setShowTerms(false)}>
+        <View style={styles.termsModalBackdrop}>
+          <Pressable style={styles.termsModalScrim} onPress={() => setShowTerms(false)} />
+          <View style={styles.termsSheet}>
+            <View style={styles.dragHandle} />
+            <Text style={styles.termsSheetTitle}>Terms of Service</Text>
+            <ScrollView
+              style={styles.termsSheetScroll}
+              contentContainerStyle={styles.termsSheetScrollContent}
+              showsVerticalScrollIndicator={false}
+            >
+              <Text style={styles.termsSheetBody}>{TERMS_OF_SERVICE_TEXT}</Text>
+            </ScrollView>
+            <Pressable onPress={() => setShowTerms(false)} style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}>
+              <Text style={styles.primaryButtonText}>Close</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -895,7 +925,65 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.textSecondary,
     textAlign: "center",
+  },
+  termsRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    flexWrap: "wrap",
     marginTop: 8,
+  },
+  termsLink: {
+    fontSize: 11,
+    color: colors.accentPrimary,
+    fontWeight: "600",
+  },
+  termsModalBackdrop: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  termsModalScrim: {
+    flex: 1,
+    backgroundColor: "rgba(44, 26, 14, 0.24)",
+  },
+  termsSheet: {
+    backgroundColor: colors.background,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 32,
+    gap: 18,
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: colors.border,
+    minHeight: "56%",
+    maxHeight: "82%",
+  },
+  dragHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+    alignSelf: "center",
+    marginBottom: 20,
+  },
+  termsSheetTitle: {
+    color: colors.textPrimary,
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  termsSheetScroll: {
+    flex: 1,
+  },
+  termsSheetScrollContent: {
+    paddingBottom: 8,
+  },
+  termsSheetBody: {
+    fontSize: 15,
+    color: colors.textSecondary,
+    lineHeight: 26,
   },
   bridgeScreen: {
     flex: 1,

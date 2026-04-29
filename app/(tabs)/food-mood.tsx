@@ -27,8 +27,8 @@ export default function FoodMoodScreen() {
   const insights = useAppStore((state: AppState) => state.insights);
   const foodMoodSnapshot = useAppStore((state: AppState) => state.foodMoodSnapshot);
   const foodMoodTrend = useAppStore((state: AppState) => state.foodMoodTrend);
-  const moodLogs = useAppStore((state: AppState) => state.moodLogs);
-  const foodLogs = useAppStore((state: AppState) => state.foodLogs);
+  const analyticsMoodLogs = useAppStore((state: AppState) => state.analyticsMoodLogs);
+  const analyticsFoodLogs = useAppStore((state: AppState) => state.analyticsFoodLogs);
   const cardAnims = useRef(
     Array.from({ length: 6 }, () => ({
       opacity: new Animated.Value(0),
@@ -46,14 +46,14 @@ export default function FoodMoodScreen() {
     cutoff.setDate(cutoff.getDate() - 29);
 
     const moodDays = new Set(
-      moodLogs
+      analyticsMoodLogs
         .map((log) => new Date(log.loggedAt))
         .filter((date: Date) => date >= cutoff)
         .map((date: Date) => date.toISOString().slice(0, 10))
     );
 
     const foodDays = new Set(
-      foodLogs
+      analyticsFoodLogs
         .map((log: FoodLog) => new Date(log.loggedAt))
         .filter((date: Date) => date >= cutoff)
         .map((date: Date) => date.toISOString().slice(0, 10))
@@ -61,7 +61,7 @@ export default function FoodMoodScreen() {
 
     const pairedDays = Array.from(moodDays).filter((day: string) => foodDays.has(day)).length;
     return pairedDays >= 3;
-  }, [foodLogs, moodLogs]);
+  }, [analyticsFoodLogs, analyticsMoodLogs]);
 
   useFocusEffect(
     useCallback(() => {

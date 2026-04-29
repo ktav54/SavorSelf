@@ -44,6 +44,7 @@ export default function SignUpScreen() {
   const [error, setError] = useState("");
   const [showVerification, setShowVerification] = useState(false);
   const [verificationMessage, setVerificationMessage] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   const strength = getPasswordStrength(password);
 
@@ -120,9 +121,30 @@ export default function SignUpScreen() {
                 <Text style={styles.subtitle}>Start softly and head straight into onboarding.</Text>
 
                 <Field label="Name" value={name} onChangeText={setName} placeholder="Your first name" />
-                <Field label="Email" value={email} onChangeText={setEmail} placeholder="you@example.com" />
+                <Field
+                  label="Email"
+                  value={email}
+                  onChangeText={setEmail}
+                  placeholder="you@example.com"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
                 <View>
-                  <Field label="Password" value={password} onChangeText={setPassword} placeholder="Choose a password" />
+                  <Field
+                    label="Password"
+                    value={password}
+                    onChangeText={setPassword}
+                    placeholder="Choose a password"
+                    secureTextEntry={!showPassword}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    rightAccessory={
+                      <Pressable onPress={() => setShowPassword((current) => !current)} style={styles.eyeButton}>
+                        <Text style={styles.eyeIcon}>{showPassword ? "👁" : "👁‍🗨"}</Text>
+                      </Pressable>
+                    }
+                  />
                   {password.length > 0 ? (
                     <View style={styles.strengthContainer}>
                       <View style={styles.strengthBar}>
@@ -251,6 +273,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "500",
     width: 56,
+  },
+  eyeButton: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  eyeIcon: {
+    fontSize: 18,
   },
   title: {
     fontSize: 28,
