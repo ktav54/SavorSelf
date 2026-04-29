@@ -469,11 +469,13 @@ export default function LogScreen() {
 
 const styles = StyleSheet.create({
   screenScrollContent: {
-    padding: spacing.lg,
+    paddingHorizontal: 16,
+    paddingTop: 16,
     paddingBottom: spacing.xl,
   },
   screenStack: {
     gap: 20,
+    width: "100%",
   },
   logHeader: {
     gap: 8,
@@ -528,7 +530,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 15,
     lineHeight: 24,
-    maxWidth: "94%",
   },
   pastMoodSummaryCard: {
     backgroundColor: colors.white,

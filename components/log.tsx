@@ -2725,6 +2725,8 @@ const styles = StyleSheet.create({
   gracefulCard: {
     backgroundColor: colors.white,
     borderRadius: 16,
+    width: "100%",
+    alignSelf: "stretch",
     paddingHorizontal: 20,
     paddingVertical: 20,
     gap: 20,
@@ -3256,6 +3258,8 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderWidth: 1,
     borderRadius: 16,
+    width: "100%",
+    alignSelf: "stretch",
     padding: spacing.md,
     gap: spacing.sm,
     ...(Platform.OS === "ios"
@@ -3898,6 +3902,8 @@ const styles = StyleSheet.create({
   searchLauncher: {
     backgroundColor: colors.white,
     borderRadius: 16,
+    width: "100%",
+    alignSelf: "stretch",
     padding: 20,
     borderWidth: 1,
     borderColor: colors.border,

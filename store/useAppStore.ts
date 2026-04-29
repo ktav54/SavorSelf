@@ -2,7 +2,7 @@ import { endOfDay, startOfDay } from "date-fns";
 import { Session, User } from "@supabase/supabase-js";
 import { create, type StateCreator, type StoreApi, type UseBoundStore } from "zustand";
 import { analyzeFoodMood, generateAiNarrative } from "@/lib/food-mood";
-import { demoConversation, demoInsights, demoQuickLogs } from "@/lib/demo-data";
+import { demoInsights, demoQuickLogs } from "@/lib/demo-data";
 import { supabase } from "@/lib/supabase";
 import { cancelAllSavorSelfNotifications, scheduleLapseNudge } from "@/services/notifications";
 import { formatFoodName } from "@/lib/utils";
@@ -104,6 +104,8 @@ export interface AppState {
   addMoodLog: (log: MoodLog) => void;
   addFoodLog: (log: FoodLog) => void;
   addQuickLog: (log: QuickLog) => void;
+  saveConversation: () => Promise<void>;
+  loadConversation: () => Promise<void>;
   addCoachMessage: (message: AiConversationMessage) => void;
   deleteCoachMessage: (timestamp: string, index: number) => void;
   clearConversation: () => void;
@@ -134,6 +136,44 @@ function roundOne(value: number) {
 
 function average(values: number[]) {
   return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+}
+
+function parseCoachConversation(
+  value: unknown
+): AiConversationMessage[] | null {
+  if (!value) {
+    return [];
+  }
+
+  const parsed =
+    typeof value === "string"
+      ? (() => {
+          try {
+            return JSON.parse(value);
+          } catch {
+            return null;
+          }
+        })()
+      : value;
+
+  if (!Array.isArray(parsed)) {
+    return null;
+  }
+
+  const normalized = parsed.filter((item): item is AiConversationMessage => {
+    if (!item || typeof item !== "object") {
+      return false;
+    }
+
+    const candidate = item as Record<string, unknown>;
+    return (
+      (candidate.role === "user" || candidate.role === "assistant") &&
+      typeof candidate.content === "string" &&
+      typeof candidate.timestamp === "string"
+    );
+  });
+
+  return normalized;
 }
 
 function getRecentDateKeys(count: number, offset = 0) {
@@ -371,7 +411,7 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
   foodMoodSnapshot: null,
   foodMoodTrend: [],
   aiNarrative: "",
-  conversation: demoConversation,
+  conversation: [],
   conversationResetCount: 0,
   authError: null,
   authLoading: false,
@@ -430,6 +470,7 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
         authError: null,
       });
 
+      await useAppStore.getState().loadConversation();
       await useAppStore.getState().loadTodayMoodLog();
       await useAppStore.getState().loadTodayFoodLogs();
       await useAppStore.getState().loadFoodMoodInsights();
@@ -1244,17 +1285,76 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
   addMoodLog: (log) => set((state) => ({ moodLogs: [log, ...state.moodLogs] })),
   addFoodLog: (log) => set((state) => ({ foodLogs: [log, ...state.foodLogs] })),
   addQuickLog: (log) => set((state) => ({ quickLogs: [log, ...state.quickLogs] })),
-  addCoachMessage: (message) =>
-    set((state) => ({ conversation: [...state.conversation, message] })),
-  deleteCoachMessage: (timestamp, index) =>
+  saveConversation: async () => {
+    const { profile, conversation } = useAppStore.getState();
+    if (!profile) {
+      return;
+    }
+
+    const { error } = await supabase
+      .from("users")
+      .update({ coach_conversation: JSON.stringify(conversation) })
+      .eq("id", profile.id);
+
+    if (error) {
+      const message = error.message.toLowerCase();
+      if (
+        message.includes("coach_conversation") ||
+        message.includes("column") ||
+        message.includes("schema cache")
+      ) {
+        return;
+      }
+    }
+  },
+  loadConversation: async () => {
+    const { profile } = useAppStore.getState();
+    if (!profile) {
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("users")
+      .select("coach_conversation")
+      .eq("id", profile.id)
+      .maybeSingle();
+
+    if (error) {
+      const message = error.message.toLowerCase();
+      if (
+        message.includes("coach_conversation") ||
+        message.includes("column") ||
+        message.includes("schema cache")
+      ) {
+        return;
+      }
+      return;
+    }
+
+    const parsed = parseCoachConversation(data?.coach_conversation);
+    if (parsed) {
+      set({
+        conversation: parsed,
+      });
+    }
+  },
+  addCoachMessage: (message) => {
+    set((state) => ({ conversation: [...state.conversation, message] }));
+    void useAppStore.getState().saveConversation();
+  },
+  deleteCoachMessage: (timestamp, index) => {
     set((state) => ({
       conversation: state.conversation.filter((_, i) => i !== index),
-    })),
-  clearConversation: () =>
+    }));
+    void useAppStore.getState().saveConversation();
+  },
+  clearConversation: () => {
     set((state) => ({
       conversation: [],
       conversationResetCount: state.conversationResetCount + 1,
-    })),
+    }));
+    void useAppStore.getState().saveConversation();
+  },
 });
 
 export const useAppStore: UseBoundStore<StoreApi<AppState>> = create<AppState>(appStateCreator);
