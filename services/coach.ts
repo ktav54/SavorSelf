@@ -123,28 +123,40 @@ function extractReplyText(value: unknown): string {
 
 function normalizeCoachPayload<T extends { reply?: string }>(payload: T | string): T {
   let normalized: unknown = payload;
-  const rawReplyFallback = extractReplyText(payload);
 
   if (typeof normalized === "string") {
     try {
       normalized = JSON.parse(normalized);
     } catch {
-      return { reply: rawReplyFallback } as T;
-    }
-  }
-
-  if (normalized && typeof normalized === "object") {
-    const reply = extractReplyText(normalized) || rawReplyFallback;
-
-    if ("reply" in normalized || reply) {
+      const fallbackReply = extractReplyText(payload).trim();
       return {
-        ...(normalized as object),
-        reply,
+        reply: fallbackReply.length > 0 ? fallbackReply : "I had trouble generating a response. Please try again.",
       } as T;
     }
   }
 
-  return ({ ...(normalized as object), reply: rawReplyFallback } as T);
+  const normalizedRecord =
+    normalized && typeof normalized === "object"
+      ? (normalized as Record<string, unknown>)
+      : {};
+  const normalizedIntent =
+    typeof normalizedRecord.intent === "string" ? normalizedRecord.intent : undefined;
+  const rawReplyFallback =
+    extractReplyText(normalizedRecord.choices) ||
+    extractReplyText(normalizedRecord.reply) ||
+    extractReplyText(normalizedRecord.content) ||
+    extractReplyText(payload) ||
+    "";
+  const reply = extractReplyText(normalized) || rawReplyFallback;
+  const finalReply = (reply ?? "").trim();
+
+  return {
+    ...normalizedRecord,
+    ...(normalizedIntent ? { intent: normalizedIntent } : {}),
+    reply: finalReply.length > 0
+      ? finalReply
+      : "I had trouble generating a response. Please try again.",
+  } as T;
 }
 
 async function callEdgeFunction<TRequest, TResponse>(functionName: string, body: TRequest): Promise<TResponse> {

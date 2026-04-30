@@ -170,8 +170,10 @@ function parseCoachConversation(
 
     const candidate = item as Record<string, unknown>;
     return (
-      (candidate.role === "user" || candidate.role === "assistant") &&
       typeof candidate.content === "string" &&
+      candidate.content.trim().length > 0 &&
+      typeof candidate.role === "string" &&
+      (candidate.role === "user" || candidate.role === "assistant") &&
       typeof candidate.timestamp === "string"
     );
   });
@@ -1335,10 +1337,14 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
       return;
     }
 
+    const cleanConversation = conversation.filter(
+      (msg) => msg.content && msg.content.trim().length > 0
+    );
+
     try {
       const { error } = await supabase
         .from("users")
-        .update({ coach_conversation: JSON.stringify(conversation) })
+        .update({ coach_conversation: JSON.stringify(cleanConversation) })
         .eq("id", profile.id);
 
       if (error) {
