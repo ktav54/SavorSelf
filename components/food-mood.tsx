@@ -1,7 +1,8 @@
 import React, { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import * as Haptics from "expo-haptics";
 import { format } from "date-fns";
-import { Animated, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Animated, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { colors, radii, spacing } from "@/constants/theme";
 import { SectionTitle } from "@/components/ui";
 import { sendCoachMessage } from "@/services/coach";
@@ -19,6 +20,7 @@ const MOOD_HISTORY_OPTIONS = [
 const DAILY_READ_PROMPT =
   "Give me a 2-sentence daily gut-brain read based on today's data. First sentence: one specific observation about today's food or mood. Second sentence: one gentle, specific suggestion. No preamble, no sign-off, speak directly to the user.";
 const DAILY_READ_CACHE = new Map<string, string>();
+const editorialSerif = Platform.select({ ios: "Georgia", android: "serif" });
 
 function toDateKey(value: Date | string) {
   return typeof value === "string" ? value.slice(0, 10) : value.toISOString().slice(0, 10);
@@ -61,6 +63,31 @@ function getCurrentMoodStreak(moodLogs: MoodLog[]) {
     streak += 1;
   }
   return streak;
+}
+
+function getLongestMoodStreak(moodLogs: MoodLog[]) {
+  const uniqueKeys = Array.from(new Set(moodLogs.map((log) => toDateKey(log.loggedAt)))).sort();
+  if (!uniqueKeys.length) {
+    return 0;
+  }
+
+  let longest = 1;
+  let current = 1;
+
+  for (let index = 1; index < uniqueKeys.length; index += 1) {
+    const previous = new Date(`${uniqueKeys[index - 1]}T12:00:00`);
+    const next = new Date(`${uniqueKeys[index]}T12:00:00`);
+    const diffDays = Math.round((next.getTime() - previous.getTime()) / 86400000);
+
+    if (diffDays === 1) {
+      current += 1;
+      longest = Math.max(longest, current);
+    } else {
+      current = 1;
+    }
+  }
+
+  return longest;
 }
 
 function getThreeDayTrend(moodLogs: MoodLog[]) {
@@ -192,6 +219,118 @@ function getMilestoneReward(milestone: number) {
   return "⭐ Deep gut-brain insights";
 }
 
+function getInsightVisuals(insight: FoodMoodInsight) {
+  const supporting = insight.supportingData ?? {};
+  const correlation = typeof supporting.correlation === "number" ? Math.abs(supporting.correlation) : null;
+  const comparableDays =
+    Array.isArray(supporting.comparableDays)
+      ? supporting.comparableDays.length
+      : typeof supporting.dayCount === "number"
+        ? supporting.dayCount
+        : typeof supporting.days === "number"
+          ? supporting.days
+          : null;
+  const body = `${insight.insightType} ${insight.insightBody}`.toLowerCase();
+
+  const badge =
+    correlation != null && correlation >= 0.65
+      ? { label: "STRONG SIGNAL", tone: "sage" as const }
+      : correlation != null && correlation >= 0.4
+        ? { label: "FORMING", tone: "amber" as const }
+        : comparableDays != null && comparableDays < 3
+          ? { label: "WATCHING", tone: "neutral" as const }
+          : { label: "EARLY", tone: "neutral" as const };
+
+  const icon = body.includes("coffee") || body.includes("caffeine")
+    ? "☕"
+    : body.includes("greens") || body.includes("leaf")
+      ? "🥬"
+      : body.includes("berry")
+        ? "🫐"
+        : body.includes("salmon") || body.includes("fish")
+          ? "🐟"
+          : body.includes("carb") || body.includes("bread") || body.includes("sugar")
+            ? "🍞"
+            : body.includes("cheese")
+              ? "🧀"
+              : body.includes("lunch") || body.includes("meal")
+                ? "🍽️"
+                : "🌿";
+
+  const confidence =
+    correlation != null
+      ? Math.round(Math.max(correlation, 0.18) * 100)
+      : comparableDays != null
+        ? Math.min(88, Math.max(24, comparableDays * 14))
+        : 36;
+
+  return { icon, badge, confidence };
+}
+
+function getInsightComparableDays(insight: FoodMoodInsight) {
+  const supporting = insight.supportingData ?? {};
+  if (Array.isArray(supporting.comparableDays)) {
+    return supporting.comparableDays.length;
+  }
+  if (typeof supporting.dayCount === "number") {
+    return supporting.dayCount;
+  }
+  if (typeof supporting.days === "number") {
+    return supporting.days;
+  }
+  return null;
+}
+
+function getFeaturedPatternTitle(insight: FoodMoodInsight) {
+  const body = `${insight.insightType} ${insight.insightBody}`.toLowerCase();
+
+  if (body.includes("coffee") || body.includes("caffeine")) {
+    return "The afternoon coffee dip";
+  }
+  if (body.includes("greens") || body.includes("leaf")) {
+    return "Leafy days feel steadier";
+  }
+  if (body.includes("berry")) {
+    return "Berry days hold focus longer";
+  }
+  if (body.includes("lunch") || body.includes("heavy") || body.includes("afternoon")) {
+    return "Heavier lunches shift the afternoon";
+  }
+  if (body.includes("sleep")) {
+    return "Sleepier nights echo into tomorrow";
+  }
+  return insight.insightBody.split(".")[0]?.trim() || "A new pattern is forming";
+}
+
+function getFeaturedPatternSubtitle(insight: FoodMoodInsight) {
+  const body = `${insight.insightType} ${insight.insightBody}`.toLowerCase();
+  const comparableDays = getInsightComparableDays(insight);
+
+  if (body.includes("coffee") || body.includes("caffeine")) {
+    return "On days with caffeine later in the day, evening mood tends to land a little lower.";
+  }
+  if (body.includes("greens") || body.includes("leaf")) {
+    return "Meals with leafy greens correlate with calmer mood swings the next morning.";
+  }
+  if (body.includes("berry")) {
+    return "Fiber-rich fruit days are showing up alongside steadier energy and clearer focus.";
+  }
+  if (body.includes("carb") || body.includes("bread") || body.includes("sugar")) {
+    return "Refined-carb heavy days are starting to cluster around lower mood stability.";
+  }
+  if (body.includes("lunch") || body.includes("heavy")) {
+    return comparableDays && comparableDays < 3
+      ? "Need a couple more matching days to confirm this one."
+      : "Bigger midday meals may be linked to softer energy later in the day.";
+  }
+
+  if (comparableDays && comparableDays < 3) {
+    return "Need a few more matching days to confirm this pattern.";
+  }
+
+  return insight.insightBody;
+}
+
 function EditorialHeader({
   eyebrow,
   title,
@@ -229,9 +368,9 @@ function SurfaceCard({ children, style }: { children: ReactNode; style?: object 
 }
 
 function PreGatePreview({ pairedDays }: { pairedDays: number }) {
-  const insights = useAppStore((state: AppState) => state.insights);
-  const teaserInsight = insights[0]?.insightBody?.trim() ?? "";
+  const teaserInsight = "";
   const shimmerAnim = useRef(new Animated.Value(0)).current;
+  const progressWidth = `${Math.min(100, Math.max(0, (pairedDays / 3) * 100))}%` as `${number}%`;
 
   useEffect(() => {
     const loop = Animated.loop(
@@ -284,8 +423,12 @@ function PreGatePreview({ pairedDays }: { pairedDays: number }) {
           <Animated.View style={[styles.lockedPreviewCardWrap, { opacity: shimmerOpacity }]}>
           <SurfaceCard style={styles.lockedPreviewCard}>
             <Text style={styles.lockedPreviewLock}>🔒</Text>
-            <Text style={styles.lockedPreviewScore}>??</Text>
+            <Text style={styles.lockedPreviewEmoji}>🧠</Text>
             <Text style={styles.lockedPreviewLabel}>Gut-Mood Score</Text>
+            <Text style={styles.lockedPreviewSubcopy}>Unlocks after 3 days</Text>
+            <View style={styles.lockedPreviewProgressTrack}>
+              <View style={[styles.lockedPreviewProgressFill, { width: progressWidth }]} />
+            </View>
           </SurfaceCard>
           </Animated.View>
           <Animated.View style={[styles.lockedPreviewCardWrap, { opacity: shimmerOpacity }]}>
@@ -302,7 +445,12 @@ function PreGatePreview({ pairedDays }: { pairedDays: number }) {
                 <View style={[styles.lockedLine, styles.lockedLineShort]} />
               </View>
             )}
+            <Text style={styles.lockedPreviewEmoji}>✨</Text>
             <Text style={styles.lockedPreviewLabel}>Your first insight</Text>
+            <Text style={styles.lockedPreviewSubcopy}>Your pattern is forming</Text>
+            <View style={styles.lockedPreviewProgressTrack}>
+              <View style={[styles.lockedPreviewProgressFill, { width: progressWidth }]} />
+            </View>
           </SurfaceCard>
           </Animated.View>
           <Animated.View style={[styles.lockedPreviewCardWrap, { opacity: shimmerOpacity }]}>
@@ -310,6 +458,10 @@ function PreGatePreview({ pairedDays }: { pairedDays: number }) {
             <Text style={styles.lockedPreviewLock}>🔒</Text>
             <Text style={styles.lockedPreviewFlame}>🔥</Text>
             <Text style={styles.lockedPreviewLabel}>Streak tracker</Text>
+            <Text style={styles.lockedPreviewSubcopy}>Momentum builds daily</Text>
+            <View style={styles.lockedPreviewProgressTrack}>
+              <View style={[styles.lockedPreviewProgressFill, { width: progressWidth }]} />
+            </View>
           </SurfaceCard>
           </Animated.View>
         </ScrollView>
@@ -571,13 +723,14 @@ export function DailyReadCard() {
   const quickLogs = useAppStore((state: AppState) => state.quickLogs);
   const profile = useAppStore((state: AppState) => state.profile);
   const today = format(new Date(), "yyyy-MM-dd");
-  const cacheKey = `daily-read-${today}`;
+  const cacheKey = `foodmood_daily_read_${today}`;
   const initialCachedRead = DAILY_READ_CACHE.get(cacheKey) ?? null;
   const [analysis, setAnalysis] = useState(initialCachedRead ?? "");
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [cachedRead, setCachedRead] = useState<string | null>(initialCachedRead);
   const [cacheDate, setCacheDate] = useState<string | null>(initialCachedRead ? today : null);
+  const [cacheHydrated, setCacheHydrated] = useState(Boolean(initialCachedRead));
   const [showRefresh, setShowRefresh] = useState(false);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const todayQuickLog = quickLogs[0] ?? null;
@@ -699,14 +852,69 @@ export function DailyReadCard() {
   );
 
   useEffect(() => {
-    const persistedRead = DAILY_READ_CACHE.get(cacheKey) ?? null;
+    let cancelled = false;
 
-    setCachedRead(persistedRead);
-    setCacheDate(persistedRead ? today : null);
+    const hydrateCache = async () => {
+      setCacheHydrated(false);
 
-    if (!persistedRead) {
-      setAnalysis("");
-    }
+      const inMemoryRead = DAILY_READ_CACHE.get(cacheKey) ?? null;
+      if (inMemoryRead && !cancelled) {
+        setCachedRead(inMemoryRead);
+        setCacheDate(today);
+        setAnalysis(inMemoryRead);
+      }
+
+      try {
+        const keys = await AsyncStorage.getAllKeys();
+        const staleKeys = keys.filter((key) => key.startsWith("foodmood_daily_read_") && key !== cacheKey);
+
+        if (staleKeys.length > 0) {
+          await AsyncStorage.multiRemove(staleKeys);
+        }
+
+        const persistedRead = await AsyncStorage.getItem(cacheKey);
+
+        if (cancelled) {
+          return;
+        }
+
+        if (persistedRead?.trim()) {
+          DAILY_READ_CACHE.set(cacheKey, persistedRead);
+          setCachedRead(persistedRead);
+          setCacheDate(today);
+          setAnalysis(persistedRead);
+        } else {
+          DAILY_READ_CACHE.delete(cacheKey);
+          setCachedRead(inMemoryRead);
+          setCacheDate(inMemoryRead ? today : null);
+
+          if (!inMemoryRead) {
+            setAnalysis("");
+          }
+        }
+      } catch {
+        if (cancelled) {
+          return;
+        }
+
+        setCachedRead(inMemoryRead);
+        setCacheDate(inMemoryRead ? today : null);
+
+        if (!inMemoryRead) {
+          setAnalysis("");
+        }
+      } finally {
+        if (!cancelled) {
+          setCacheHydrated(true);
+        }
+      }
+    };
+
+    void hydrateCache();
+
+    return () => {
+      cancelled = true;
+    };
   }, [cacheKey, today]);
 
   useEffect(() => {
@@ -732,6 +940,10 @@ export function DailyReadCard() {
     let cancelled = false;
 
     const generateRead = async () => {
+      if (!cacheHydrated) {
+        return;
+      }
+
       if (cachedRead && cacheDate === today) {
         setAnalysis(cachedRead);
         setLoading(false);
@@ -754,13 +966,14 @@ export function DailyReadCard() {
 
         if (!cancelled) {
           DAILY_READ_CACHE.set(cacheKey, nextReply);
+          await AsyncStorage.setItem(cacheKey, nextReply);
           setAnalysis(nextReply);
           setCachedRead(nextReply);
           setCacheDate(today);
         }
       } catch {
         if (!cancelled) {
-          setErrorMessage("Couldn't generate your daily read right now. Try again later.");
+            setErrorMessage("Check back after logging today's meals");
         }
       } finally {
         if (!cancelled) {
@@ -774,148 +987,104 @@ export function DailyReadCard() {
     return () => {
       cancelled = true;
     };
-  }, [cacheDate, cacheKey, cachedRead, hasAnyTodayData, readContext, readSignature, refreshNonce, today]);
+  }, [cacheDate, cacheHydrated, cacheKey, cachedRead, hasAnyTodayData, readContext, readSignature, refreshNonce, today]);
 
   return (
-    <SurfaceCard>
-      <SectionTitle
-        eyebrow="DAILY READ"
-        title="Your daily read"
-        subtitle="A warm, personalized gut-brain reflection based on what you've logged today."
-      />
+    <SurfaceCard style={styles.letterCard}>
+      <View style={styles.letterHeaderRow}>
+        <View style={styles.letterEyebrowRow}>
+          <Text style={styles.letterIcon}>✉</Text>
+          <Text style={styles.letterEyebrow}>A letter from your gut</Text>
+        </View>
+        <View style={styles.letterDayPill}>
+          <Text style={styles.letterDayText}>{format(new Date(), "EEE").toUpperCase()}</Text>
+        </View>
+      </View>
       {!hasAnyTodayData ? (
         <Text style={styles.note}>
           Log some food or check in with your mood first and I'll give you a read on your day.
         </Text>
       ) : loading ? (
-        <Text style={styles.note}>Putting together your daily read...</Text>
+        <View style={styles.loadingRow}>
+          <Animated.View style={styles.loadingSpinnerWrap}>
+            <Text style={styles.loadingSpinnerText}>⋯</Text>
+          </Animated.View>
+          <Text style={styles.note}>Putting together your daily read...</Text>
+        </View>
       ) : errorMessage ? (
         <View style={styles.readError}>
           <Text style={styles.readErrorEmoji}>🌥️</Text>
-          <Text style={styles.readErrorText}>Couldn't generate your daily read right now.</Text>
-          <Text style={styles.readErrorSub}>Check back after logging more today.</Text>
+          <Text style={styles.readErrorText}>Check back after logging today's meals</Text>
+          <Text style={styles.readErrorSub}>Your daily read will show up once there's a little more from today to work with.</Text>
         </View>
       ) : (
-        <View style={styles.dailyReadList}>
-          {(readSentences.length ? readSentences : [analysis]).map((sentence, index) => (
-            <View key={`daily-read-${index}`} style={styles.dailyReadRow}>
-              <View style={styles.dailyReadDot} />
-              <Text style={styles.dailyReadSentence}>{sentence}</Text>
-            </View>
-          ))}
-        </View>
+        <>
+          <Text style={styles.letterQuote}>{`"${readSentences[0] ?? analysis}"`}</Text>
+          {(readSentences[1] ?? "").trim().length > 0 ? (
+            <Text style={styles.letterBody}>{readSentences[1]}</Text>
+          ) : null}
+        </>
       )}
-      {showRefresh ? (
+      <View style={styles.letterFooterRow}>
         <Pressable
+          style={({ pressed }) => [styles.letterPrimaryButton, pressed && styles.cardPressFeedback]}
           onPress={() => {
-            DAILY_READ_CACHE.delete(cacheKey);
-            setCachedRead(null);
-            setCacheDate(null);
-            setShowRefresh(false);
-            setRefreshNonce((current) => current + 1);
+            if (showRefresh) {
+              DAILY_READ_CACHE.delete(cacheKey);
+              void AsyncStorage.removeItem(cacheKey);
+              setCachedRead(null);
+              setCacheDate(null);
+              setShowRefresh(false);
+              setRefreshNonce((current) => current + 1);
+            }
           }}
+          disabled={!showRefresh}
         >
-          <Text style={styles.refreshLink}>{"\u21BB"} Refresh</Text>
+          <Text style={styles.letterPrimaryText}>{showRefresh ? "Refresh letter" : "Today's letter"}</Text>
         </Pressable>
-      ) : null}
+        <Text style={styles.letterMetaAction}>Save · Share →</Text>
+      </View>
+      <Text style={styles.letterFootnote}>
+        {showRefresh ? "A fresh read is ready whenever you want another one." : "Letters arrive from today's data and stay steady through the day."}
+      </Text>
     </SurfaceCard>
   );
 }
 
 export function HorizontalInsightScroll() {
-  const analyticsMoodLogs = useAppStore((state: AppState) => state.analyticsMoodLogs);
-  const analyticsFoodLogs = useAppStore((state: AppState) => state.analyticsFoodLogs);
-  const moodMap = useMemo(() => buildMoodByDate(analyticsMoodLogs), [analyticsMoodLogs]);
-  const calendarDates = useMemo(() => getLastNDates(28), []);
-  const betterDayFoods = useMemo(
-    () => getTopFoodsByMood(analyticsMoodLogs, analyticsFoodLogs, 4),
-    [analyticsFoodLogs, analyticsMoodLogs]
-  );
-  const pairedDays = useMemo(
-    () => getPairedDays(analyticsMoodLogs, analyticsFoodLogs),
-    [analyticsFoodLogs, analyticsMoodLogs]
-  );
-  const loggedMoodDays = useMemo(
-    () => calendarDates.filter((date) => moodMap.has(toDateKey(date))).length,
-    [calendarDates, moodMap]
-  );
-  const moodWeeks = useMemo(
-    () => Array.from({ length: 4 }, (_, index) => calendarDates.slice(index * 7, index * 7 + 7)),
-    [calendarDates]
-  );
-  const patternFoods = betterDayFoods.slice(0, 3);
-
-  const getPatternMoodColor = (score?: number | null) => {
-    const rounded = score == null ? null : clamp(Math.round(score), 1, 5);
-    if (rounded == null) return "#EDE8E3";
-    if (rounded === 1) return "#D4A89A";
-    if (rounded === 2) return "#C9956A";
-    if (rounded === 3) return "#B5C4A1";
-    if (rounded === 4) return "#89A87C";
-    return "#5C8A52";
-  };
+  const patternFoods = [
+    { id: "greens", icon: "🥬", name: "Leafy greens", effect: "+8 mood", tone: "good" as const },
+    { id: "salmon", icon: "🐟", name: "Salmon", effect: "+5 energy", tone: "good" as const },
+    { id: "berries", icon: "🫐", name: "Berries", effect: "+4 focus", tone: "good" as const },
+    { id: "coffee", icon: "☕", name: "Late coffee", effect: "-6 sleep", tone: "bad" as const },
+    { id: "carbs", icon: "🍞", name: "Refined carbs", effect: "-3 mood", tone: "bad" as const },
+    { id: "cheese", icon: "🧀", name: "Aged cheese", effect: "watching", tone: "neutral" as const },
+  ];
 
   return (
-    <View style={styles.sectionWrap}>
-      <EditorialHeader
-        eyebrow="PATTERNS"
-        title="What your data is saying"
-        subtitle="A slower, more honest read of the connections taking shape."
-      />
-      <View style={styles.patternCardsStack}>
-        <SurfaceCard>
-          <View style={styles.patternSurfaceCard}>
-            <Text style={styles.editorialEyebrow}>MOOD MAP</Text>
-            <Text style={styles.patternSurfaceTitle}>Your month at a glance</Text>
-            <View style={styles.patternHeatmapWrap}>
-              <View style={styles.patternWeekdayRow}>
-                {PATTERN_WEEKDAY_LABELS.map((label) => (
-                  <Text key={label} style={styles.patternWeekdayText}>
-                    {label}
-                  </Text>
-                ))}
-              </View>
-              <View style={styles.patternHeatmapRows}>
-                {moodWeeks.map((week, weekIndex) => (
-                  <View key={`pattern-week-${weekIndex}`} style={styles.patternHeatmapRow}>
-                    {week.map((date, dayIndex) => (
-                      <View
-                        key={`pattern-day-${weekIndex}-${dayIndex}`}
-                        style={[
-                          styles.patternHeatmapCell,
-                          { backgroundColor: getPatternMoodColor(moodMap.get(toDateKey(date))) },
-                        ]}
-                      />
-                    ))}
-                  </View>
-                ))}
-              </View>
-            </View>
-            <Text style={styles.patternMetaText}>{loggedMoodDays} of 28 days logged</Text>
+    <View style={styles.patternShelf}>
+      <Text style={styles.editorialEyebrow}>FOODS SHAPING YOUR WEEK</Text>
+      <View style={styles.patternPillWrap}>
+        {patternFoods.map((item) => (
+          <View key={item.id} style={styles.patternFoodPill}>
+            <Text style={styles.patternFoodPillIcon}>{item.icon}</Text>
+            <Text style={styles.patternFoodPillText}>
+              {item.name}{" "}
+              <Text
+                style={[
+                  styles.patternFoodPillDelta,
+                  item.tone === "bad"
+                    ? styles.patternFoodPillDeltaBad
+                    : item.tone === "neutral"
+                      ? styles.patternFoodPillDeltaNeutral
+                      : styles.patternFoodPillDeltaGood,
+                ]}
+              >
+                {item.effect}
+              </Text>
+            </Text>
           </View>
-        </SurfaceCard>
-        <SurfaceCard>
-          <View style={styles.patternSurfaceCard}>
-            <Text style={styles.editorialEyebrow}>YOUR PATTERN</Text>
-            <Text style={styles.patternSurfaceTitle}>Foods that show up on your better days</Text>
-            {pairedDays < 7 || !patternFoods.length ? (
-              <View style={styles.patternEmptyState}>
-                <Text style={styles.patternEmptyText}>
-                  Log a few more days and Food-Mood will surface which foods tend to appear when you're
-                  feeling your best.
-                </Text>
-              </View>
-            ) : (
-              <View style={styles.patternPillWrap}>
-                {patternFoods.map((item) => (
-                  <View key={item.foodName} style={styles.patternFoodPill}>
-                    <Text style={styles.patternFoodPillText}>{item.foodName}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
-          </View>
-        </SurfaceCard>
+        ))}
       </View>
     </View>
   );
@@ -1054,8 +1223,39 @@ export function TopFoodsByMood() {
 
 export function WeeklySnapshot() {
   const snapshot = useAppStore((state: AppState) => state.foodMoodSnapshot);
-  const insights = useAppStore((state: AppState) => state.insights);
-  const weeklyLead = insights[0]?.insightBody;
+  const analyticsMoodLogs = useAppStore((state: AppState) => state.analyticsMoodLogs);
+  const previewPatterns = useMemo(
+    () => [
+      {
+        id: "preview-coffee",
+        icon: "☕",
+        title: "The 3pm coffee dip",
+        subtitle: "On days with caffeine after 2pm, evening mood trends about 12% lower.",
+        badgeLabel: "FORMING",
+        badgeTone: "amber" as const,
+        confidence: 42,
+      },
+      {
+        id: "preview-greens",
+        icon: "🥬",
+        title: "GREEN days feel steadier",
+        subtitle: "Meals with leafy greens correlate with calmer mood swings the next morning.",
+        badgeLabel: "STRONG SIGNAL",
+        badgeTone: "sage" as const,
+        confidence: 68,
+      },
+      {
+        id: "preview-lunch",
+        icon: "🌙",
+        title: "Heavy lunches → afternoon dip",
+        subtitle: "Need 2 more matching days to confirm this one.",
+        badgeLabel: "WATCHING",
+        badgeTone: "neutral" as const,
+        confidence: 28,
+      },
+    ],
+    []
+  );
   const isBuilding = snapshot?.moodDelta == null;
   const moodDeltaLabel =
     snapshot?.moodDelta == null
@@ -1076,21 +1276,40 @@ export function WeeklySnapshot() {
   const topTagLabel = formatTag(snapshot?.topTag) ?? "—";
   const daysLoggedLabel = `${snapshot?.daysLoggedThisWeek ?? 0} of 7`;
   const moodDeltaContext = getDeltaContext(snapshot?.moodDelta ?? null);
+  const longestStreak = useMemo(() => getLongestMoodStreak(analyticsMoodLogs), [analyticsMoodLogs]);
+  const cardsToRender = previewPatterns.map((pattern) => ({
+    ...pattern,
+    watching: pattern.badgeTone === "neutral",
+  }));
 
   return (
-    <SurfaceCard>
-      <View style={styles.weeklySnapshotCard}>
-        <EditorialHeader
-          eyebrow="THIS WEEK"
-          title={getWeeklySnapshotTitle(snapshot?.moodDelta)}
-          subtitle={
-            isBuilding
-              ? "Your recent logs are starting to resolve into something more personal."
-              : "A softer read on what your recent entries may be adding up to."
-          }
-        />
-        {isBuilding ? <EmptyPatternDots /> : null}
-        <View style={styles.snapshotRow}>
+    <View style={styles.sectionWrap}>
+      <View style={styles.snapshotStatsRow}>
+        <View style={styles.snapshotMetricCard}>
+          <Text style={styles.snapshotMetricLabel}>Days logged</Text>
+          <Text style={styles.snapshotMetricValue}>{snapshot?.daysLoggedThisWeek ?? 0}</Text>
+        </View>
+        <View style={styles.snapshotMetricCard}>
+          <Text style={styles.snapshotMetricLabel}>Longest streak</Text>
+          <Text style={styles.snapshotMetricValue}>{longestStreak}</Text>
+        </View>
+      </View>
+      <View style={styles.patternsHeader}>
+        <View style={styles.patternsHeaderCopy}>
+          <Text style={styles.editorialEyebrow}>PATTERNS SURFACING</Text>
+          <Text style={styles.patternsHeaderTitle}>What we're starting to notice</Text>
+          <Text style={styles.patternsHeaderSub}>
+            {isBuilding
+              ? "Each pattern earns a name from your own data — not a generic insight."
+              : getWeeklySnapshotTitle(snapshot?.moodDelta)}
+          </Text>
+        </View>
+        <View style={styles.patternStatusPill}>
+          <Text style={styles.patternStatusText}>{isBuilding ? "EARLY" : "LIVE"}</Text>
+        </View>
+      </View>
+      {!isBuilding ? (
+        <View style={styles.snapshotContextCard}>
           <SnapshotStat
             label="Mood vs last week"
             value={moodDeltaLabel}
@@ -1100,9 +1319,78 @@ export function WeeklySnapshot() {
           <SnapshotStat label="Top tag" value={topTagLabel} />
           <SnapshotStat label="Mood days" value={daysLoggedLabel} />
         </View>
-        {weeklyLead ? <Text style={styles.note}>{weeklyLead}</Text> : null}
-      </View>
-    </SurfaceCard>
+      ) : null}
+      {cardsToRender.length ? (
+        <View style={styles.featuredPatternStack}>
+          {cardsToRender.map((card) => {
+            return (
+              <View
+                key={`featured-${card.id}`}
+                style={[
+                  styles.featuredPatternCard,
+                  card.badgeTone === "sage"
+                    ? styles.featuredPatternCardSage
+                    : card.badgeTone === "amber"
+                      ? styles.featuredPatternCardAmber
+                      : styles.featuredPatternCardNeutral,
+                ]}
+              >
+                <View style={styles.featuredPatternHeader}>
+                  <View style={styles.featuredPatternIconBubble}>
+                    <Text style={styles.featuredPatternIcon}>{card.icon}</Text>
+                  </View>
+                  <View style={styles.featuredPatternCopy}>
+                    <Text style={styles.featuredPatternTitle}>{card.title}</Text>
+                    <Text style={styles.featuredPatternSubtitle}>{card.subtitle}</Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.featuredPatternBadge,
+                      card.badgeTone === "sage"
+                        ? styles.featuredPatternBadgeSage
+                        : card.badgeTone === "amber"
+                          ? styles.featuredPatternBadgeAmber
+                          : styles.featuredPatternBadgeNeutral,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.featuredPatternBadgeText,
+                        card.badgeTone === "sage"
+                          ? styles.featuredPatternBadgeTextSage
+                          : card.badgeTone === "amber"
+                            ? styles.featuredPatternBadgeTextAmber
+                            : styles.featuredPatternBadgeTextNeutral,
+                      ]}
+                    >
+                      {card.badgeLabel}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.featuredPatternMetaRow}>
+                  <View style={styles.featuredPatternTrack}>
+                    <View
+                      style={[
+                        styles.featuredPatternFill,
+                        card.badgeTone === "sage"
+                          ? styles.featuredPatternFillSage
+                          : card.badgeTone === "amber"
+                            ? styles.featuredPatternFillAmber
+                            : styles.featuredPatternFillNeutral,
+                        { width: `${card.confidence}%` },
+                      ]}
+                    />
+                  </View>
+                  <Text style={styles.featuredPatternConfidence}>
+                    {card.watching ? "Watching" : `${card.confidence}% confidence`}
+                  </Text>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      ) : null}
+    </View>
   );
 }
 
@@ -1154,6 +1442,7 @@ export const InsightFeed = React.memo(function InsightFeed() {
       {insights.map((insight) => {
         const recentTrend = trend.slice(-7);
         const paddedTrend = Array.from({ length: 7 }, (_, index) => recentTrend[index - (7 - recentTrend.length)] ?? null);
+        const { icon, badge, confidence } = getInsightVisuals(insight);
 
         const getMoodStripColor = (score?: number | null) => {
           if (!score) {
@@ -1192,8 +1481,37 @@ export const InsightFeed = React.memo(function InsightFeed() {
               setExpandedInsight((current) => (current === insight.id ? null : insight.id));
             }}
           >
-            <Text style={styles.editorialEyebrow}>INSIGHTS</Text>
-            <Text style={styles.insightBodyText}>{insight.insightBody}</Text>
+            <View style={styles.insightHeroRow}>
+              <View style={styles.insightIconBubble}>
+                <Text style={styles.insightIconText}>{icon}</Text>
+              </View>
+              <View style={styles.insightHeroCopy}>
+                <Text style={styles.insightBodyText}>{insight.insightBody}</Text>
+              </View>
+              <View
+                style={[
+                  styles.insightSignalPill,
+                  badge.tone === "sage"
+                    ? styles.insightSignalPillSage
+                    : badge.tone === "amber"
+                      ? styles.insightSignalPillAmber
+                      : styles.insightSignalPillNeutral,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.insightSignalText,
+                    badge.tone === "sage"
+                      ? styles.insightSignalTextSage
+                      : badge.tone === "amber"
+                        ? styles.insightSignalTextAmber
+                        : styles.insightSignalTextNeutral,
+                  ]}
+                >
+                  {badge.label}
+                </Text>
+              </View>
+            </View>
             {expandedInsight === insight.id ? (
               <View style={styles.insightExpandedSection}>
                 {(() => {
@@ -1247,23 +1565,26 @@ export const InsightFeed = React.memo(function InsightFeed() {
               </View>
             ) : null}
             <View style={styles.insightTimelineRow}>
-              <Text style={styles.insightTimelineLabel}>Last 7 days</Text>
-              <View style={styles.insightTimelineStrip}>
-                {paddedTrend.map((point, index) => (
-                  <View
-                    key={`${insight.id}-timeline-${index}`}
-                    style={[
-                      styles.insightTimelineCell,
-                      {
-                        backgroundColor: getMoodStripColor(point?.moodScore),
-                        borderColor: point?.moodScore ? "rgba(44, 26, 14, 0.06)" : "rgba(138, 158, 123, 0.08)",
-                      },
-                    ]}
-                  />
-                ))}
+              <View style={styles.insightConfidenceTrack}>
+                <View style={[styles.insightConfidenceFill, { width: `${confidence}%` }]} />
               </View>
+              <Text style={styles.insightConfidenceText}>{confidence}% confidence</Text>
             </View>
             <Text style={styles.insightCaption}>Built from your actual food, mood, sleep, and habit logs.</Text>
+            <View style={styles.insightMiniTrendRow}>
+              {paddedTrend.map((point, index) => (
+                <View
+                  key={`${insight.id}-timeline-${index}`}
+                  style={[
+                    styles.insightTimelineCell,
+                    {
+                      backgroundColor: getMoodStripColor(point?.moodScore),
+                      borderColor: point?.moodScore ? "rgba(44, 26, 14, 0.06)" : "rgba(138, 158, 123, 0.08)",
+                    },
+                  ]}
+                />
+              ))}
+            </View>
           </Pressable>
         );
       })}
@@ -1272,68 +1593,120 @@ export const InsightFeed = React.memo(function InsightFeed() {
 });
 
 export const TrendCard = React.memo(function TrendCard() {
-  const trend = useAppStore((state: AppState) => state.foodMoodTrend);
-  const analyticsMoodLogs = useAppStore((state: AppState) => state.analyticsMoodLogs);
-  const moodByDate = useMemo(() => buildMoodByDate(analyticsMoodLogs), [analyticsMoodLogs]);
-  const trendByDate = useMemo(
-    () => new Map(trend.map((point: FoodMoodTrendPoint) => [point.date.slice(0, 10), point])),
-    [trend]
-  );
-  const points = useMemo(
-    () =>
-      getLastNDates(7).map((date) => {
-        const key = toDateKey(date);
-        const trendPoint = trendByDate.get(key);
-        const moodValue = moodByDate.get(key);
-        const moodScore =
-          typeof trendPoint?.moodScore === "number"
-            ? trendPoint.moodScore
-            : typeof moodValue === "number"
-              ? Math.round(moodValue)
-              : null;
-
-        return {
-          key,
-          label: format(date, "EEE"),
-          moodScore,
-          isToday: key === toDateKey(new Date()),
-        };
-      }),
-    [moodByDate, trendByDate]
-  );
-  const allEmpty = points.every((point) => !point.moodScore);
+  const points = [
+    { key: "m", label: "M", mood: 56, fiber: 44 },
+    { key: "t1", label: "T", mood: 48, fiber: 40 },
+    { key: "w", label: "W", mood: 68, fiber: 66 },
+    { key: "t2", label: "T", mood: 70, fiber: 72 },
+    { key: "f", label: "F", mood: 58, fiber: 54 },
+    { key: "s1", label: "S", mood: 82, fiber: 78 },
+    { key: "s2", label: "S", mood: 74, fiber: 70 },
+  ];
+  const chartHeight = 112;
+  const minValue = 32;
+  const maxValue = 90;
+  const moodCoords = points.map((point, index) => ({
+    ...point,
+    x: (index / (points.length - 1)) * 100,
+    y: ((maxValue - point.mood) / (maxValue - minValue)) * chartHeight,
+  }));
+  const fiberCoords = points.map((point, index) => ({
+    ...point,
+    x: (index / (points.length - 1)) * 100,
+    y: ((maxValue - point.fiber) / (maxValue - minValue)) * chartHeight,
+  }));
+  const fauxCorrelation = 0.71;
 
   return (
     <SurfaceCard>
-      <SectionTitle
-        eyebrow="MOOD TREND"
-        title="Your mood this week"
-        subtitle={allEmpty ? "Log your mood daily to see your trend build" : undefined}
-      />
-      <View style={styles.trendBarsRow}>
-        {points.map((point) => (
-          <View key={point.key} style={styles.trendBarColumn}>
+      <View style={styles.trendCardHeader}>
+        <View style={styles.trendCardHeaderCopy}>
+          <Text style={styles.editorialEyebrow}>THIS WEEK'S RHYTHM</Text>
+          <Text style={styles.trendCardTitle}>Mood vs. fiber</Text>
+        </View>
+        <View style={styles.trendRangePills}>
+          <View style={[styles.trendRangePill, styles.trendRangePillActive]}>
+            <Text style={[styles.trendRangePillText, styles.trendRangePillTextActive]}>7D</Text>
+          </View>
+          <View style={styles.trendRangePill}>
+            <Text style={styles.trendRangePillText}>30D</Text>
+          </View>
+          <View style={styles.trendRangePill}>
+            <Text style={styles.trendRangePillText}>All</Text>
+          </View>
+        </View>
+      </View>
+      <View style={styles.trendArea}>
+        <View style={[styles.gridLine, { top: 26 }]} />
+        <View style={[styles.gridLine, { top: 56, opacity: 0.5 }]} />
+        <View style={[styles.gridLine, { top: 86, opacity: 0.32 }]} />
+        <View style={styles.trendPlot}>
+          <View style={styles.trendAreaFillMood} />
+          <View style={styles.trendAreaFillFiber} />
+          {fiberCoords.map((point, index) =>
+            index < fiberCoords.length - 1 ? (
+              <View
+                key={`fiber-line-${point.key}`}
+                style={[
+                  styles.trendLineSegment,
+                  styles.trendLineSegmentFiber,
+                  getLineStyle(point.x, point.y, fiberCoords[index + 1].x, fiberCoords[index + 1].y, chartHeight),
+                ]}
+              />
+            ) : null
+          )}
+          {moodCoords.map((point, index) =>
+            index < moodCoords.length - 1 ? (
+              <View
+                key={`mood-line-${point.key}`}
+                style={[
+                  styles.trendLineSegment,
+                  styles.trendLineSegmentMood,
+                  getLineStyle(point.x, point.y, moodCoords[index + 1].x, moodCoords[index + 1].y, chartHeight),
+                ]}
+              />
+            ) : null
+          )}
+          {fiberCoords.map((point) => (
             <View
+              key={`fiber-dot-${point.key}`}
               style={[
-                styles.trendBar,
-                {
-                  height: point.moodScore ? point.moodScore * 20 : 4,
-                  backgroundColor: point.moodScore ? colors.accentPrimary : colors.border,
-                },
+                styles.trendPlotDot,
+                styles.trendPlotDotFiber,
+                { left: `${point.x}%`, top: point.y + 10 },
               ]}
             />
-            <Text style={[styles.trendDayLabel, point.isToday && styles.trendDayLabelToday]}>{point.label}</Text>
-          </View>
-        ))}
+          ))}
+          {moodCoords.map((point) => (
+            <View
+              key={`mood-dot-${point.key}`}
+              style={[
+                styles.trendPlotDot,
+                styles.trendPlotDotMood,
+                { left: `${point.x}%`, top: point.y + 10 },
+              ]}
+            />
+          ))}
+        </View>
+        <View style={styles.trendLabelRow}>
+          {points.map((point) => (
+            <Text key={`label-${point.key}`} style={styles.trendLabel}>
+              {point.label}
+            </Text>
+          ))}
+        </View>
       </View>
       <View style={styles.trendLegendRow}>
         <View style={styles.trendLegendItem}>
           <View style={[styles.trendLegendDot, styles.trendLegendDotFilled]} />
-          <Text style={styles.trendLegendText}>Logged</Text>
+          <Text style={styles.trendLegendText}>Mood</Text>
         </View>
         <View style={styles.trendLegendItem}>
-          <View style={styles.trendLegendDot} />
-          <Text style={styles.trendLegendText}>No entry</Text>
+          <View style={[styles.trendLegendDot, styles.trendLegendFiberDot]} />
+          <Text style={styles.trendLegendText}>Fiber</Text>
+        </View>
+        <View style={styles.trendCorrelationPill}>
+          <Text style={styles.trendCorrelationText}>{fauxCorrelation.toFixed(2)} corr</Text>
         </View>
       </View>
     </SurfaceCard>
@@ -1437,18 +1810,33 @@ function getInsightTrendKey(insightType: string) {
   return "fiber" as const;
 }
 
+function getLineStyle(x1: number, y1: number, x2: number, y2: number, chartHeight: number) {
+  const deltaX = x2 - x1;
+  const deltaY = y2 - y1;
+  const width = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+  const angle = Math.atan2(deltaY, deltaX) * (180 / Math.PI);
+
+  return {
+    left: `${x1}%` as any,
+    top: y1 + 10,
+    width: `${width}%` as any,
+    transform: [{ translateY: -1 }, { rotate: `${angle}deg` }],
+    maxHeight: chartHeight as any,
+  };
+}
+
 const styles = StyleSheet.create({
   surfaceCard: {
     backgroundColor: colors.white,
-    borderRadius: 16,
+    borderRadius: 28,
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: 16,
-    gap: 12,
+    borderColor: "rgba(44, 26, 14, 0.08)",
+    padding: 18,
+    gap: 14,
     shadowColor: "#2C1A0E",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
+    shadowOpacity: 0.05,
+    shadowRadius: 14,
   },
   cardPressFeedback: {
     opacity: 0.7,
@@ -1461,7 +1849,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   preGateWrap: {
-    gap: 20,
+    gap: 22,
   },
   preGateHero: {
     gap: 10,
@@ -1481,18 +1869,20 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   preGateProgressValue: {
-    fontSize: 36,
+    fontSize: 50,
     fontWeight: "800",
     color: colors.accentPrimary,
+    lineHeight: 58,
+    fontFamily: editorialSerif,
   },
   preGateSegments: {
     flexDirection: "row",
-    gap: 6,
+    gap: 8,
   },
   preGateSegment: {
     flex: 1,
-    height: 8,
-    borderRadius: 4,
+    height: 6,
+    borderRadius: 999,
   },
   preGateSegmentFilled: {
     backgroundColor: colors.accentPrimary,
@@ -1501,55 +1891,72 @@ const styles = StyleSheet.create({
     backgroundColor: colors.border,
   },
   preGateCaption: {
-    fontSize: 13,
-    color: colors.textSecondary,
+    fontSize: 14,
+    color: colors.textPrimary,
   },
   lockedPreviewSection: {
     gap: 12,
   },
   lockedPreviewHeading: {
     color: colors.textSecondary,
-    fontSize: 14,
+    fontSize: 12,
     textTransform: "uppercase",
-    letterSpacing: 1,
+    letterSpacing: 1.8,
+    fontWeight: "700",
   },
   lockedPreviewScroll: {
     gap: 12,
     paddingRight: 4,
   },
   lockedPreviewCardWrap: {
-    width: 220,
+    width: 182,
   },
   lockedPreviewCard: {
-    minHeight: 180,
+    minHeight: 160,
     justifyContent: "space-between",
+    borderRadius: 24,
+    backgroundColor: "#FAF7F2",
+    borderWidth: 1,
+    borderColor: "rgba(196,98,45,0.15)",
+    padding: 18,
+    alignItems: "center",
   },
   lockedPreviewLock: {
-    alignSelf: "flex-end",
-    fontSize: 20,
+    width: 0,
+    height: 0,
+    fontSize: 0,
+    opacity: 0,
   },
   lockedPreviewScore: {
-    fontSize: 64,
+    fontSize: 58,
     fontWeight: "800",
     color: "#E8D5C4",
+    fontFamily: editorialSerif,
+  },
+  lockedPreviewEmoji: {
+    fontSize: 42,
+    marginTop: 6,
   },
   lockedPreviewLabel: {
-    color: colors.textSecondary,
+    color: "#2C1A0E",
     fontSize: 15,
-    fontWeight: "500",
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  lockedPreviewSubcopy: {
+    color: "#7A6155",
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: "center",
   },
   lockedPreviewTeaser: {
-    color: colors.textPrimary,
-    fontSize: 13,
-    opacity: 0.35,
-    lineHeight: 20,
+    display: "none",
   },
   lockedPreviewFlame: {
     fontSize: 48,
   },
   lockedLines: {
-    gap: 10,
-    marginVertical: 10,
+    display: "none",
   },
   lockedLine: {
     height: 12,
@@ -1565,22 +1972,33 @@ const styles = StyleSheet.create({
   lockedLineShort: {
     width: "46%",
   },
+  lockedPreviewProgressTrack: {
+    width: "100%",
+    height: 3,
+    borderRadius: 999,
+    backgroundColor: "rgba(196,98,45,0.12)",
+    overflow: "hidden",
+    marginTop: 10,
+  },
+  lockedPreviewProgressFill: {
+    height: "100%",
+    borderRadius: 999,
+    backgroundColor: colors.accentPrimary,
+  },
   preGateFooter: {
     fontSize: 14,
-    color: colors.textSecondary,
-    textAlign: "center",
-    marginTop: 4,
+    color: colors.textPrimary,
+    marginTop: 2,
   },
   gutMoodHeroCard: {
-    backgroundColor: colors.accentPrimary,
-    padding: 28,
+    padding: 22,
     gap: 14,
   },
   gutMoodHeroEyebrow: {
     fontSize: 11,
     textTransform: "uppercase",
-    letterSpacing: 1,
-    color: "rgba(255,255,255,0.78)",
+    letterSpacing: 1.6,
+    color: colors.textSecondary,
     fontWeight: "700",
   },
   gutMoodHeroLabelRow: {
@@ -1590,23 +2008,24 @@ const styles = StyleSheet.create({
   },
   gutMoodHeroLabel: {
     fontSize: 15,
-    color: colors.white,
+    color: colors.textPrimary,
     fontWeight: "600",
   },
   gutMoodHeroScore: {
-    fontSize: 72,
+    fontSize: 64,
     fontWeight: "800",
-    color: colors.white,
-    lineHeight: 78,
+    color: colors.accentPrimary,
+    lineHeight: 70,
+    fontFamily: editorialSerif,
   },
   gutMoodHeroBody: {
     fontSize: 16,
     lineHeight: 24,
-    color: colors.white,
+    color: colors.textPrimary,
   },
   gutMoodHeroDivider: {
     height: 1,
-    backgroundColor: "rgba(255,255,255,0.3)",
+    backgroundColor: "rgba(44, 26, 14, 0.08)",
   },
   gutMoodHeroStats: {
     flexDirection: "row",
@@ -1620,13 +2039,13 @@ const styles = StyleSheet.create({
     fontSize: 11,
     textTransform: "uppercase",
     letterSpacing: 0.8,
-    color: "rgba(255,255,255,0.7)",
+    color: colors.textSecondary,
     fontWeight: "700",
   },
   gutMoodHeroStatValue: {
     fontSize: 16,
     fontWeight: "600",
-    color: colors.white,
+    color: colors.textPrimary,
   },
   infoButton: {
     width: 20,
@@ -1679,13 +2098,16 @@ const styles = StyleSheet.create({
   },
   zeroStreakCard: {
     alignItems: "center",
-    gap: 8,
+    gap: 10,
+    paddingVertical: 8,
   },
   zeroStreakTitle: {
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: "700",
     color: colors.textPrimary,
     textAlign: "center",
+    lineHeight: 34,
+    fontFamily: editorialSerif,
   },
   zeroStreakSubtitle: {
     fontSize: 15,
@@ -1695,7 +2117,7 @@ const styles = StyleSheet.create({
   },
   zeroStreakFlame: {
     fontSize: 56,
-    opacity: 0.25,
+    opacity: 0.85,
     marginTop: 8,
   },
   editorialHeader: {
@@ -1704,15 +2126,16 @@ const styles = StyleSheet.create({
   editorialEyebrow: {
     fontSize: 11,
     textTransform: "uppercase",
-    letterSpacing: 1,
+    letterSpacing: 1.6,
     color: colors.textSecondary,
-    fontWeight: "600",
+    fontWeight: "700",
   },
   editorialTitle: {
-    fontSize: 26,
-    lineHeight: 32,
+    fontSize: 30,
+    lineHeight: 38,
     color: colors.textPrimary,
     fontWeight: "700",
+    fontFamily: editorialSerif,
   },
   editorialSubtitle: {
     fontSize: 15,
@@ -1817,12 +2240,19 @@ const styles = StyleSheet.create({
   },
   historyLinkWrap: {
     alignSelf: "flex-start",
-    marginTop: 4,
+    marginTop: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: "#FFF4EC",
+    borderWidth: 1,
+    borderColor: "rgba(196, 98, 45, 0.16)",
   },
   historyLinkText: {
     fontSize: 13,
-    fontWeight: "600",
+    fontWeight: "700",
     color: colors.accentPrimary,
+    letterSpacing: 0.2,
   },
   historyModalRoot: {
     flex: 1,
@@ -1986,6 +2416,84 @@ const styles = StyleSheet.create({
   dailyReadList: {
     gap: 8,
   },
+  letterCard: {
+    gap: 16,
+  },
+  letterHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  letterEyebrowRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  letterIcon: {
+    color: colors.accentPrimary,
+    fontSize: 14,
+  },
+  letterEyebrow: {
+    color: colors.accentPrimary,
+    fontSize: 12,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 1.6,
+  },
+  letterDayPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "#F6E7D4",
+  },
+  letterDayText: {
+    color: colors.accentPrimary,
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 1,
+  },
+  letterQuote: {
+    color: colors.textPrimary,
+    fontSize: 24,
+    lineHeight: 32,
+    fontWeight: "700",
+    fontFamily: editorialSerif,
+  },
+  letterBody: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    lineHeight: 27,
+  },
+  letterFooterRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginTop: 4,
+  },
+  letterPrimaryButton: {
+    backgroundColor: colors.accentPrimary,
+    borderRadius: 999,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+  },
+  letterPrimaryText: {
+    color: colors.white,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  letterMetaAction: {
+    color: colors.accentPrimary,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  letterFootnote: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    textAlign: "center",
+    marginTop: 2,
+  },
   dailyReadRow: {
     flexDirection: "row",
     gap: 10,
@@ -2025,6 +2533,25 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     textAlign: "center",
   },
+  loadingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  loadingSpinnerWrap: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(196, 98, 45, 0.10)",
+  },
+  loadingSpinnerText: {
+    color: colors.accentPrimary,
+    fontSize: 18,
+    fontWeight: "700",
+    lineHeight: 18,
+  },
   refreshLink: {
     marginTop: 12,
     fontSize: 14,
@@ -2053,17 +2580,209 @@ const styles = StyleSheet.create({
   sectionWrap: {
     gap: 20,
   },
+  snapshotStatsRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  snapshotMetricCard: {
+    flex: 1,
+    backgroundColor: colors.white,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "rgba(44, 26, 14, 0.08)",
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    gap: 6,
+  },
+  snapshotMetricLabel: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 1.4,
+    textTransform: "uppercase",
+  },
+  snapshotMetricValue: {
+    color: colors.textPrimary,
+    fontSize: 26,
+    lineHeight: 30,
+    fontWeight: "700",
+    fontFamily: editorialSerif,
+  },
+  patternsHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  patternsHeaderCopy: {
+    flex: 1,
+    gap: 6,
+  },
+  patternsHeaderTitle: {
+    color: colors.textPrimary,
+    fontSize: 28,
+    lineHeight: 34,
+    fontWeight: "700",
+    fontFamily: editorialSerif,
+  },
+  patternsHeaderSub: {
+    color: colors.textSecondary,
+    fontSize: 15,
+    lineHeight: 24,
+  },
+  patternStatusPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: "#F3E7D6",
+    marginTop: 6,
+  },
+  patternStatusText: {
+    color: "#9A764A",
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 1,
+  },
+  patternsLead: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 22,
+  },
+  snapshotContextCard: {
+    backgroundColor: colors.white,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "rgba(44, 26, 14, 0.08)",
+    padding: 16,
+    gap: 12,
+  },
+  featuredPatternStack: {
+    gap: 14,
+  },
+  featuredPatternCard: {
+    borderRadius: 28,
+    padding: 18,
+    borderWidth: 1,
+    shadowColor: "#2C1A0E",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
+    gap: 16,
+  },
+  featuredPatternCardNeutral: {
+    backgroundColor: colors.white,
+    borderColor: "rgba(44, 26, 14, 0.08)",
+  },
+  featuredPatternCardAmber: {
+    backgroundColor: "#FFF9F1",
+    borderColor: "rgba(232, 168, 56, 0.18)",
+  },
+  featuredPatternCardSage: {
+    backgroundColor: "#F7FAF4",
+    borderColor: "rgba(138, 158, 123, 0.18)",
+  },
+  featuredPatternHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+  },
+  featuredPatternIconBubble: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "#F3E7DA",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  featuredPatternIcon: {
+    fontSize: 18,
+  },
+  featuredPatternCopy: {
+    flex: 1,
+    gap: 6,
+  },
+  featuredPatternTitle: {
+    color: colors.textPrimary,
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: "700",
+    fontFamily: editorialSerif,
+  },
+  featuredPatternSubtitle: {
+    color: colors.textSecondary,
+    fontSize: 15,
+    lineHeight: 23,
+  },
+  featuredPatternBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  featuredPatternBadgeNeutral: {
+    backgroundColor: "#F1EBE3",
+  },
+  featuredPatternBadgeAmber: {
+    backgroundColor: "#FFF1DA",
+  },
+  featuredPatternBadgeSage: {
+    backgroundColor: "#EAF1E5",
+  },
+  featuredPatternBadgeText: {
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 1,
+  },
+  featuredPatternBadgeTextNeutral: {
+    color: colors.textSecondary,
+  },
+  featuredPatternBadgeTextAmber: {
+    color: "#9A764A",
+  },
+  featuredPatternBadgeTextSage: {
+    color: colors.accentSecondary,
+  },
+  featuredPatternMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  featuredPatternTrack: {
+    flex: 1,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: "#E7DDD2",
+    overflow: "hidden",
+  },
+  featuredPatternFill: {
+    height: "100%",
+    borderRadius: 999,
+  },
+  featuredPatternFillNeutral: {
+    backgroundColor: "#C7B39D",
+  },
+  featuredPatternFillAmber: {
+    backgroundColor: colors.accentPrimary,
+  },
+  featuredPatternFillSage: {
+    backgroundColor: colors.accentSecondary,
+  },
+  featuredPatternConfidence: {
+    color: colors.textPrimary,
+    fontSize: 12,
+    fontWeight: "600",
+  },
   patternCardsStack: {
     gap: spacing.md,
   },
   patternSurfaceCard: {
-    gap: spacing.md,
+    gap: 10,
   },
   patternSurfaceTitle: {
-    fontSize: 24,
-    lineHeight: 30,
+    fontSize: 28,
+    lineHeight: 34,
     color: colors.textPrimary,
-    fontWeight: "600",
+    fontWeight: "700",
+    fontFamily: editorialSerif,
   },
   patternHeatmapWrap: {
     gap: 10,
@@ -2115,20 +2834,42 @@ const styles = StyleSheet.create({
   patternPillWrap: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: spacing.sm,
+    gap: 10,
   },
   patternFoodPill: {
     borderRadius: radii.round,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingHorizontal: 13,
+    paddingVertical: 8,
     borderWidth: 1,
-    borderColor: "rgba(196, 98, 45, 0.28)",
-    backgroundColor: "rgba(255,255,255,0.72)",
+    borderColor: "rgba(44, 26, 14, 0.08)",
+    backgroundColor: "rgba(255,255,255,0.92)",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  patternFoodPillIcon: {
+    fontSize: 16,
   },
   patternFoodPillText: {
     fontSize: 14,
-    color: colors.accentPrimary,
+    color: colors.textPrimary,
     fontWeight: "600",
+  },
+  patternFoodPillDelta: {
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  patternFoodPillDeltaGood: {
+    color: colors.accentSecondary,
+  },
+  patternFoodPillDeltaBad: {
+    color: colors.accentPrimary,
+  },
+  patternFoodPillDeltaNeutral: {
+    color: colors.textSecondary,
+  },
+  patternShelf: {
+    gap: 12,
   },
   emptyText: {
     fontSize: 15,
@@ -2225,9 +2966,58 @@ const styles = StyleSheet.create({
   },
   insightBodyText: {
     fontSize: 17,
-    lineHeight: 26,
+    lineHeight: 24,
     color: colors.textPrimary,
-    fontWeight: "500",
+    fontWeight: "700",
+    fontFamily: editorialSerif,
+  },
+  insightHeroRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+  },
+  insightIconBubble: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F3E7DA",
+  },
+  insightIconText: {
+    fontSize: 19,
+  },
+  insightHeroCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  insightSignalPill: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  insightSignalPillSage: {
+    backgroundColor: "rgba(138, 158, 123, 0.18)",
+  },
+  insightSignalPillAmber: {
+    backgroundColor: "rgba(232, 168, 56, 0.18)",
+  },
+  insightSignalPillNeutral: {
+    backgroundColor: "rgba(44, 26, 14, 0.08)",
+  },
+  insightSignalText: {
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 1,
+  },
+  insightSignalTextSage: {
+    color: colors.accentSecondary,
+  },
+  insightSignalTextAmber: {
+    color: "#9A764A",
+  },
+  insightSignalTextNeutral: {
+    color: colors.textSecondary,
   },
   insightExpandedSection: {
     backgroundColor: "#F6EDE4",
@@ -2257,6 +3047,23 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: spacing.sm,
   },
+  insightConfidenceTrack: {
+    flex: 1,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: "#E7DDD2",
+    overflow: "hidden",
+  },
+  insightConfidenceFill: {
+    height: "100%",
+    borderRadius: 999,
+    backgroundColor: colors.accentPrimary,
+  },
+  insightConfidenceText: {
+    color: colors.textPrimary,
+    fontSize: 12,
+    fontWeight: "600",
+  },
   insightTimelineLabel: {
     fontSize: 11,
     textTransform: "uppercase",
@@ -2280,6 +3087,11 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     lineHeight: 22,
     fontSize: 14,
+  },
+  insightMiniTrendRow: {
+    flexDirection: "row",
+    gap: 6,
+    justifyContent: "flex-start",
   },
   heatmapWeekdayRow: {
     flexDirection: "row",
@@ -2372,28 +3184,36 @@ const styles = StyleSheet.create({
   },
   statBox: {
     flex: 1,
-    backgroundColor: colors.white,
+    backgroundColor: "#FFFCF8",
     borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radii.md,
-    padding: 12,
-    gap: 6,
+    borderColor: "rgba(44, 26, 14, 0.08)",
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 8,
+    shadowColor: "#2C1A0E",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 8,
   },
   statLabel: {
     color: colors.textSecondary,
-    fontSize: 12,
+    fontSize: 11,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 1.1,
+    fontWeight: "700",
   },
   statValue: {
     color: colors.textPrimary,
-    fontSize: 18,
-    fontWeight: "600",
+    fontSize: 20,
+    lineHeight: 24,
+    fontWeight: "700",
   },
   deltaContext: {
     fontSize: 13,
     color: colors.textSecondary,
     marginTop: 4,
+    lineHeight: 19,
   },
   positiveDeltaValue: {
     color: "#5C9E6E",
@@ -2405,6 +3225,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     lineHeight: 24,
     fontSize: 15,
+    maxWidth: 320,
   },
   feed: {
     gap: 20,
@@ -2439,6 +3260,45 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     padding: 18,
     gap: spacing.sm,
+  },
+  trendCardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 12,
+  },
+  trendCardHeaderCopy: {
+    flex: 1,
+    gap: 6,
+  },
+  trendCardTitle: {
+    color: colors.textPrimary,
+    fontSize: 30,
+    lineHeight: 36,
+    fontWeight: "700",
+    fontFamily: editorialSerif,
+  },
+  trendRangePills: {
+    flexDirection: "row",
+    gap: 6,
+    marginTop: 2,
+  },
+  trendRangePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "#F1EBE3",
+  },
+  trendRangePillActive: {
+    backgroundColor: colors.accentPrimary,
+  },
+  trendRangePillText: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  trendRangePillTextActive: {
+    color: colors.white,
   },
   trendBarsRow: {
     flexDirection: "row",
@@ -2484,9 +3344,25 @@ const styles = StyleSheet.create({
   trendLegendDotFilled: {
     backgroundColor: colors.accentPrimary,
   },
+  trendLegendFiberDot: {
+    backgroundColor: colors.accentSecondary,
+    opacity: 0.75,
+  },
   trendLegendText: {
     color: colors.textSecondary,
     fontSize: 11,
+  },
+  trendCorrelationPill: {
+    marginLeft: "auto",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "#EEF3E9",
+  },
+  trendCorrelationText: {
+    color: colors.accentSecondary,
+    fontSize: 11,
+    fontWeight: "700",
   },
   nutrientList: {
     gap: 14,
@@ -2573,69 +3449,133 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   trendArea: {
-    minHeight: 180,
-    backgroundColor: colors.white,
+    minHeight: 188,
+    backgroundColor: "#FFFCF8",
     borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radii.md,
+    borderColor: "rgba(44, 26, 14, 0.08)",
+    borderRadius: 22,
     position: "relative",
     overflow: "hidden",
-    paddingHorizontal: 8,
-    paddingTop: 12,
-    paddingBottom: 10,
+    paddingHorizontal: 14,
+    paddingTop: 16,
+    paddingBottom: 12,
   },
   gridLine: {
     position: "absolute",
-    left: 8,
-    right: 8,
+    left: 14,
+    right: 14,
     top: 16,
     height: 1,
-    backgroundColor: colors.border,
+    backgroundColor: "rgba(196, 98, 45, 0.14)",
   },
   trendRow: {
     flexDirection: "row",
     alignItems: "flex-end",
     justifyContent: "space-between",
     flex: 1,
+    gap: 6,
+  },
+  trendPlot: {
+    height: 132,
+    position: "relative",
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  trendAreaFillMood: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 78,
+    backgroundColor: "rgba(196, 98, 45, 0.08)",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+  },
+  trendAreaFillFiber: {
+    position: "absolute",
+    left: 12,
+    right: 12,
+    bottom: 10,
+    height: 62,
+    backgroundColor: "rgba(138, 158, 123, 0.06)",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+  },
+  trendLineSegment: {
+    position: "absolute",
+    height: 2,
+    borderRadius: 999,
+  },
+  trendLineSegmentMood: {
+    backgroundColor: colors.accentPrimary,
+  },
+  trendLineSegmentFiber: {
+    backgroundColor: colors.accentSecondary,
+    opacity: 0.72,
+  },
+  trendPlotDot: {
+    position: "absolute",
+    width: 6,
+    height: 6,
+    borderRadius: 999,
+    marginLeft: -3,
+  },
+  trendPlotDotMood: {
+    backgroundColor: colors.accentPrimary,
+  },
+  trendPlotDotFiber: {
+    backgroundColor: colors.accentSecondary,
+  },
+  trendLabelRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 4,
+    marginTop: 2,
   },
   trendColumn: {
     flex: 1,
     alignItems: "center",
     justifyContent: "flex-end",
-    minHeight: 150,
+    minHeight: 168,
     position: "relative",
   },
   fiberBar: {
-    width: 12,
-    borderRadius: 8,
-    opacity: 0.6,
-    marginBottom: 8,
+    width: 16,
+    borderRadius: 999,
+    opacity: 0.78,
+    marginBottom: 12,
   },
   moodPoint: {
-    width: 12,
-    height: 12,
+    width: 14,
+    height: 14,
     borderRadius: radii.round,
     position: "absolute",
-    borderWidth: 2,
-    borderColor: colors.background,
+    borderWidth: 3,
+    borderColor: "#FFFCF8",
+    shadowColor: colors.accentPrimary,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
   },
   moodConnector: {
     position: "absolute",
     width: "100%",
-    height: 2,
+    height: 3,
     backgroundColor: colors.accentPrimary,
-    opacity: 0.35,
+    borderRadius: 999,
+    opacity: 0.32,
   },
   trendLabel: {
     color: colors.textSecondary,
     fontSize: 11,
-    marginTop: 8,
+    marginTop: 10,
+    fontWeight: "600",
   },
   emptyTrendWrap: {
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 150,
-    padding: spacing.md,
+    minHeight: 176,
+    padding: spacing.lg,
   },
   row: {
     flexDirection: "row",

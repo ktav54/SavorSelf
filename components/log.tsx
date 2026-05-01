@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Animated,
   type DimensionValue,
+  Keyboard,
   LayoutAnimation,
   Modal,
   Platform,
@@ -82,7 +83,8 @@ const FOOD_UNIT_LABELS: Record<FoodUnit, string> = {
   tsp: "tsp",
 };
 const DETAILED_GUT_ANALYSIS_PROMPT =
-  "Give me a detailed but warm daily gut-brain analysis. Cover: how today's specific foods affect my gut-brain axis, what my mood and energy scores suggest about my current state, any nutrient gaps worth noting, and 2-3 specific actionable suggestions for the rest of the day. Be personal and specific to the actual foods listed. 4-6 sentences, no bullet points, flowing paragraph style.";
+  "Give me a warm, specific daily gut-brain analysis based on today's actual foods, mood, and energy. Cover the main pattern you notice, any nutrient gap worth noting, and 2 specific suggestions for the rest of the day. Keep it to 3-4 short sentences and under 90 words total. No bullet points, no preamble, no sign-off.";
+const editorialSerif = Platform.select({ ios: "Georgia", android: "serif" });
 
 function estimateMicronutrients(foodName: string) {
   const name = foodName.toLowerCase();
@@ -895,7 +897,7 @@ export function HydrationSummaryCard() {
       <View style={styles.hydrationHeader}>
         <View>
           <Text style={styles.hydrationEyebrow}>Hydration</Text>
-          <Text style={styles.hydrationTitle}>💧 Water</Text>
+          <Text style={styles.hydrationTitle}>Water balance</Text>
         </View>
         <View style={styles.hydrationTotalsWrap}>
           <Text style={styles.hydrationTotal}>{todayValue} {waterUnit}</Text>
@@ -943,7 +945,7 @@ export function QuickLogStrip() {
   const [saving, setSaving] = useState(false);
 
   const items = [
-    { icon: "cafe-outline" as const, label: "Coffee", value: `${today?.caffeineMg ?? 0} mg`, field: "caffeineMg" as const, unitHint: "mg" },
+    { icon: "cafe-outline" as const, label: "Caffeine", value: `${today?.caffeineMg ?? 0} mg`, field: "caffeineMg" as const, unitHint: "mg" },
     { icon: "water-outline" as const, label: "Water", value: `${today?.waterOz ?? 0} oz`, field: "waterOz" as const, unitHint: "oz" },
     { icon: "footsteps-outline" as const, label: "Steps", value: `${today?.steps ?? 0} steps`, field: "steps" as const, unitHint: "steps" },
     { icon: "moon-outline" as const, label: "Sleep", value: `${today?.sleepHours ?? 0} hr`, field: "sleepHours" as const, unitHint: "hours" },
@@ -1458,7 +1460,7 @@ export function MacroSummaryBar() {
           label="Cal"
           value={totals.calories}
           goal={Math.round(profile?.dailyCalorieGoal ?? 0)}
-          unit="cal"
+          unit=""
           warningState={calorieWarningState}
           showWarningIndicator={calorieWarningState === "over"}
           onPress={() => setSelectedMacro("calories")}
@@ -2037,6 +2039,8 @@ export function FoodSearchCard({
   }, [quantity, selectedFood, unit]);
 
   const runSearch = async () => {
+    Keyboard.dismiss();
+
     if (!query.trim()) {
       setResults([]);
       setGutScores({});
@@ -2208,22 +2212,19 @@ export function FoodSearchCard({
       if (resolvedKey) {
         setGutScoreLoading((prev) => ({ ...prev, [resolvedKey]: true }));
       }
-      const res = await fetch(
-        "https://rxeyjtykavgadfvsspsy.supabase.co/functions/v1/ai-coach",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${supabaseAnonKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            mode: "gut_score",
-            message: `gut_score: ${foodName}`,
-            history: [],
-            context: {},
-          }),
-        }
-      );
+      const res = await fetch(`${supabaseUrl}/functions/v1/ai-coach`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${supabaseAnonKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          mode: "gut_score",
+          message: `gut_score: ${foodName}`,
+          history: [],
+          context: {},
+        }),
+      });
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -2444,11 +2445,11 @@ export function FoodSearchCard({
             })}
           </View>
         ) : null}
-      {hasSearched && !loading && !error && !results.length ? (
-        <Text style={styles.emptyText}>
-          We couldn't find nutrition for that just yet. Try a simpler food name.
-        </Text>
-      ) : null}
+        {hasSearched && !loading && !error && !results.length ? (
+          <Text style={styles.emptyText}>
+            No results found. Try describing it differently or use the AI coach to log it.
+          </Text>
+        ) : null}
       <GutScoreModal visible={gutScoreVisible} data={gutScore} onClose={() => setGutScoreVisible(false)} />
       <Modal
         visible={scannerOpen}
@@ -2987,20 +2988,20 @@ function MacroVisualCard({
 const styles = StyleSheet.create({
   gracefulCard: {
     backgroundColor: colors.white,
-    borderRadius: 16,
+    borderRadius: 28,
     width: "100%",
     alignSelf: "stretch",
     paddingHorizontal: 20,
     paddingVertical: 20,
-    gap: 20,
+    gap: 18,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: "rgba(44, 26, 14, 0.08)",
     ...(Platform.OS === "ios"
       ? {
           shadowColor: "#2C1A0E",
           shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.06,
-          shadowRadius: 8,
+          shadowOpacity: 0.05,
+          shadowRadius: 14,
         }
       : {}),
   },
@@ -3023,34 +3024,36 @@ const styles = StyleSheet.create({
   },
   moodHeaderCopy: {
     flex: 1,
-    gap: 6,
+    gap: 8,
   },
   moodEyebrow: {
     color: colors.textSecondary,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "700",
-    letterSpacing: 0.8,
+    letterSpacing: 1.4,
     textTransform: "uppercase",
   },
   moodTitle: {
     color: colors.textPrimary,
-    fontSize: 24,
+    fontSize: 25,
     fontWeight: "700",
+    lineHeight: 32,
+    fontFamily: editorialSerif,
   },
   moodSubtitle: {
     color: colors.textSecondary,
-    fontSize: 14,
-    lineHeight: 22,
+    fontSize: 15,
+    lineHeight: 24,
   },
   moodStatusBadge: {
-    minWidth: 48,
-    minHeight: 48,
+    minWidth: 58,
+    minHeight: 36,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 8,
     borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#F6EDE4",
+    backgroundColor: "#F4E9DB",
   },
   moodStatusBadgePending: {
     backgroundColor: "#F4EEE8",
@@ -3059,10 +3062,10 @@ const styles = StyleSheet.create({
     fontSize: 24,
   },
   moodStatusPendingText: {
-    color: colors.textSecondary,
-    fontSize: 12,
+    color: colors.accentPrimary,
+    fontSize: 11,
     fontWeight: "600",
-    letterSpacing: 0.7,
+    letterSpacing: 1,
     textTransform: "uppercase",
   },
   moodCompactCard: {
@@ -3110,20 +3113,21 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   moodStepWrap: {
-    gap: 16,
+    gap: 18,
   },
   moodStepQuestion: {
     color: colors.textPrimary,
-    fontSize: 24,
+    fontSize: 23,
     fontWeight: "700",
-    textAlign: "center",
+    textAlign: "left",
     lineHeight: 32,
+    fontFamily: editorialSerif,
   },
   moodStepSubtext: {
     color: colors.textSecondary,
-    fontSize: 13,
+    fontSize: 14,
     marginBottom: 12,
-    textAlign: "center",
+    textAlign: "left",
   },
   moodEmojiRow: {
     flexDirection: "row",
@@ -3139,12 +3143,12 @@ const styles = StyleSheet.create({
     transform: [{ translateY: -1 }],
   },
   moodEmojiCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.white,
+    backgroundColor: "#FEFCF8",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -3153,7 +3157,7 @@ const styles = StyleSheet.create({
   },
   moodEmojiLabel: {
     color: colors.textSecondary,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "600",
   },
   energyRow: {
@@ -3287,15 +3291,15 @@ const styles = StyleSheet.create({
   },
   macroPillRow: {
     flexDirection: "row",
-    gap: 8,
+    gap: 10,
     flexWrap: "nowrap",
   },
   dailyGutPanel: {
     backgroundColor: colors.white,
-    borderRadius: 14,
+    borderRadius: 0,
     paddingHorizontal: 0,
     paddingVertical: 0,
-    gap: 14,
+    gap: 16,
     borderWidth: 1,
     borderColor: "transparent",
   },
@@ -3313,18 +3317,20 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 11,
     fontWeight: "700",
-    letterSpacing: 1,
+    letterSpacing: 1.4,
     textTransform: "uppercase",
   },
   dailyGutTitle: {
     color: colors.textPrimary,
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: "700",
+    lineHeight: 30,
+    fontFamily: editorialSerif,
   },
   dailyGutBody: {
     color: colors.textSecondary,
     fontSize: 15,
-    lineHeight: 22,
+    lineHeight: 24,
     flex: 1,
   },
   dailyGutList: {
@@ -3333,10 +3339,10 @@ const styles = StyleSheet.create({
   },
   dailyGutTapHint: {
     color: colors.accentPrimary,
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: "600",
-    marginTop: 8,
-    textAlign: "right",
+    marginTop: 4,
+    textAlign: "left",
   },
   dailyGutBulletRow: {
     alignItems: "flex-start",
@@ -3461,22 +3467,22 @@ const styles = StyleSheet.create({
     flex: 1,
     flexShrink: 1,
     backgroundColor: colors.white,
-    borderColor: colors.border,
-    borderRadius: 14,
+    borderColor: "rgba(44, 26, 14, 0.08)",
+    borderRadius: 20,
     borderWidth: 1,
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     paddingVertical: 12,
-    gap: 8,
+    gap: 10,
   },
   macroPillHeader: {
     minHeight: 16,
   },
   macroLabel: {
     color: colors.textSecondary,
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: "700",
     textTransform: "uppercase",
-    letterSpacing: 0.45,
+    letterSpacing: 0.8,
   },
   macroValueRow: {
     flexDirection: "row",
@@ -3489,12 +3495,13 @@ const styles = StyleSheet.create({
   },
   macroValue: {
     color: colors.textPrimary,
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: "700",
+    fontVariant: ["tabular-nums"],
   },
   macroUnit: {
     color: colors.textSecondary,
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "600",
     marginBottom: 3,
   },
@@ -3535,19 +3542,20 @@ const styles = StyleSheet.create({
   },
   mealCard: {
     backgroundColor: colors.white,
-    borderColor: colors.border,
+    borderColor: "rgba(44, 26, 14, 0.08)",
     borderWidth: 1,
-    borderRadius: 16,
+    borderRadius: 24,
     width: "100%",
     alignSelf: "stretch",
-    padding: spacing.md,
-    gap: spacing.sm,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+    gap: 12,
     ...(Platform.OS === "ios"
       ? {
           shadowColor: "#2C1A0E",
           shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.06,
-          shadowRadius: 8,
+          shadowOpacity: 0.04,
+          shadowRadius: 12,
         }
       : {}),
   },
@@ -3561,8 +3569,9 @@ const styles = StyleSheet.create({
   },
   mealTitle: {
     color: colors.textPrimary,
-    fontSize: 17,
+    fontSize: 19,
     fontWeight: "700",
+    fontFamily: editorialSerif,
   },
   mealTotal: {
     color: colors.accentPrimary,
@@ -3913,7 +3922,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 0,
   },
   quickHeader: {
-    gap: 6,
+    gap: 8,
   },
   quickEyebrow: {
     color: colors.textSecondary,
@@ -3926,26 +3935,28 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontSize: 24,
     fontWeight: "700",
+    lineHeight: 30,
+    fontFamily: editorialSerif,
   },
   quickSubtitle: {
     color: colors.textSecondary,
     fontSize: 14,
-    lineHeight: 22,
+    lineHeight: 23,
   },
   quickTile: {
     width: "100%",
-    minHeight: 150,
-    backgroundColor: colors.white,
+    minHeight: 136,
+    backgroundColor: "#FEFCF8",
     borderRadius: 20,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: "rgba(44, 26, 14, 0.08)",
     ...(Platform.OS === "ios"
       ? {
           shadowColor: "#2C1A0E",
           shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.06,
-          shadowRadius: 8,
+          shadowOpacity: 0.03,
+          shadowRadius: 10,
         }
       : {}),
     justifyContent: "space-between",
@@ -3954,14 +3965,14 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "#F3EDE7",
+    backgroundColor: "#F5ECE4",
     alignItems: "center",
     justifyContent: "center",
   },
   quickTileCenter: {
     flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: "flex-start",
+    justifyContent: "flex-end",
     gap: 6,
   },
   quickLabel: {
@@ -3972,10 +3983,11 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   quickValue: {
-    fontSize: 26,
+    fontSize: 22,
     fontWeight: "800",
     color: colors.textPrimary,
-    textAlign: "center",
+    textAlign: "left",
+    fontFamily: editorialSerif,
   },
   quickModalUnitHint: {
     color: colors.textSecondary,
@@ -4232,12 +4244,13 @@ const styles = StyleSheet.create({
   },
   searchLauncher: {
     backgroundColor: colors.white,
-    borderRadius: 16,
+    borderRadius: 26,
     width: "100%",
     alignSelf: "stretch",
-    padding: 20,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: "rgba(44, 26, 14, 0.08)",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -4245,8 +4258,8 @@ const styles = StyleSheet.create({
       ? {
           shadowColor: "#2C1A0E",
           shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.06,
-          shadowRadius: 8,
+          shadowOpacity: 0.04,
+          shadowRadius: 12,
         }
       : {}),
   },
@@ -4262,11 +4275,12 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   searchLauncherTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: "700",
     color: colors.textPrimary,
     letterSpacing: -0.3,
     marginBottom: 4,
+    fontFamily: editorialSerif,
   },
   searchLauncherSub: {
     fontSize: 13,
@@ -4278,9 +4292,9 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
   },
   searchIconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     backgroundColor: "#F6EDE4",
     alignItems: "center",
     justifyContent: "center",
@@ -4640,6 +4654,8 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: "700",
     marginTop: 4,
+    lineHeight: 30,
+    fontFamily: editorialSerif,
   },
   hydrationTotalsWrap: {
     alignItems: "flex-end",
@@ -4661,25 +4677,25 @@ const styles = StyleSheet.create({
   },
   hydrationRail: {
     flex: 1,
-    height: 18,
+    height: 10,
     borderRadius: radii.round,
-    backgroundColor: "#E7F2F4",
+    backgroundColor: "#E7DDD2",
     overflow: "hidden",
   },
   hydrationFill: {
     height: "100%",
     borderRadius: radii.round,
-    backgroundColor: "#6BA3BE",
+    backgroundColor: colors.accentSecondary,
   },
   hydrationStepButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.white,
+    backgroundColor: "#F3EDE4",
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: "rgba(44, 26, 14, 0.06)",
   },
   hydrationStepSymbol: {
     color: colors.accentPrimary,

@@ -16,7 +16,7 @@ import {
   View,
 } from "react-native";
 import { Screen } from "@/components/ui";
-import { colors, radii, spacing } from "@/constants/theme";
+import { colors, spacing } from "@/constants/theme";
 import {
   cancelSavorSelfNotification,
   scheduleDailyMoodReminder,
@@ -29,6 +29,11 @@ type AboutModalKind = "how" | "science" | "terms" | null;
 export default function SettingsScreen() {
   const router = useRouter();
   const profile = useAppStore((state: AppState) => state.profile);
+  const foodLogs = useAppStore((state: AppState) => state.foodLogs);
+  const moodLogs = useAppStore((state: AppState) => state.moodLogs);
+  const analyticsFoodLogs = useAppStore((state: AppState) => state.analyticsFoodLogs);
+  const analyticsMoodLogs = useAppStore((state: AppState) => state.analyticsMoodLogs);
+  const loadFoodMoodInsights = useAppStore((state: AppState) => state.loadFoodMoodInsights);
   const signOut = useAppStore((state: AppState) => state.signOut);
   const updateProfile = useAppStore((state: AppState) => state.updateProfile);
   const updateEmail = useAppStore((state: AppState) => state.updateEmail);
@@ -86,23 +91,69 @@ export default function SettingsScreen() {
     return () => clearTimeout(timer);
   }, [goalsMessage]);
 
+  useEffect(() => {
+    if (!profile) {
+      return;
+    }
+
+    if (analyticsFoodLogs.length > 0 || analyticsMoodLogs.length > 0) {
+      return;
+    }
+
+    void loadFoodMoodInsights();
+  }, [analyticsFoodLogs.length, analyticsMoodLogs.length, loadFoodMoodInsights, profile]);
+
   const waterUnitLabel = profile?.preferredUnits === "metric" ? "ml" : "oz";
-  const subscriptionLabel = useMemo(() => {
-    const tier = profile?.subscriptionTier ?? "free";
-    return tier.charAt(0).toUpperCase() + tier.slice(1);
-  }, [profile?.subscriptionTier]);
+  const journeyFoodLogs = analyticsFoodLogs.length > 0 ? analyticsFoodLogs : foodLogs;
+  const journeyMoodLogs = analyticsMoodLogs.length > 0 ? analyticsMoodLogs : moodLogs;
+  const journeyMetrics = useMemo(() => {
+    const foodDates = new Set(journeyFoodLogs.map((log) => log.loggedAt.slice(0, 10)));
+    const moodDates = new Set(journeyMoodLogs.map((log) => log.loggedAt.slice(0, 10)));
+    let streak = 0;
+    const cursor = new Date();
+    cursor.setHours(0, 0, 0, 0);
+
+    while (foodDates.has(cursor.toISOString().slice(0, 10)) && moodDates.has(cursor.toISOString().slice(0, 10))) {
+      streak += 1;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+
+    const avgMood =
+      journeyMoodLogs.length > 0
+        ? journeyMoodLogs.reduce((sum, log) => sum + log.moodScore, 0) / journeyMoodLogs.length
+        : null;
+
+    const firstTimestamp = [...journeyFoodLogs, ...journeyMoodLogs]
+      .map((entry) => entry.loggedAt)
+      .sort((left, right) => left.localeCompare(right))[0];
+
+    const sinceLabel = firstTimestamp
+      ? new Date(firstTimestamp).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+        })
+      : "Today";
+
+    return {
+      streak,
+      meals: journeyFoodLogs.length,
+      avgMood,
+      sinceLabel: `SINCE ${sinceLabel.toUpperCase()}`,
+    };
+  }, [journeyFoodLogs, journeyMoodLogs]);
+
   const aboutSheetContent = useMemo(() => {
     if (aboutModal === "how") {
       return {
         title: "How SavorSelf works",
-        body: "SavorSelf helps you discover the personal connection between what you eat and how you feel — your gut-brain axis.\n\nEach day you log your food and mood. Over time, SavorSelf finds correlations unique to you: which foods boost your energy, which ones cloud your thinking, and what patterns emerge when you feel your best.\n\nIt's not about perfect eating. It's about understanding your own body.",
+        body: "SavorSelf helps you discover the personal connection between what you eat and how you feel - your gut-brain axis.\n\nEach day you log your food and mood. Over time, SavorSelf finds correlations unique to you: which foods boost your energy, which ones cloud your thinking, and what patterns emerge when you feel your best.\n\nIt's not about perfect eating. It's about understanding your own body.",
       };
     }
 
     if (aboutModal === "science") {
       return {
         title: "The gut-brain connection",
-        body: "Your gut and brain are in constant communication through the vagus nerve and gut microbiome. This is called the gut-brain axis.\n\nAbout 95% of your serotonin — your mood-regulating neurotransmitter — is produced in your gut. What you eat directly influences your microbiome, which influences your brain chemistry.\n\nResearch shows that fiber-rich foods, fermented foods, and consistent eating patterns support a healthy microbiome and more stable mood.",
+        body: "Your gut and brain are in constant communication through the vagus nerve and gut microbiome. This is called the gut-brain axis.\n\nAbout 95% of your serotonin - your mood-regulating neurotransmitter - is produced in your gut. What you eat directly influences your microbiome, which influences your brain chemistry.\n\nResearch shows that fiber-rich foods, fermented foods, and consistent eating patterns support a healthy microbiome and more stable mood.",
       };
     }
 
@@ -246,6 +297,18 @@ export default function SettingsScreen() {
     );
   };
 
+  const handleAppLockPress = () => {
+    Alert.alert("App lock & passcode", "This device-level protection flow is not enabled yet.");
+  };
+
+  const handleExportDataPress = () => {
+    Alert.alert("Export my data", "Data export is not available in-app yet.");
+  };
+
+  const handleManagePermissionsPress = () => {
+    void Linking.openSettings();
+  };
+
   return (
     <Screen scroll>
       <View style={styles.page}>
@@ -257,7 +320,7 @@ export default function SettingsScreen() {
             }}
             style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}
           >
-            <Text style={styles.closeButtonText}>×</Text>
+            <Ionicons name="close" size={18} color={colors.textSecondary} />
           </Pressable>
           <Text style={styles.headerTitle}>Settings</Text>
           <View style={styles.headerSpacer} />
@@ -265,15 +328,13 @@ export default function SettingsScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Profile</Text>
-          <View style={styles.sectionCard}>
+          <View style={[styles.sectionCard, styles.profileCard]}>
             <View style={styles.profileRow}>
               <Pressable onPress={() => setShowAvatarPicker(true)} style={styles.avatarCircle}>
                 {avatarEmoji ? (
                   <Text style={styles.avatarEmoji}>{avatarEmoji}</Text>
                 ) : (
-                  <Text style={styles.avatarInitial}>
-                    {profile?.name?.[0]?.toUpperCase() ?? "?"}
-                  </Text>
+                  <Text style={styles.avatarInitial}>{profile?.name?.[0]?.toUpperCase() ?? "?"}</Text>
                 )}
                 <View style={styles.avatarEditBadge}>
                   <Text style={styles.avatarEditText}>✎</Text>
@@ -289,7 +350,7 @@ export default function SettingsScreen() {
                     {profile?.email || "No email yet"}
                   </Text>
                 </View>
-                <Text style={styles.chevron}>›</Text>
+                <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
               </Pressable>
             </View>
             {profileMessage ? <Text style={styles.statusText}>{profileMessage}</Text> : null}
@@ -298,8 +359,43 @@ export default function SettingsScreen() {
         </View>
 
         <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Your Journey</Text>
+          <View style={[styles.sectionCard, styles.journeyCard]}>
+            <View style={styles.journeyHeader}>
+              <Text style={styles.journeyTitle}>Your journey</Text>
+              <View style={styles.journeySincePill}>
+                <Text style={styles.journeySinceText}>{journeyMetrics.sinceLabel}</Text>
+              </View>
+            </View>
+            <View style={styles.journeyStatRow}>
+              <View style={styles.journeyStatCard}>
+                <Text style={styles.journeyStatLabel}>Streak</Text>
+                <Text style={styles.journeyStatValue}>
+                  {journeyMetrics.streak}
+                  <Text style={styles.journeyStatSuffix}> days</Text>
+                </Text>
+              </View>
+              <View style={styles.journeyStatCard}>
+                <Text style={styles.journeyStatLabel}>Logs</Text>
+                <Text style={styles.journeyStatValue}>
+                  {journeyMetrics.meals}
+                  <Text style={styles.journeyStatSuffix}> meals</Text>
+                </Text>
+              </View>
+              <View style={styles.journeyStatCard}>
+                <Text style={styles.journeyStatLabel}>Avg mood</Text>
+                <Text style={styles.journeyStatValue}>
+                  {journeyMetrics.avgMood != null ? journeyMetrics.avgMood.toFixed(1) : "—"}
+                  <Text style={styles.journeyStatSuffix}> /5</Text>
+                </Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.section}>
           <Text style={styles.sectionLabel}>Daily Goals</Text>
-          <View style={styles.sectionCard}>
+          <View style={[styles.sectionCard, styles.goalsCard]}>
             <View style={styles.goalStack}>
               <View style={styles.goalRow}>
                 <View style={styles.goalCopy}>
@@ -392,7 +488,10 @@ export default function SettingsScreen() {
               </View>
             </View>
 
-            <Pressable onPress={() => void handleSaveGoals()} style={({ pressed }) => [styles.saveGoalsButton, pressed && styles.pressed]}>
+            <Pressable
+              onPress={() => void handleSaveGoals()}
+              style={({ pressed }) => [styles.saveGoalsButton, pressed && styles.pressed]}
+            >
               <Text style={styles.saveGoalsText}>{savingGoals ? "Saving..." : "Save goals"}</Text>
             </Pressable>
             {goalsMessage ? <Text style={styles.statusText}>{goalsMessage}</Text> : null}
@@ -424,43 +523,6 @@ export default function SettingsScreen() {
             </View>
             {savingUnits ? <Text style={styles.statusText}>Saving units...</Text> : null}
             {unitMessage ? <Text style={styles.statusText}>{unitMessage}</Text> : null}
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Subscription</Text>
-          <View style={styles.subscriptionCard}>
-            <Text style={styles.subscriptionTitle}>{`SavorSelf ${subscriptionLabel}`}</Text>
-            <Text style={styles.subscriptionSubtitle}>
-              Unlock premium insights, trends, and nutrition analysis
-            </Text>
-            {!waitlistSubmitted ? (
-              <View style={styles.waitlistRow}>
-                <TextInput
-                  style={styles.waitlistInput}
-                  value={waitlistEmail}
-                  onChangeText={setWaitlistEmail}
-                  placeholder="your@email.com"
-                  placeholderTextColor={colors.textSecondary}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                />
-                <Pressable
-                  style={styles.waitlistButton}
-                  onPress={() => {
-                    if (waitlistEmail.includes("@")) {
-                      setWaitlistSubmitted(true);
-                    }
-                  }}
-                >
-                  <Text style={styles.waitlistButtonText}>Join waitlist</Text>
-                </Pressable>
-              </View>
-            ) : (
-              <Text style={styles.waitlistSuccess}>
-                ✓ You're on the list! We'll reach out when premium launches.
-              </Text>
-            )}
           </View>
         </View>
 
@@ -502,7 +564,7 @@ export default function SettingsScreen() {
                 />
               </View>
 
-              <View style={styles.notificationRow}>
+              <View style={[styles.notificationRow, styles.notificationRowLast]}>
                 <Text style={styles.notificationLabel}>Weekly Food-Mood report</Text>
                 <Switch
                   value={weeklyReport}
@@ -519,85 +581,110 @@ export default function SettingsScreen() {
                   thumbColor={colors.white}
                 />
               </View>
-
-              <View style={[styles.notificationRowStack, styles.notificationRowLast]}>
-                <View style={styles.notificationRow}>
-                  <View style={styles.notificationLabelWrap}>
-                    <View style={styles.notificationLabelRow}>
-                      <Text style={styles.notificationLabel}>Weekly email summary</Text>
-                      <View style={styles.soonBadge}>
-                        <Text style={styles.soonBadgeText}>SOON</Text>
-                      </View>
-                    </View>
-                  </View>
-                  <Switch
-                    value={weeklyEmailSummary}
-                    onValueChange={setWeeklyEmailSummary}
-                    trackColor={{ false: "#E5D9CE", true: colors.accentPrimary }}
-                    thumbColor={colors.white}
-                  />
-                </View>
-                {weeklyEmailSummary ? (
-                  <Text style={styles.notificationInlineNote}>
-                    We'll email you a summary of your Food-Mood patterns every Sunday.
-                  </Text>
-                ) : null}
-              </View>
             </View>
           </View>
         </View>
 
         <View style={[styles.section, styles.aboutSection]}>
-          <Text style={styles.sectionLabel}>ABOUT</Text>
+          <Text style={styles.sectionLabel}>Privacy & Data</Text>
+          <View style={styles.sectionCard}>
+            <Pressable style={styles.utilityRow} onPress={handleAppLockPress}>
+              <View style={styles.utilityIconWrap}>
+                <Ionicons name="lock-closed-outline" size={16} color={colors.textSecondary} />
+              </View>
+              <Text style={styles.utilityLabel}>App lock &amp; passcode</Text>
+              <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+            </Pressable>
+            <View style={styles.aboutDivider} />
+            <Pressable style={styles.utilityRow} onPress={handleExportDataPress}>
+              <View style={styles.utilityIconWrap}>
+                <Ionicons name="download-outline" size={16} color={colors.textSecondary} />
+              </View>
+              <Text style={styles.utilityLabel}>Export my data</Text>
+              <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+            </Pressable>
+            <View style={styles.aboutDivider} />
+            <Pressable style={styles.utilityRow} onPress={handleManagePermissionsPress}>
+              <View style={styles.utilityIconWrap}>
+                <Ionicons name="shield-checkmark-outline" size={16} color={colors.textSecondary} />
+              </View>
+              <Text style={styles.utilityLabel}>Manage permissions</Text>
+              <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+            </Pressable>
+          </View>
+        </View>
+
+        <View style={[styles.section, styles.aboutSection]}>
+          <Text style={styles.sectionLabel}>About</Text>
           <View style={styles.sectionCard}>
             <Pressable style={styles.aboutRow} onPress={() => setAboutModal("how")}>
-              <Text style={styles.aboutRowLabel}>How SavorSelf works</Text>
-              <Text style={styles.aboutChevron}>›</Text>
+              <View style={styles.utilityIconWrap}>
+                <Ionicons name="sparkles-outline" size={16} color={colors.textSecondary} />
+              </View>
+              <Text style={styles.utilityLabel}>How SavorSelf works</Text>
+              <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
             </Pressable>
             <View style={styles.aboutDivider} />
             <Pressable style={styles.aboutRow} onPress={() => setAboutModal("science")}>
-              <Text style={styles.aboutRowLabel}>The gut-brain science</Text>
-              <Text style={styles.aboutChevron}>›</Text>
+              <View style={styles.utilityIconWrap}>
+                <Ionicons name="barbell-outline" size={16} color={colors.textSecondary} />
+              </View>
+              <Text style={styles.utilityLabel}>The gut-brain science</Text>
+              <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
             </Pressable>
             <View style={styles.aboutDivider} />
             <Pressable style={styles.aboutRow} onPress={() => void Linking.openURL("mailto:savor.self.app@gmail.com")}>
-              <Text style={styles.aboutRowLabel}>Send feedback</Text>
-              <Text style={styles.aboutChevron}>›</Text>
+              <View style={styles.utilityIconWrap}>
+                <Ionicons name="chatbubble-ellipses-outline" size={16} color={colors.textSecondary} />
+              </View>
+              <Text style={styles.utilityLabel}>Send feedback</Text>
+              <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
             </Pressable>
             <View style={styles.aboutDivider} />
             <Pressable style={styles.aboutRow} onPress={() => setAboutModal("terms")}>
-              <Text style={styles.aboutRowLabel}>Terms of Service</Text>
-              <Text style={styles.aboutChevron}>â€º</Text>
+              <View style={styles.utilityIconWrap}>
+                <Ionicons name="document-text-outline" size={16} color={colors.textSecondary} />
+              </View>
+              <Text style={styles.utilityLabel}>Terms of Service</Text>
+              <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
             </Pressable>
             <View style={styles.aboutDivider} />
             <Pressable style={styles.aboutRow} onPress={() => void Linking.openURL("https://savorself.app/privacy")}>
-              <Text style={styles.aboutRowLabel}>Privacy Policy</Text>
-              <Text style={styles.aboutChevron}>›</Text>
+              <View style={styles.utilityIconWrap}>
+                <Ionicons name="shield-outline" size={16} color={colors.textSecondary} />
+              </View>
+              <Text style={styles.utilityLabel}>Privacy Policy</Text>
+              <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
             </Pressable>
           </View>
         </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Account</Text>
-          <View style={styles.sectionCard}>
-            <Pressable onPress={() => void handleSignOut()} style={({ pressed }) => [styles.signOutButton, pressed && styles.pressed]}>
-              <Text style={styles.signOutText}>{signingOut ? "Signing out..." : "Sign out"}</Text>
+          <View style={[styles.sectionCard, styles.accountCard]}>
+            <Pressable
+              onPress={() => void handleSignOut()}
+              style={({ pressed }) => [styles.signOutButton, pressed && styles.pressed]}
+            >
+              <View style={styles.accountButtonContent}>
+                <Ionicons name="log-out-outline" size={16} color={colors.textPrimary} />
+                <Text style={styles.signOutText}>{signingOut ? "Signing out..." : "Sign out"}</Text>
+              </View>
             </Pressable>
-            <Pressable onPress={handleDeleteAccount} style={({ pressed }) => [styles.deleteLinkWrap, pressed && styles.pressed]}>
+            <Pressable
+              onPress={handleDeleteAccount}
+              style={({ pressed }) => [styles.deleteLinkWrap, pressed && styles.pressed]}
+            >
+              <Ionicons name="trash-outline" size={14} color={colors.accentPrimary} />
               <Text style={styles.deleteLink}>{deletingAccount ? "Deleting..." : "Delete account"}</Text>
             </Pressable>
             {accountMessage ? <Text style={styles.statusText}>{accountMessage}</Text> : null}
-            <Text style={styles.versionText}>SavorSelf v1.0.0</Text>
+            <Text style={styles.versionText}>SavorSelf v1.0.0 • made with care 🌱</Text>
           </View>
         </View>
       </View>
 
-      <Modal
-        visible={showAvatarPicker}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowAvatarPicker(false)}
-      >
+      <Modal visible={showAvatarPicker} transparent animationType="slide" onRequestClose={() => setShowAvatarPicker(false)}>
         <View style={styles.modalBackdrop}>
           <Pressable style={styles.avatarBackdrop} onPress={() => setShowAvatarPicker(false)} />
           <View style={styles.avatarSheet}>
@@ -611,10 +698,7 @@ export default function SettingsScreen() {
               ].map((emoji) => (
                 <Pressable
                   key={emoji}
-                  style={[
-                    styles.emojiOption,
-                    avatarEmoji === emoji && styles.emojiOptionSelected,
-                  ]}
+                  style={[styles.emojiOption, avatarEmoji === emoji && styles.emojiOptionSelected]}
                   onPress={() => {
                     void handleSaveAvatar(emoji);
                   }}
@@ -637,7 +721,10 @@ export default function SettingsScreen() {
             <View style={styles.dragHandle} />
             <View style={styles.editHeader}>
               <Text style={styles.editTitle}>Edit profile</Text>
-              <Pressable onPress={() => setProfileModalVisible(false)} style={({ pressed }) => [styles.editCloseButton, pressed && styles.pressed]}>
+              <Pressable
+                onPress={() => setProfileModalVisible(false)}
+                style={({ pressed }) => [styles.editCloseButton, pressed && styles.pressed]}
+              >
                 <Ionicons name="close" size={18} color={colors.textPrimary} />
               </Pressable>
             </View>
@@ -651,7 +738,10 @@ export default function SettingsScreen() {
                 placeholderTextColor={colors.textSecondary}
                 style={styles.editInput}
               />
-              <Pressable onPress={() => void handleSaveName()} style={({ pressed }) => [styles.editPrimaryButton, pressed && styles.pressed]}>
+              <Pressable
+                onPress={() => void handleSaveName()}
+                style={({ pressed }) => [styles.editPrimaryButton, pressed && styles.pressed]}
+              >
                 <Text style={styles.editPrimaryButtonText}>{savingName ? "Saving..." : "Save name"}</Text>
               </Pressable>
             </View>
@@ -667,7 +757,10 @@ export default function SettingsScreen() {
                 autoCapitalize="none"
                 style={styles.editInput}
               />
-              <Pressable onPress={() => void handleSaveEmail()} style={({ pressed }) => [styles.editPrimaryButton, pressed && styles.pressed]}>
+              <Pressable
+                onPress={() => void handleSaveEmail()}
+                style={({ pressed }) => [styles.editPrimaryButton, pressed && styles.pressed]}
+              >
                 <Text style={styles.editPrimaryButtonText}>{savingEmail ? "Saving..." : "Save email"}</Text>
               </Pressable>
             </View>
@@ -686,11 +779,7 @@ export default function SettingsScreen() {
                 <Ionicons name="close" size={18} color={colors.textPrimary} />
               </Pressable>
             </View>
-            <ScrollView
-              style={styles.infoScroll}
-              contentContainerStyle={styles.infoScrollContent}
-              showsVerticalScrollIndicator={false}
-            >
+            <ScrollView style={styles.infoScroll} contentContainerStyle={styles.infoScrollContent} showsVerticalScrollIndicator={false}>
               <Text style={styles.infoBody}>{aboutSheetContent?.body ?? ""}</Text>
             </ScrollView>
             <Pressable style={styles.editPrimaryButton} onPress={() => setAboutModal(null)}>
@@ -719,20 +808,14 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   closeButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: "#F3EDE7",
     borderWidth: 1,
     borderColor: "rgba(196, 98, 45, 0.18)",
     alignItems: "center",
     justifyContent: "center",
-    padding: 8,
-  },
-  closeButtonText: {
-    fontSize: 22,
-    color: colors.textSecondary,
-    fontWeight: "300",
   },
   headerTitle: {
     color: colors.textPrimary,
@@ -740,8 +823,8 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   headerSpacer: {
-    width: 44,
-    height: 44,
+    width: 36,
+    height: 36,
   },
   section: {
     gap: 8,
@@ -751,24 +834,31 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: colors.textSecondary,
     textTransform: "uppercase",
-    letterSpacing: 1.5,
+    letterSpacing: 1.8,
     marginBottom: 8,
     marginTop: 4,
     marginLeft: 4,
   },
   sectionCard: {
     backgroundColor: colors.white,
-    borderRadius: 16,
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: "rgba(196, 98, 45, 0.10)",
     padding: 16,
     gap: 14,
+    shadowColor: "#A2602F",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.06,
+    shadowRadius: 20,
+    elevation: 2,
+  },
+  profileCard: {
+    paddingVertical: 14,
   },
   profileRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 14,
-    paddingVertical: 14,
   },
   profileDetailsPressable: {
     flex: 1,
@@ -795,8 +885,8 @@ const styles = StyleSheet.create({
   },
   avatarEditBadge: {
     position: "absolute",
-    bottom: 0,
-    right: 0,
+    bottom: -1,
+    right: -1,
     width: 18,
     height: 18,
     borderRadius: 9,
@@ -816,16 +906,73 @@ const styles = StyleSheet.create({
   profileName: {
     color: colors.textPrimary,
     fontSize: 17,
-    fontWeight: "600",
+    fontWeight: "700",
   },
   profileEmail: {
     color: colors.textSecondary,
     fontSize: 14,
-    lineHeight: 22,
+    lineHeight: 20,
   },
-  chevron: {
+  journeyCard: {
+    gap: 16,
+  },
+  journeyHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  journeyTitle: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 1.4,
+  },
+  journeySincePill: {
+    backgroundColor: "#F6EDE4",
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  journeySinceText: {
+    color: colors.accentPrimary,
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 1.1,
+  },
+  journeyStatRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  journeyStatCard: {
+    flex: 1,
+    backgroundColor: "#FCF9F5",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "rgba(196, 98, 45, 0.10)",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 8,
+  },
+  journeyStatLabel: {
     color: colors.textSecondary,
-    fontSize: 20,
+    fontSize: 10,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 1.2,
+  },
+  journeyStatValue: {
+    color: colors.textPrimary,
+    fontSize: 17,
+    fontWeight: "800",
+  },
+  journeyStatSuffix: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  goalsCard: {
+    gap: 16,
   },
   goalStack: {
     gap: 10,
@@ -847,131 +994,75 @@ const styles = StyleSheet.create({
   goalLabel: {
     color: colors.textPrimary,
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: "700",
   },
   goalHint: {
     color: colors.textSecondary,
     fontSize: 13,
-    lineHeight: 22,
+    lineHeight: 18,
   },
   goalValueWrap: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: 8,
   },
   goalInput: {
-    minWidth: 92,
+    minWidth: 74,
     backgroundColor: colors.white,
-    borderRadius: 14,
+    borderRadius: 18,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 10,
     color: colors.textPrimary,
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: "700",
     textAlign: "center",
     borderWidth: 1,
-    borderColor: "rgba(44, 26, 14, 0.08)",
+    borderColor: "rgba(44, 26, 14, 0.06)",
   },
   goalUnit: {
     color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: "600",
+    fontSize: 12,
+    fontWeight: "700",
     textTransform: "uppercase",
-    letterSpacing: 0.4,
-    minWidth: 30,
+    letterSpacing: 0.8,
+    minWidth: 28,
     textAlign: "right",
   },
   saveGoalsButton: {
     alignSelf: "flex-end",
     backgroundColor: colors.accentPrimary,
-    paddingHorizontal: 24,
-    paddingVertical: 10,
-    borderRadius: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 11,
+    borderRadius: 22,
   },
   saveGoalsText: {
     color: colors.white,
     fontSize: 14,
-    fontWeight: "600",
+    fontWeight: "700",
   },
   segmentedControl: {
     flexDirection: "row",
     backgroundColor: "#F0EAE3",
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 3,
   },
   segment: {
     flex: 1,
     paddingVertical: 10,
     alignItems: "center",
-    borderRadius: 10,
+    borderRadius: 12,
   },
   segmentActive: {
     backgroundColor: colors.white,
-    shadowColor: "#2C1A0E",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
   },
   segmentLabel: {
     fontSize: 15,
-    fontWeight: "400",
+    fontWeight: "500",
     color: colors.textSecondary,
   },
   segmentLabelActive: {
     color: colors.textPrimary,
-    fontWeight: "600",
-  },
-  subscriptionCard: {
-    backgroundColor: colors.accentPrimary,
-    borderRadius: 16,
-    padding: 20,
-    gap: 8,
-  },
-  subscriptionTitle: {
-    color: colors.white,
-    fontSize: 17,
     fontWeight: "700",
-  },
-  subscriptionSubtitle: {
-    color: colors.white,
-    fontSize: 14,
-    opacity: 0.85,
-    lineHeight: 22,
-  },
-  waitlistRow: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 12,
-  },
-  waitlistInput: {
-    flex: 1,
-    backgroundColor: "rgba(255,255,255,0.2)",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: colors.white,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.3)",
-  },
-  waitlistButton: {
-    backgroundColor: "rgba(255,255,255,0.25)",
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    justifyContent: "center",
-  },
-  waitlistButtonText: {
-    fontSize: 14,
-    color: colors.white,
-    fontWeight: "600",
-  },
-  waitlistSuccess: {
-    fontSize: 13,
-    color: colors.white,
-    opacity: 0.9,
-    marginTop: 10,
-    lineHeight: 20,
   },
   notificationRows: {
     gap: 0,
@@ -988,41 +1079,10 @@ const styles = StyleSheet.create({
   notificationRowLast: {
     borderBottomWidth: 0,
   },
-  notificationRowStack: {
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
   notificationLabel: {
     flex: 1,
     color: colors.textPrimary,
     fontSize: 15,
-  },
-  notificationLabelWrap: {
-    flex: 1,
-    paddingRight: 12,
-  },
-  notificationLabelRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  soonBadge: {
-    backgroundColor: "#F0EAE3",
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  soonBadgeText: {
-    fontSize: 10,
-    color: colors.textSecondary,
-    fontWeight: "600",
-  },
-  notificationInlineNote: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginTop: -2,
-    marginBottom: 14,
-    paddingRight: 52,
   },
   aboutSection: {
     marginTop: 8,
@@ -1032,36 +1092,63 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     paddingVertical: 14,
+    gap: 12,
   },
   aboutDivider: {
     height: 1,
     backgroundColor: colors.border,
   },
+  utilityRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 14,
+  },
+  utilityIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#F4EEE7",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  utilityLabel: {
+    flex: 1,
+    fontSize: 15,
+    color: colors.textPrimary,
+  },
   aboutRowLabel: {
     fontSize: 15,
     color: colors.textPrimary,
   },
-  aboutChevron: {
-    fontSize: 20,
-    color: colors.textSecondary,
+  accountCard: {
+    alignItems: "stretch",
   },
   signOutButton: {
     backgroundColor: "#F0EAE3",
-    borderRadius: 12,
+    borderRadius: 18,
     paddingVertical: 14,
     alignItems: "center",
+  },
+  accountButtonContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
   signOutText: {
     color: colors.textPrimary,
     fontSize: 15,
-    fontWeight: "600",
+    fontWeight: "700",
   },
   deleteLinkWrap: {
     alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 6,
     marginTop: 12,
   },
   deleteLink: {
-    color: "#C4622D",
+    color: colors.accentPrimary,
     fontSize: 14,
     textAlign: "center",
   },

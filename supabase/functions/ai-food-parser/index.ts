@@ -161,8 +161,6 @@ function roundNutrition(value: number) {
 }
 
 async function searchUsdaFood(name: string, usdaApiKey: string) {
-  console.log("[ai-food-parser] USDA search", name);
-
   const response = await fetch(
     `${USDA_API_URL}?query=${encodeURIComponent(name)}&pageSize=1&api_key=${encodeURIComponent(usdaApiKey)}`,
     {
@@ -183,8 +181,6 @@ async function searchUsdaFood(name: string, usdaApiKey: string) {
 }
 
 async function searchOpenFoodFactsProduct(name: string) {
-  console.log("[ai-food-parser] Open Food Facts search", name);
-
   const response = await fetch(
     `${OPEN_FOOD_FACTS_SEARCH_URL}?search_terms=${encodeURIComponent(name)}&search_simple=1&action=process&json=1&page_size=1&fields=code,product_name,brands,brands_tags,nutriments`,
     {
@@ -210,8 +206,6 @@ async function parseWithGroq(
   pendingProposal: FoodParserPayload["pendingProposal"],
   apiKey: string
 ) {
-  console.log("[ai-food-parser] calling Groq");
-
   const normalizedHistory = history ?? [];
   const lastHistoryEntry = normalizedHistory[normalizedHistory.length - 1];
   const historyAlreadyIncludesLatestMessage =
@@ -260,7 +254,6 @@ async function parseWithGroq(
 
   const payload = await response.json();
   const content = payload?.choices?.[0]?.message?.content;
-  console.log("[ai-food-parser] raw Groq response", content);
 
   if (!content) {
     throw new Error("Groq returned an empty parsing response.");
@@ -299,7 +292,6 @@ async function estimateNutritionWithGroq(food: string, portion: string, apiKey: 
 
   const payload = await response.json();
   const content = payload?.choices?.[0]?.message?.content;
-  console.log("[ai-food-parser] raw Groq estimate response", content);
 
   if (!content) {
     throw new Error("Groq returned an empty nutrition estimate.");
@@ -314,19 +306,12 @@ async function estimateNutritionWithGroq(food: string, portion: string, apiKey: 
 }
 
 Deno.serve(async (request: Request) => {
-  console.log("[ai-food-parser] function invoked");
-
   try {
     if (request.method !== "POST") {
       return jsonResponse({ error: "Method not allowed." }, 405);
     }
 
     const payload = (await request.json()) as FoodParserPayload;
-    console.log("[ai-food-parser] payload received", {
-      hasMessage: Boolean(payload?.message),
-      historyCount: payload?.history?.length ?? 0,
-      hasPendingProposal: Boolean(payload?.pendingProposal),
-    });
 
     if (!payload?.message?.trim()) {
       return jsonResponse({
@@ -337,11 +322,6 @@ Deno.serve(async (request: Request) => {
 
     const groqApiKey = Deno.env.get("GROQ_API_KEY");
     const usdaApiKey = Deno.env.get("USDA_API_KEY") ?? Deno.env.get("EXPO_PUBLIC_USDA_API_KEY");
-
-    console.log("[ai-food-parser] env check", {
-      hasGroqKey: Boolean(groqApiKey),
-      hasUsdaKey: Boolean(usdaApiKey),
-    });
 
     if (!groqApiKey) {
       return jsonResponse({
@@ -365,12 +345,6 @@ Deno.serve(async (request: Request) => {
       payload.pendingProposal ?? null,
       groqApiKey
     );
-
-    console.log("[ai-food-parser] Groq parse complete", {
-      isFoodLogging: parsed.isFoodLogging,
-      needsClarification: parsed.needsClarification,
-      itemCount: parsed.items?.length ?? 0,
-    });
 
     if (parsed.isCalorieEdit) {
       return jsonResponse({
@@ -405,10 +379,7 @@ Deno.serve(async (request: Request) => {
     for (const item of parsed.items) {
       const [usdaFood, openFoodFactsFood] = await Promise.all([
         searchUsdaFood(item.name, usdaApiKey),
-        searchOpenFoodFactsProduct(item.name).catch((error) => {
-          console.log("[ai-food-parser] Open Food Facts lookup error", error);
-          return null;
-        }),
+        searchOpenFoodFactsProduct(item.name).catch(() => null),
       ]);
 
       const quantity = defaultQuantity(item.quantity);
@@ -478,18 +449,6 @@ Deno.serve(async (request: Request) => {
           ? nutrientValue(usdaFood, ["Sugars, total including NLEA"], ["2000"])
           : openFoodFactsValue(openFoodFactsFood, "sugars_100g");
 
-      console.log("[ai-food-parser] food match", {
-        requestedName: item.name,
-        chosenSource,
-        matchedDescription: description,
-        externalFoodId,
-        quantity,
-        unit,
-        gramsPerUnit: gramsForUnit,
-        multiplier,
-        per100Calories,
-      });
-
       enrichedItems.push({
         name: description,
         foodSource: chosenSource,
@@ -506,11 +465,6 @@ Deno.serve(async (request: Request) => {
       });
     }
 
-    console.log("[ai-food-parser] returning structured proposal", {
-      mealType: parsed.mealType,
-      itemCount: enrichedItems.length,
-    });
-
     return jsonResponse({
       isFoodLogging: true,
       isCalorieEdit: false,
@@ -520,8 +474,6 @@ Deno.serve(async (request: Request) => {
       items: enrichedItems,
     });
   } catch (error) {
-    console.log("[ai-food-parser] handler error", error);
-
     return jsonResponse(
       {
         isFoodLogging: false,

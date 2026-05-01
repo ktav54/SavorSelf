@@ -1,5 +1,6 @@
 import { endOfDay, startOfDay } from "date-fns";
 import { Session, User } from "@supabase/supabase-js";
+import { Alert } from "react-native";
 import { create, type StateCreator, type StoreApi, type UseBoundStore } from "zustand";
 import { analyzeFoodMood, generateAiNarrative } from "@/lib/food-mood";
 import { demoInsights, demoQuickLogs } from "@/lib/demo-data";
@@ -355,6 +356,10 @@ function roundNutrition(value: number) {
   return Math.round(Number(value ?? 0));
 }
 
+function surfaceStoreError(message: string, title = "Something went wrong") {
+  Alert.alert(title, message);
+}
+
 function getMissingUsersColumns(message?: string | null) {
   const missing: Array<
     "daily_carbs_goal" | "daily_fat_goal" | "onboarding_goal" | "onboarding_challenge" | "avatar_emoji"
@@ -450,6 +455,7 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
     const { data, error } = await supabase.auth.getSession();
 
     if (error) {
+      surfaceStoreError(error.message, "Session error");
       set({
         sessionReady: true,
         authError: error.message,
@@ -503,11 +509,13 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
       await useAppStore.getState().loadFoodMoodInsights();
       await useAppStore.getState().loadTodayQuickLog();
     } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to load your profile.";
+      surfaceStoreError(message, "Profile error");
       set({
         sessionReady: true,
         isAuthenticated: true,
         authUser,
-        authError: error instanceof Error ? error.message : "Unable to load your profile.",
+        authError: message,
       });
     }
   },
@@ -530,6 +538,10 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
       authLoading: false,
       authError: error?.message ?? null,
     });
+
+    if (error) {
+      surfaceStoreError(error.message, "Sign in failed");
+    }
 
     return error ? { error: error.message } : {};
   },
@@ -557,6 +569,10 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
       authLoading: false,
       authError: error?.message ?? null,
     });
+
+    if (error) {
+      surfaceStoreError(error.message, "Sign up failed");
+    }
 
     return error ? { error: error.message } : { data };
   },
@@ -592,6 +608,7 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
     const { data, error, missingColumns } = await updateUsersRowWithFallback(profile.id, payload);
 
     if (error) {
+      surfaceStoreError(error.message, "Onboarding error");
       set({
         profile,
       });
@@ -653,6 +670,7 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
     const { data, error, missingColumns } = await updateUsersRowWithFallback(profile.id, payload);
 
     if (error) {
+      surfaceStoreError(error.message, "Profile update failed");
       return { error: error.message };
     }
 
@@ -690,6 +708,7 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
     });
 
     if (authError) {
+      surfaceStoreError(authError.message, "Email update failed");
       return { error: authError.message };
     }
 
@@ -701,6 +720,7 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
       .single();
 
     if (error) {
+      surfaceStoreError(error.message, "Email update failed");
       return { error: error.message };
     }
 
@@ -725,6 +745,7 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
     const { error: authDeleteError } = await supabase.rpc("delete_user_account");
 
     if (authDeleteError) {
+      surfaceStoreError(authDeleteError.message, "Delete account failed");
       return { error: authDeleteError.message };
     }
 
@@ -808,6 +829,7 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
       .limit(1);
 
     if (error) {
+      surfaceStoreError(error.message, "Mood log error");
       set({
         moodLoading: false,
         moodError: error.message,
@@ -853,6 +875,7 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
       .order("logged_at", { ascending: true });
 
     if (error) {
+      surfaceStoreError(error.message, "Food log error");
       set({
         foodLoading: false,
         foodError: error.message,
@@ -884,6 +907,7 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
       .limit(1);
 
     if (error) {
+      surfaceStoreError(error.message, "Quick log error");
       return;
     }
 
@@ -929,6 +953,10 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
       ]);
 
     if (moodError || foodError || quickError) {
+      surfaceStoreError(
+        moodError?.message ?? foodError?.message ?? quickError?.message ?? "Unable to load Food-Mood insights.",
+        "Food-Mood error"
+      );
       set({
         insightsLoading: false,
         insightsError: moodError?.message ?? foodError?.message ?? quickError?.message ?? "Unable to load Food-Mood insights.",
@@ -1021,6 +1049,7 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
     const { data, error } = await query;
 
     if (error) {
+      surfaceStoreError(error.message, "Mood save failed");
       set({
         moodLoading: false,
         moodError: error.message,
@@ -1058,6 +1087,7 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
       .maybeSingle();
 
     if (existingError) {
+      surfaceStoreError(existingError.message, "Water log failed");
       return { error: existingError.message };
     }
 
@@ -1074,6 +1104,7 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
     const { data, error } = await query;
 
     if (error) {
+      surfaceStoreError(error.message, "Water log failed");
       return { error: error.message };
     }
 
@@ -1110,6 +1141,7 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
       .maybeSingle();
 
     if (existingError) {
+      surfaceStoreError(existingError.message, "Quick log failed");
       return { error: existingError.message };
     }
 
@@ -1134,6 +1166,7 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
     const { error } = await query;
 
     if (error) {
+      surfaceStoreError(error.message, "Quick log failed");
       return { error: error.message };
     }
 
@@ -1179,6 +1212,7 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
       .single();
 
     if (error) {
+      surfaceStoreError(error.message, "Food save failed");
       set({
         foodLoading: false,
         foodError: error.message,
@@ -1238,6 +1272,7 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
       .select("*");
 
     if (error) {
+      surfaceStoreError(error.message, "Food save failed");
       set({
         foodLoading: false,
         foodError: error.message,
@@ -1263,6 +1298,7 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
     const { error } = await supabase.from("food_logs").delete().eq("id", foodLogId);
 
     if (error) {
+      surfaceStoreError(error.message, "Delete failed");
       set({
         foodError: error.message,
       });
@@ -1318,6 +1354,7 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
       .eq("id", updates.id);
 
     if (error) {
+      surfaceStoreError(error.message, "Food update failed");
       set({
         foodError: error.message,
       });
@@ -1356,6 +1393,7 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
         ) {
           return;
         }
+        surfaceStoreError(error.message, "Conversation save failed");
       }
     } catch {
       return;
@@ -1383,6 +1421,7 @@ const appStateCreator: StateCreator<AppState> = (set) => ({
         ) {
           return;
         }
+        surfaceStoreError(error.message, "Conversation load failed");
         return;
       }
 

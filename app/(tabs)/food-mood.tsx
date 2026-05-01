@@ -3,7 +3,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { format } from "date-fns";
 import { router, useNavigation } from "expo-router";
-import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
+import { Animated, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import {
   DailyReadCard,
   FoodMoodGate,
@@ -20,6 +20,8 @@ import { colors } from "@/constants/theme";
 import { useAppStore, type AppState } from "@/store/useAppStore";
 import type { FoodLog } from "@/types/models";
 
+const editorialSerif = Platform.select({ ios: "Georgia", android: "serif" });
+
 export default function FoodMoodScreen() {
   const navigation = useNavigation();
   const loadFoodMoodInsights = useAppStore((state: AppState) => state.loadFoodMoodInsights);
@@ -30,7 +32,7 @@ export default function FoodMoodScreen() {
   const analyticsMoodLogs = useAppStore((state: AppState) => state.analyticsMoodLogs);
   const analyticsFoodLogs = useAppStore((state: AppState) => state.analyticsFoodLogs);
   const cardAnims = useRef(
-    Array.from({ length: 6 }, () => ({
+    Array.from({ length: 8 }, () => ({
       opacity: new Animated.Value(0),
       translateY: new Animated.Value(20),
     }))
@@ -39,7 +41,6 @@ export default function FoodMoodScreen() {
   const skeletonAnim = useRef(new Animated.Value(0.4)).current;
   const [screenError, setScreenError] = useState<string | null>(null);
   const todayFormatted = format(new Date(), "EEEE, MMMM d");
-
   const hasEnoughData = useMemo(() => {
     const cutoff = new Date();
     cutoff.setHours(0, 0, 0, 0);
@@ -208,6 +209,7 @@ export default function FoodMoodScreen() {
           <Animated.View style={{ opacity: gateAnim, flex: 1 }}>
             <FoodMoodGate />
             <StreakHeroCard />
+            <WeeklySnapshot />
           </Animated.View>
         ) : !screenError && !shouldShowLoadingState ? (
           <>
@@ -217,7 +219,7 @@ export default function FoodMoodScreen() {
                 transform: [{ translateY: cardAnims[0].translateY }],
               }}
             >
-              <GutMoodScoreCard />
+              <WeeklySnapshot />
             </Animated.View>
             <Animated.View
               style={{
@@ -225,7 +227,7 @@ export default function FoodMoodScreen() {
                 transform: [{ translateY: cardAnims[1].translateY }],
               }}
             >
-              <DailyReadCard />
+              <TrendCard />
             </Animated.View>
             <Animated.View
               style={{
@@ -233,7 +235,7 @@ export default function FoodMoodScreen() {
                 transform: [{ translateY: cardAnims[2].translateY }],
               }}
             >
-              <StreakHeroCard />
+              <HorizontalInsightScroll />
             </Animated.View>
             <Animated.View
               style={{
@@ -241,22 +243,36 @@ export default function FoodMoodScreen() {
                 transform: [{ translateY: cardAnims[3].translateY }],
               }}
             >
-              <TrendCard />
+              <DailyReadCard />
             </Animated.View>
-            <NutrientSpotlight />
-            <HorizontalInsightScroll />
             <Animated.View
               style={{
                 opacity: cardAnims[4].opacity,
                 transform: [{ translateY: cardAnims[4].translateY }],
               }}
             >
-              <WeeklySnapshot />
+              <GutMoodScoreCard />
             </Animated.View>
             <Animated.View
               style={{
                 opacity: cardAnims[5].opacity,
                 transform: [{ translateY: cardAnims[5].translateY }],
+              }}
+            >
+              <StreakHeroCard />
+            </Animated.View>
+            <Animated.View
+              style={{
+                opacity: cardAnims[6].opacity,
+                transform: [{ translateY: cardAnims[6].translateY }],
+              }}
+            >
+              <NutrientSpotlight />
+            </Animated.View>
+            <Animated.View
+              style={{
+                opacity: cardAnims[7].opacity,
+                transform: [{ translateY: cardAnims[7].translateY }],
               }}
             >
               <InsightFeed />
@@ -270,17 +286,20 @@ export default function FoodMoodScreen() {
 
 const styles = StyleSheet.create({
   screenStack: {
-    gap: 20,
-    marginHorizontal: -4,
+    gap: 22,
+    marginHorizontal: -8,
   },
   header: {
-    gap: 6,
+    gap: 8,
+    paddingTop: 4,
   },
   title: {
     color: colors.textPrimary,
-    fontSize: 26,
+    fontSize: 44,
+    lineHeight: 50,
     fontWeight: "700",
-    letterSpacing: -0.5,
+    letterSpacing: -1.4,
+    fontFamily: editorialSerif,
   },
   subtitle: {
     color: colors.textSecondary,
@@ -288,10 +307,10 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
   skeletonCard: {
-    height: 120,
-    borderRadius: 16,
+    height: 160,
+    borderRadius: 28,
     backgroundColor: colors.border,
-    marginBottom: 16,
+    marginBottom: 8,
   },
   screenError: {
     flex: 1,

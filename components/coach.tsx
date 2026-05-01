@@ -1,6 +1,7 @@
 ﻿// components/coach.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
+import { Ionicons } from "@expo/vector-icons";
 import {
   ActivityIndicator,
   Animated,
@@ -54,6 +55,8 @@ type CoachStarter = {
   prompt: string;
 };
 
+const COACH_CONNECTION_FALLBACK = "Having trouble connecting right now. Try again in a moment.";
+
 function extractReplyFromUnknown(value: unknown): string {
   if (typeof value === "string") {
     const trimmed = value.trim();
@@ -99,22 +102,79 @@ function extractReplyFromUnknown(value: unknown): string {
   return "";
 }
 
+function detectIntent(message: string): "food_log" | "conversation" {
+  const normalized = message.trim().toLowerCase();
+
+  if (!normalized) {
+    return "conversation";
+  }
+
+  const conversationStarters = [
+    "why",
+    "what",
+    "how",
+    "when",
+    "where",
+    "who",
+    "should",
+    "can",
+    "could",
+    "would",
+    "do",
+    "does",
+    "did",
+    "is",
+    "are",
+    "am",
+    "will",
+    "tell me",
+    "explain",
+    "help me",
+    "give me",
+    "suggest",
+    "recommend",
+    "i need help",
+    "i just need to talk",
+  ];
+
+  if (
+    normalized.includes("?") ||
+    conversationStarters.some((starter) => normalized.startsWith(starter))
+  ) {
+    return "conversation";
+  }
+
+  const foodLogPatterns = [
+    /\b(i had|i ate|ate|had|logged|log|tracking|for breakfast|for lunch|for dinner|for a snack|breakfast was|lunch was|dinner was|snack was)\b/,
+    /\b\d+\s*(eggs?|egg|toast|banana|bananas|cups?|cup|oz|ounces?|g|grams?|slices?|slice|pieces?|piece|tbsp|tsp)\b/,
+    /\b(my breakfast|my lunch|my dinner|my snack)\b/,
+  ];
+
+  return foodLogPatterns.some((pattern) => pattern.test(normalized))
+    ? "food_log"
+    : "conversation";
+}
+
 function MessageBubble({
   message,
   pendingProposal,
   confirming,
+  showSuggestedReplies,
   onOpenGutFeedback,
   onConfirmProposal,
   onOpenAdjustModal,
   onUpdateProposalMealType,
+  onPopulateDraft,
 }: {
   message: CoachDisplayMessage;
   pendingProposal: CoachFoodProposal | null;
   confirming: boolean;
+  showSuggestedReplies: boolean;
   onOpenGutFeedback: (item: CoachFoodItem) => Promise<void>;
   onConfirmProposal: () => Promise<void>;
   onOpenAdjustModal: () => void;
   onUpdateProposalMealType: (meal: MealType) => void;
+  onPopulateDraft: (text: string) => void;
 }) {
   const proposalIsActive = Boolean(
     pendingProposal && message.foodProposal && message.foodProposal.sourceMessage === pendingProposal.sourceMessage
@@ -125,6 +185,7 @@ function MessageBubble({
     : message.foodProposal?.mealType;
   const assistantText = extractReply(message.content).trim() || message.content.trim() || "Something went wrong. Try again.";
   const responseParts = parseCoachResponse(assistantText);
+  const suggestedReplies = message.role === "assistant" ? getSuggestedReplies(message) : [];
 
   return (
     <View style={styles.messageWrap}>
@@ -135,13 +196,18 @@ function MessageBubble({
           message.id === "welcome" && styles.welcomeBubble,
         ]}
       >
-        {message.id === "welcome" ? (
-          <Text style={styles.welcomeCoachLabel}>✦ SavorSelf Coach</Text>
+        {message.role === "assistant" ? (
+          <View style={styles.bubbleHeaderRow}>
+            <View style={styles.coachIconChip}>
+              <Ionicons name="sparkles" size={12} color={colors.accentPrimary} />
+            </View>
+            <Text style={message.id === "welcome" ? styles.welcomeCoachLabel : styles.coachLabel}>SavorSelf Coach</Text>
+          </View>
         ) : null}
         {message.role === "user" ? (
-          <View style={styles.bubbleContent}>
-            <Text style={[styles.responseText, styles.userResponseText]}>{message.content}</Text>
-          </View>
+          <Text style={[styles.responseText, styles.standaloneResponseText, styles.userResponseText]}>
+            {message.content}
+          </Text>
         ) : responseParts.length > 0 ? (
           <View style={styles.bubbleContent}>
             <View style={styles.responseTextWrap}>
@@ -156,7 +222,7 @@ function MessageBubble({
                     </View>
                   ) : null}
                   {part.type === "bullet" ? <View style={styles.bulletDot} /> : null}
-                  <Text selectable style={styles.responseText}>
+                  <Text selectable style={[styles.responseText, styles.partResponseText]}>
                     {part.content}
                   </Text>
                 </View>
@@ -164,11 +230,9 @@ function MessageBubble({
             </View>
           </View>
         ) : (
-          <View style={styles.bubbleContent}>
-            <Text selectable style={styles.responseText}>
-              {assistantText}
-            </Text>
-          </View>
+          <Text selectable style={[styles.responseText, styles.standaloneResponseText]}>
+            {assistantText}
+          </Text>
         )}
       </View>
       <Text style={[styles.messageTime, message.role === "user" ? styles.messageTimeUser : styles.messageTimeAssistant]}>
@@ -177,20 +241,51 @@ function MessageBubble({
 
       {message.role === "assistant" && message.foodProposal ? (
         <View style={styles.proposalBubble}>
-          <Text style={styles.proposalEyebrow}>Food proposal</Text>
+          <Text style={styles.proposalEyebrow}>✦ Got it — adding to your log</Text>
           {proposalItems.map((item) => (
             <View key={`${message.id}-${item.name}`} style={styles.proposalItemWrap}>
               <Pressable
                 onPress={() => void onOpenGutFeedback(item)}
-                style={({ pressed }) => [styles.proposalItemRow, pressed && styles.promptPressed]}
+                style={({ pressed }) => [styles.proposalItemCard, pressed && styles.promptPressed]}
               >
-                <Text style={styles.proposalItemText}>
-                  • {formatFoodName(item.name)}  {Math.round(item.calories)} cal
-                </Text>
+                <View style={styles.proposalEmojiBox}>
+                  <Text style={styles.proposalEmojiText}>🍽</Text>
+                </View>
+                <View style={styles.proposalItemContent}>
+                  <Text style={styles.proposalItemTitle}>{formatFoodName(item.name)}</Text>
+                  <Text style={styles.proposalItemMacroSummary}>
+                    {Math.round(item.calories)} cal · {Math.round(item.protein)}g protein · {Math.round(item.carbs)}g carbs
+                  </Text>
+                  <View style={styles.proposalTagRow}>
+                    {getFoodHighlightTags(item).map((tag) => (
+                      <View
+                        key={`${item.name}-${tag.label}`}
+                        style={[
+                          styles.proposalTag,
+                          tag.tone === "sage"
+                            ? styles.proposalTagSage
+                            : tag.tone === "amber"
+                              ? styles.proposalTagAmber
+                              : styles.proposalTagTerracotta,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.proposalTagText,
+                            tag.tone === "sage"
+                              ? styles.proposalTagTextSage
+                              : tag.tone === "amber"
+                                ? styles.proposalTagTextAmber
+                                : styles.proposalTagTextTerracotta,
+                          ]}
+                        >
+                          {tag.label}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
               </Pressable>
-              {item.foodSource === "ai_estimate" ? (
-                <Text style={styles.proposalMetaText}>AI estimate</Text>
-              ) : null}
             </View>
           ))}
           <View style={styles.proposalDivider} />
@@ -200,29 +295,27 @@ function MessageBubble({
           </Text>
           {proposalIsActive && proposalMealType ? (
             <>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={styles.proposalMealRow}>
-                  {(["breakfast", "lunch", "dinner", "snack"] as MealType[]).map((meal) => (
-                    <Pressable
-                      key={meal}
+              <View style={styles.proposalMealRow}>
+                {(["breakfast", "lunch", "dinner", "snack"] as MealType[]).map((meal) => (
+                  <Pressable
+                    key={meal}
+                    style={[
+                      styles.proposalMealChip,
+                      proposalMealType === meal && styles.proposalMealChipActive,
+                    ]}
+                    onPress={() => onUpdateProposalMealType(meal)}
+                  >
+                    <Text
                       style={[
-                        styles.proposalMealChip,
-                        proposalMealType === meal && styles.proposalMealChipActive,
+                        styles.proposalMealChipText,
+                        proposalMealType === meal && styles.proposalMealChipTextActive,
                       ]}
-                      onPress={() => onUpdateProposalMealType(meal)}
                     >
-                      <Text
-                        style={[
-                          styles.proposalMealChipText,
-                          proposalMealType === meal && styles.proposalMealChipTextActive,
-                        ]}
-                      >
-                        {meal.charAt(0).toUpperCase() + meal.slice(1)}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </ScrollView>
+                      {meal.charAt(0).toUpperCase() + meal.slice(1)}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
               <View style={styles.proposalActionRow}>
                 <Pressable
                   onPress={() => void onConfirmProposal()}
@@ -235,7 +328,7 @@ function MessageBubble({
                   {confirming ? (
                     <ActivityIndicator size="small" color={colors.white} />
                   ) : (
-                    <Text style={[styles.proposalActionText, styles.proposalConfirmText]}>Log it ✓</Text>
+                    <Text style={[styles.proposalActionText, styles.proposalConfirmText]}>Confirm</Text>
                   )}
                 </Pressable>
                 <Pressable
@@ -246,11 +339,25 @@ function MessageBubble({
                     pressed && styles.promptPressed,
                   ]}
                 >
-                  <Text style={[styles.proposalActionText, styles.proposalSecondaryText]}>Not quite</Text>
+                  <Text style={[styles.proposalActionText, styles.proposalSecondaryText]}>Edit</Text>
                 </Pressable>
               </View>
             </>
           ) : null}
+        </View>
+      ) : null}
+
+      {message.role === "assistant" && showSuggestedReplies && suggestedReplies.length > 0 ? (
+        <View style={styles.replyChipRow}>
+          {suggestedReplies.map((reply) => (
+            <Pressable
+              key={`${message.id}-${reply}`}
+              onPress={() => onPopulateDraft(reply)}
+              style={({ pressed }) => [styles.replyChip, pressed && styles.promptPressed]}
+            >
+              <Text style={styles.replyChipText}>{reply}</Text>
+            </Pressable>
+          ))}
         </View>
       ) : null}
     </View>
@@ -302,6 +409,37 @@ function buildConfirmationMessage(proposal: CoachFoodProposal): string {
   const totalProtein = proposal.items.reduce((sum, item) => sum + (item.protein ?? 0), 0);
 
   return `Logged to ${proposal.mealType} ✓\n\n${items}\n\n${Math.round(totalCal)} cal · ${Math.round(totalProtein)}g protein`;
+}
+
+function getFoodHighlightTags(item: CoachFoodItem) {
+  const tags: Array<{ label: string; tone: "sage" | "amber" | "terracotta" }> = [];
+
+  if ((item.fiber ?? 0) >= 5) {
+    tags.push({ label: `${Math.round(item.fiber ?? 0)}g fiber`, tone: "sage" });
+  }
+  if ((item.protein ?? 0) >= 15) {
+    tags.push({ label: `${Math.round(item.protein ?? 0)}g protein`, tone: "sage" });
+  }
+  if ((item.calories ?? 0) >= 450) {
+    tags.push({ label: "heavier meal", tone: "amber" });
+  }
+  if (item.foodSource === "ai_estimate") {
+    tags.push({ label: "AI estimate", tone: "terracotta" });
+  }
+
+  return tags.slice(0, 3);
+}
+
+function getSuggestedReplies(message: CoachDisplayMessage): string[] {
+  if (message.foodProposal) {
+    return ["Yes please 🌱", "Not now", "What's my dip pattern?"];
+  }
+
+  if (message.kind === "status") {
+    return ["Yes please 🌱", "Not now", "What's my dip pattern?"];
+  }
+
+  return [];
 }
 
 const quantityWholeOptions = Array.from({ length: 13 }, (_, index) => String(index));
@@ -552,14 +690,7 @@ export function CoachChat() {
     [profile?.preferredUnits]
   );
   const hour = new Date().getHours();
-  const inputPlaceholder =
-    hour < 11
-      ? "What did you have for breakfast?"
-      : hour < 15
-        ? "Log your lunch..."
-        : hour < 19
-          ? "How are you feeling this afternoon?"
-          : "Log dinner or wind down...";
+  const inputPlaceholder = "Tell your coach...";
 
   useEffect(() => {
     setDraft("");
@@ -676,6 +807,15 @@ export function CoachChat() {
           })),
     [conversation, welcomeText]
   );
+  const memorySummary = useMemo(() => {
+    const parts = [
+      profile?.onboardingGoal ? `goal: ${profile.onboardingGoal}` : null,
+      profile?.onboardingChallenge ? `challenge: ${profile.onboardingChallenge}` : null,
+      profile?.preferredUnits ? `units: ${profile.preferredUnits}` : null,
+    ].filter(Boolean);
+
+    return parts.join(" · ") || "your food goals, mood patterns, and how you like to track.";
+  }, [profile?.onboardingChallenge, profile?.onboardingGoal, profile?.preferredUnits]);
 
   const coachContext = useMemo(
     () => ({
@@ -734,6 +874,7 @@ export function CoachChat() {
   const handleSend = async (messageOverride?: string) => {
     const message = (messageOverride ?? draft).trim();
     if (!message || sending) return;
+    const intent = detectIntent(message);
     const history = conversation
       .filter((m: AiConversationMessage) => m.content.length < 400)
       .slice(-6)
@@ -742,6 +883,12 @@ export function CoachChat() {
     setDraft("");
     setSending(true);
     try {
+      if (intent === "conversation") {
+        const fallback = await sendCoachMessage(message, coachContext, history);
+        appendAssistant(fallback.reply || "I'm here with you.", "text");
+        return;
+      }
+
       const result = await parseFoodMessage({ message, pendingProposal, history, context: coachContext });
       if (
         !result?.intent &&
@@ -804,16 +951,16 @@ export function CoachChat() {
           }
           break;
       }
-    } catch (error) {
-      try {
-        const fallback = await sendCoachMessage(message, coachContext, history);
-        appendAssistant(fallback.reply || "I'm here with you.", "text");
-      } catch {
-        appendAssistant("I'm here with you.", "text");
+      } catch (error) {
+        try {
+          const fallback = await sendCoachMessage(message, coachContext, history);
+          appendAssistant(fallback.reply || "I'm here with you.", "text");
+        } catch {
+          appendAssistant(COACH_CONNECTION_FALLBACK, "status");
+        }
+      } finally {
+        setSending(false);
       }
-    } finally {
-      setSending(false);
-    }
   };
 
   const confirmProposal = async () => {
@@ -835,7 +982,6 @@ export function CoachChat() {
       fiberG: item.fiber ?? 0,
       sugarG: item.sugar ?? 0,
     }));
-    console.log("[coach] saveMultipleFoodLogs payload", mappedItems);
 
     const result = await saveMultipleFoodLogs(mappedItems);
 
@@ -1232,15 +1378,18 @@ export function CoachChat() {
             message={item}
             pendingProposal={pendingProposal}
             confirming={confirming}
+            showSuggestedReplies={item.id === displayConversation[displayConversation.length - 1]?.id}
             onOpenGutFeedback={openGutFeedback}
             onConfirmProposal={confirmProposal}
             onOpenAdjustModal={openAdjustModal}
             onUpdateProposalMealType={updateProposalMealType}
+            onPopulateDraft={setDraft}
           />
         )}
         contentContainerStyle={styles.messagesContent}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
+        nestedScrollEnabled
         onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
         onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
         showsVerticalScrollIndicator={false}
@@ -1249,9 +1398,37 @@ export function CoachChat() {
             {sending ? (
               <View style={styles.messageWrap}>
                 <View style={[styles.bubble, styles.assistantBubble, styles.thinkingBubble]}>
-                  <Text style={styles.coachLabel}>✦ SavorSelf Coach</Text>
-                  <Animated.Text style={[styles.thinkingDots, { opacity: thinkingDotsOpacity }]}>···</Animated.Text>
-                  <Text style={styles.thinkingText}>thinking...</Text>
+                  <View style={styles.bubbleHeaderRow}>
+                    <View style={styles.coachIconChip}>
+                      <Ionicons name="sparkles" size={12} color={colors.accentPrimary} />
+                    </View>
+                    <Text style={styles.coachLabel}>SavorSelf Coach</Text>
+                  </View>
+                  <View style={styles.thinkingDotsRow}>
+                    {[0, 1, 2].map((dot) => (
+                      <Animated.View
+                        key={`thinking-dot-${dot}`}
+                        style={[
+                          styles.thinkingDot,
+                          {
+                            opacity: thinkingDotsOpacity.interpolate({
+                              inputRange: [0.3, 1],
+                              outputRange: [0.35 + dot * 0.08, 0.85 + dot * 0.05],
+                            }),
+                            transform: [
+                              {
+                                translateY: thinkingDotsOpacity.interpolate({
+                                  inputRange: [0.3, 1],
+                                  outputRange: [dot === 1 ? 2 : 4, dot === 1 ? -4 : -2],
+                                }),
+                              },
+                            ],
+                          },
+                        ]}
+                      />
+                    ))}
+                  </View>
+                  <Text style={styles.thinkingText}>Coach is thinking...</Text>
                 </View>
               </View>
             ) : null}
@@ -1265,14 +1442,18 @@ export function CoachChat() {
                       key={item.prompt}
                       onPress={() => {
                         setDraft(item.prompt);
-                        void handleSend(item.prompt);
                       }}
                       style={({ pressed }) => [styles.starterCard, pressed && styles.promptPressed]}
                     >
-                      <Text style={styles.starterCardTitle}>
-                        {item.emoji}  {item.title}
-                      </Text>
-                      <Text style={styles.starterCardSubtitle}>{item.subtitle}</Text>
+                      <View style={styles.starterCardRow}>
+                        <View style={styles.starterEmojiCircle}>
+                          <Text style={styles.starterEmoji}>{item.emoji}</Text>
+                        </View>
+                        <View style={styles.starterCardCopy}>
+                          <Text style={styles.starterCardTitle}>{item.title}</Text>
+                          <Text style={styles.starterCardSubtitle}>{item.subtitle}</Text>
+                        </View>
+                      </View>
                     </Pressable>
                   ))}
                 </View>
@@ -1302,6 +1483,9 @@ export function CoachChat() {
             onSubmitEditing={() => void handleSend()}
           />
         </View>
+        <Pressable style={({ pressed }) => [styles.attachButton, pressed && styles.promptPressed]} onPress={() => {}}>
+          <Ionicons name="image-outline" size={18} color={colors.textSecondary} />
+        </Pressable>
         <Pressable
           style={[styles.sendButton, (!draft.trim() || sending) && styles.sendButtonDisabled]}
           onPress={() => void handleSend()}
@@ -1359,77 +1543,173 @@ function WheelPicker({
 }
 
 const styles = StyleSheet.create({
-  chatShell: { flex: 1 },
+  chatShell: {
+    flex: 1,
+    backgroundColor: "#FAF7F2",
+  },
+  coachHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
+  },
+  headerIconButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "#FFFCF8",
+    borderWidth: 1,
+    borderColor: "rgba(44,26,14,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerIconButtonAccent: {
+    backgroundColor: "rgba(196,98,45,0.08)",
+    borderColor: "rgba(196,98,45,0.16)",
+  },
+  headerTitleWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  headerTitle: {
+    color: "#2C1A0E",
+    fontSize: 22,
+    fontWeight: "700",
+    letterSpacing: -0.4,
+  },
+  memoryCard: {
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 999,
+    backgroundColor: "#FFFCF8",
+    borderWidth: 1,
+    borderColor: "rgba(196,98,45,0.15)",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  memoryIconCircle: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: "rgba(196,98,45,0.12)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  memoryCopy: {
+    flex: 1,
+  },
+  memoryText: {
+    color: "#7A6155",
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  memoryTextStrong: {
+    color: "#2C1A0E",
+    fontWeight: "700",
+  },
+  memoryAction: {
+    color: "#C4622D",
+    fontSize: 13,
+    fontWeight: "700",
+  },
   messagesScroll: { flex: 1 },
   messagesContent: {
-    padding: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.xs,
+    paddingBottom: 28,
     gap: spacing.sm,
-    paddingBottom: 16,
+    flexGrow: 1,
   },
-  messageWrap: { gap: spacing.sm },
+  messageWrap: {
+    gap: 6,
+    width: "100%",
+    minWidth: 0,
+  },
   bubble: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 18,
-    maxWidth: "88%",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 24,
+    minWidth: 0,
+    overflow: "visible",
+    flexShrink: 1,
   },
   userBubble: {
     alignSelf: "flex-end",
-    backgroundColor: colors.accentPrimary,
-    borderBottomRightRadius: 4,
+    maxWidth: "85%",
+    backgroundColor: "#C4622D",
+    borderTopRightRadius: 6,
   },
   assistantBubble: {
     alignSelf: "flex-start",
-    backgroundColor: colors.surface,
+    maxWidth: "92%",
+    backgroundColor: "rgba(196,98,45,0.10)",
+    borderTopLeftRadius: 6,
     borderWidth: 1,
-    borderColor: colors.border,
-    borderBottomLeftRadius: 4,
+    borderColor: "rgba(196,98,45,0.15)",
   },
   welcomeBubble: {
-    backgroundColor: "#F6EDE4",
-    borderColor: "#E8C9AE",
-    maxWidth: "88%",
-    paddingHorizontal: 14,
+    maxWidth: "92%",
+    paddingHorizontal: 16,
+  },
+  bubbleHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 8,
+  },
+  coachIconChip: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "rgba(196,98,45,0.12)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   welcomeCoachLabel: {
     fontSize: 11,
-    color: colors.accentPrimary,
-    fontWeight: "600",
-    letterSpacing: 0.5,
-    marginBottom: 6,
+    color: "#C4622D",
+    fontWeight: "700",
+    letterSpacing: 0.45,
   },
   coachLabel: {
     fontSize: 11,
-    color: colors.accentPrimary,
-    fontWeight: "600",
-    letterSpacing: 0.5,
-    marginBottom: 6,
+    color: "#C4622D",
+    fontWeight: "700",
+    letterSpacing: 0.45,
   },
   messageTime: {
     fontSize: 11,
-    color: colors.textSecondary,
-    marginTop: 3,
-    opacity: 0.7,
+    color: "#9B857A",
+    opacity: 0.85,
   },
   messageTimeUser: {
     alignSelf: "flex-end",
+    paddingRight: 6,
   },
   messageTimeAssistant: {
     alignSelf: "flex-start",
+    paddingLeft: 6,
   },
-  bubbleText: { color: colors.textPrimary, fontSize: 16, lineHeight: 24 },
-  userBubbleText: { color: colors.white },
   bubbleContent: {
-    flexDirection: "row",
+    width: "100%",
+    minWidth: 0,
   },
   responseTextWrap: {
-    flex: 1,
+    width: "100%",
+    minWidth: 0,
   },
   responsePart: {
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 8,
-    marginBottom: 4,
+    marginBottom: 6,
+    width: "100%",
   },
   responsePartLast: {
     marginBottom: 0,
@@ -1438,7 +1718,7 @@ const styles = StyleSheet.create({
     width: 20,
     height: 20,
     borderRadius: 10,
-    backgroundColor: colors.accentPrimary,
+    backgroundColor: "#C4622D",
     alignItems: "center",
     justifyContent: "center",
     marginTop: 2,
@@ -1446,185 +1726,291 @@ const styles = StyleSheet.create({
   },
   numberText: {
     fontSize: 11,
-    color: colors.white,
+    color: "#FFFFFF",
     fontWeight: "700",
   },
   bulletDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: colors.accentPrimary,
+    backgroundColor: "#C4622D",
     marginTop: 8,
     flexShrink: 0,
   },
   responseText: {
-    fontSize: 16,
+    fontSize: 15.5,
     lineHeight: 24,
-    color: colors.textPrimary,
-    flex: 1,
+    color: "#2C1A0E",
     flexShrink: 1,
+    minWidth: 0,
+    flexWrap: "wrap",
+  },
+  partResponseText: {
+    flex: 1,
+  },
+  standaloneResponseText: {
+    minWidth: 0,
+    alignSelf: "stretch",
   },
   userResponseText: {
-    color: colors.white,
+    color: "#FFFFFF",
   },
-  promptRow: { gap: spacing.sm, marginTop: spacing.sm },
+  replyChipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    alignSelf: "flex-start",
+    maxWidth: "92%",
+  },
+  replyChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 999,
+    backgroundColor: "#FFFCF8",
+    borderWidth: 1,
+    borderColor: "rgba(196,98,45,0.25)",
+  },
+  replyChipText: {
+    color: "#C4622D",
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  promptRow: { gap: 10, marginTop: spacing.md },
   promptTitle: {
-    color: colors.textSecondary,
-    fontSize: 12,
+    color: "#9B857A",
+    fontSize: 11,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 1.1,
+    fontWeight: "700",
   },
   starterCards: {
     gap: 10,
-    marginTop: 8,
   },
   promptPressed: {
-    opacity: 0.8,
-    transform: [{ scale: 0.97 }],
+    opacity: 0.86,
+    transform: [{ scale: 0.98 }],
   },
   starterCard: {
-    backgroundColor: colors.white,
+    backgroundColor: "#FFFCF8",
     borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 14,
+    borderColor: "rgba(44,26,14,0.08)",
+    borderRadius: 22,
     paddingHorizontal: 16,
     paddingVertical: 14,
+  },
+  starterCardRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+  },
+  starterEmojiCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "rgba(196,98,45,0.10)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  starterEmoji: {
+    fontSize: 18,
+  },
+  starterCardCopy: {
+    flex: 1,
     gap: 4,
   },
   starterCardTitle: {
-    color: colors.textPrimary,
-    fontSize: 15,
-    fontWeight: "700",
+    color: "#2C1A0E",
+    fontSize: 18,
+    fontWeight: "600",
   },
   starterCardSubtitle: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    lineHeight: 20,
+    color: "#7A6155",
+    fontSize: 13.5,
+    lineHeight: 19,
   },
   optionCard: {
-    backgroundColor: colors.white,
+    backgroundColor: "#FFFCF8",
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: "rgba(44,26,14,0.08)",
     borderRadius: radii.md,
     padding: spacing.md,
     gap: 6,
   },
-  optionTitle: { color: colors.textPrimary, fontSize: 17, fontWeight: "600" },
-  optionBody: { color: colors.textSecondary, fontSize: 15, lineHeight: 24 },
+  optionTitle: { color: "#2C1A0E", fontSize: 17, fontWeight: "600" },
+  optionBody: { color: "#7A6155", fontSize: 15, lineHeight: 24 },
   proposalBubble: {
     alignSelf: "flex-start",
-    backgroundColor: "#F6EDE4",
-    borderRadius: 18,
-    borderBottomLeftRadius: 4,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    maxWidth: "88%",
+    maxWidth: "92%",
+    backgroundColor: "#FFFCF8",
+    borderRadius: 22,
     borderWidth: 1,
-    borderColor: "#E8C9AE",
-    gap: 8,
+    borderColor: "rgba(196,98,45,0.15)",
+    padding: 14,
+    gap: 10,
   },
   proposalEyebrow: {
-    color: colors.accentPrimary,
+    color: "#C4622D",
     fontSize: 11,
     textTransform: "uppercase",
     letterSpacing: 1,
-    marginBottom: 8,
-    fontWeight: "600",
+    fontWeight: "700",
   },
   proposalItemWrap: {
-    gap: 3,
+    gap: 8,
   },
-  proposalItemRow: {
-    alignSelf: "flex-start",
+  proposalItemCard: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "rgba(44,26,14,0.08)",
+    backgroundColor: "#FFFFFF",
+    padding: 12,
+  },
+  proposalEmojiBox: {
+    width: 38,
+    height: 38,
     borderRadius: 12,
+    backgroundColor: "rgba(196,98,45,0.10)",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  proposalItemText: {
-    color: colors.textPrimary,
-    fontSize: 15,
-    paddingVertical: 3,
+  proposalEmojiText: {
+    fontSize: 18,
   },
-  proposalMetaText: {
-    color: colors.textSecondary,
+  proposalItemContent: {
+    flex: 1,
+    gap: 6,
+  },
+  proposalItemTitle: {
+    color: "#2C1A0E",
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  proposalItemMacroSummary: {
+    color: "#7A6155",
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  proposalTagRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  proposalTag: {
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 999,
+  },
+  proposalTagSage: {
+    backgroundColor: "rgba(138,158,123,0.14)",
+  },
+  proposalTagAmber: {
+    backgroundColor: "rgba(232,168,56,0.16)",
+  },
+  proposalTagTerracotta: {
+    backgroundColor: "rgba(196,98,45,0.12)",
+  },
+  proposalTagText: {
     fontSize: 11,
+    fontWeight: "600",
+  },
+  proposalTagTextSage: {
+    color: "#5F7451",
+  },
+  proposalTagTextAmber: {
+    color: "#9C6B11",
+  },
+  proposalTagTextTerracotta: {
+    color: "#C4622D",
   },
   proposalDivider: {
     height: 1,
-    backgroundColor: colors.border,
-    marginVertical: 8,
+    backgroundColor: "rgba(44,26,14,0.08)",
   },
   proposalTotalText: {
-    color: colors.textPrimary,
+    color: "#2C1A0E",
     fontSize: 14,
     fontWeight: "600",
   },
   proposalMealRow: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8,
-    paddingVertical: 8,
   },
   proposalMealChip: {
+    minWidth: "47%",
     paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 16,
-    backgroundColor: colors.white,
+    paddingVertical: 9,
+    borderRadius: 999,
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: "rgba(44,26,14,0.08)",
   },
   proposalMealChipActive: {
-    backgroundColor: colors.accentPrimary,
-    borderColor: colors.accentPrimary,
+    backgroundColor: "rgba(196,98,45,0.10)",
+    borderColor: "#C4622D",
   },
   proposalMealChipText: {
     fontSize: 13,
-    color: colors.textPrimary,
+    color: "#2C1A0E",
+    fontWeight: "500",
   },
   proposalMealChipTextActive: {
-    color: colors.white,
-    fontWeight: "600",
+    color: "#C4622D",
+    fontWeight: "700",
   },
   proposalActionRow: {
     flexDirection: "row",
     gap: 10,
-    marginTop: 8,
+    marginTop: 4,
   },
   proposalActionButton: {
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    minHeight: 36,
+    flex: 1,
+    borderRadius: 999,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    minHeight: 42,
     alignItems: "center",
     justifyContent: "center",
   },
   proposalConfirmButton: {
-    backgroundColor: colors.accentPrimary,
+    backgroundColor: "#C4622D",
   },
   proposalSecondaryButton: {
-    backgroundColor: colors.white,
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: colors.accentPrimary,
+    borderColor: "#C4622D",
   },
   proposalActionText: {
     fontSize: 14,
-    fontWeight: "600",
+    fontWeight: "700",
   },
   proposalConfirmText: {
-    color: colors.white,
+    color: "#FFFFFF",
   },
   proposalSecondaryText: {
-    color: colors.accentPrimary,
+    color: "#C4622D",
   },
   thinkingBubble: {
-    gap: 4,
+    gap: 8,
   },
-  thinkingDots: {
-    color: colors.textPrimary,
-    fontSize: 24,
-    lineHeight: 24,
+  thinkingDotsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 2,
+  },
+  thinkingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#C4622D",
   },
   thinkingText: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    opacity: 0.6,
+    color: "#9B857A",
+    fontSize: 12.5,
   },
   modalFeedbackCard: {
     backgroundColor: colors.surface,
@@ -1844,18 +2230,17 @@ const styles = StyleSheet.create({
   },
   inputBar: {
     flexDirection: "row",
-    alignItems: "flex-end",
+    alignItems: "center",
     paddingHorizontal: spacing.md,
-    paddingVertical: 10,
+    paddingTop: 10,
     paddingBottom: 24,
-    backgroundColor: colors.background,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
+    backgroundColor: "#FAF7F2",
     gap: 10,
+    boxShadow: "0 -10px 24px rgba(44, 26, 14, 0.06)",
   },
   charCount: {
     fontSize: 11,
-    color: colors.textSecondary,
+    color: "#9B857A",
     textAlign: "right",
     paddingRight: spacing.md,
     paddingBottom: 4,
@@ -1865,36 +2250,45 @@ const styles = StyleSheet.create({
   },
   inputFieldWrap: {
     flex: 1,
-    gap: 6,
+    backgroundColor: "#FFFCF8",
+    borderWidth: 1,
+    borderColor: "rgba(44,26,14,0.08)",
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
   },
   inputField: {
     flex: 1,
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    fontSize: 16,
-    color: colors.textPrimary,
+    fontSize: 15.5,
+    color: "#2C1A0E",
     maxHeight: 120,
     lineHeight: 22,
     textAlignVertical: "top",
   },
-  sendButton: {
+  attachButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.accentPrimary,
+    backgroundColor: "#FFFCF8",
+    borderWidth: 1,
+    borderColor: "rgba(44,26,14,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sendButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: "#C4622D",
     alignItems: "center",
     justifyContent: "center",
   },
   sendButtonDisabled: {
-    backgroundColor: colors.border,
+    backgroundColor: "rgba(196,98,45,0.32)",
   },
   sendButtonText: {
-    color: colors.white,
+    color: "#FFFFFF",
     fontSize: 20,
-    fontWeight: "600",
+    fontWeight: "700",
   },
 });
